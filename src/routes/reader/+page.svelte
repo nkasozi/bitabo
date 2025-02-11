@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
 
     onMount(async () => {
-        const { default: readerModule } = await import('./foliate-js/reader.js');
+        const { default: readerModule } = await import('./foliate-js/reader.ts');
     });
 </script>
 
