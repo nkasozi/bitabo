@@ -1,14 +1,39 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    const readerConfiguration = {
+        containerSelector: '#ebook-container',
+        elements: {
+            dropTarget: '#reader-drop-target',
+            navigation: {
+                navBar: '#nav-bar', // Include navBar in config elements
+            }
+        },
+    };
 
+    let isBookLoaded = false; // Svelte reactive variable to track book load state
+
+    // Initialize reader with configuration
     onMount(async () => {
-        const { default: readerModule } = await import('./foliate-js/reader.ts');
+        const { createReader } = await import('./foliate-js/reader.ts');
+        const reader = await createReader(readerConfiguration);
+        console.log('Reader instance created:', reader); // ADDED LOG
+
+        // Override the openBook method to set isBookLoaded to true after book is opened
+        const originalOpenBook = reader.openBook.bind(reader);
+        reader.openBook = async function(file: File | string) {
+            console.log('openBook override called, isBookLoaded before:', isBookLoaded); // ADDED LOG
+            await originalOpenBook(file);
+            isBookLoaded = true; // Set book loaded state to true
+            console.log('openBook override finished, isBookLoaded after:', isBookLoaded); // ADDED LOG
+        };
     });
+
+    $: console.log('isBookLoaded value:', isBookLoaded); // ADDED REACTIVE LOG
 </script>
 
-<div id="ebook-container"></div>
+<div id="ebook-container" class:book-loaded={isBookLoaded}></div>
 
-<div id="drop-target">
+<div id="reader-drop-target" class:hidden={isBookLoaded}>
     <div>
         <svg class="icon empty-state-icon" width="72" height="72" aria-hidden="true">
             <path d="M36 18s-6-6-12-6-15 6-15 6v42s9-6 15-6 12 6 12 6c4-4 8-6 12-6s12 2 15 6V18c-6-4-12-6-15-6-4 0-8 2-12 6m0 0v42"/>
@@ -47,7 +72,7 @@
     </div>
 </div>
 
-<div id="nav-bar" class="toolbar">
+<div id="nav-bar" class="toolbar" class:visible={isBookLoaded}>
     <button id="left-button" aria-label="Go left">
         <svg class="icon" width="24" height="24" aria-hidden="true">
             <path d="M 15 6 L 9 12 L 15 18"/>
@@ -96,15 +121,32 @@
         height: calc(100vh - 96px);
         width: 100%;
     }
-    #drop-target {
+
+    /* Center the drop target dialog */
+    #reader-drop-target {
         height: 100vh;
         display: flex;
         align-items: center;
         justify-content: center;
         text-align: center;
         flex-direction: column;
-        visibility: hidden;
+        visibility: visible; /* Make visible by default */
+        position: absolute; /* Position it over the ebook container */
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1; /* Ensure it's above the ebook container initially */
+        background-color: Canvas; /* Match background for seamless transition */
     }
+
+    /* Hide the drop target dialog when book is loaded */
+    #reader-drop-target.hidden {
+        visibility: hidden;
+        pointer-events: none; /* Make it non-interactive when hidden */
+    }
+
+
     #drop-target h1 {
         font-weight: 900;
     }
@@ -151,7 +193,15 @@
         bottom: 0;
         display: flex;
         gap: 12px; /* Add consistent spacing between elements */
+        visibility: hidden; /* Initially hide nav-bar */
     }
+
+    /* Make nav-bar visible when book is loaded */
+    #nav-bar.visible {
+        visibility: visible;
+    }
+
+
     #progress-slider {
         flex: 1; /* Use flex: 1 instead of flex-grow */
         min-width: 0; /* Prevent overflow */

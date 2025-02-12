@@ -12,8 +12,8 @@ type StyleConfig = {
 
 type BookMetadata = {
     title?: string | Record<string, string>,
-  author?: string | Array<string | {name: string}>,
-  language?: string
+    author?: string | Array<string | {name: string}>,
+    language?: string
 }
 
 type AnnotationType = {
@@ -39,6 +39,73 @@ type RelocateEvent = {
     location: LocationInfo,
     tocItem?: TocItem,
     pageItem?: PageItem
+}
+
+export interface ReaderConfig {
+    containerSelector: string
+    elements: {
+        dropTarget: string
+        sidebar: {
+            container: string
+            button: string
+            title: string
+            author: string
+            cover: string
+            tocView: string
+        }
+        navigation: {
+            headerBar: string
+            navBar: string
+            leftButton: string
+            rightButton: string
+            progressSlider: string
+            tickMarks: string
+        }
+        menu: {
+            container: string
+            button: string
+        }
+        overlay: string
+        fileInput: string
+        fileButton: string
+    }
+    defaultStyle: StyleConfig
+}
+
+// Default configuration that matches current selectors
+const DEFAULT_READER_CONFIG: ReaderConfig = {
+    containerSelector: '#ebook-container',
+    elements: {
+        dropTarget: '#drop-target',
+        sidebar: {
+            container: '#side-bar',
+            button: '#side-bar-button',
+            title: '#side-bar-title',
+            author: '#side-bar-author',
+            cover: '#side-bar-cover',
+            tocView: '#toc-view'
+        },
+        navigation: {
+            headerBar: '#header-bar',
+            navBar: '#nav-bar',
+            leftButton: '#left-button',
+            rightButton: '#right-button',
+            progressSlider: '#progress-slider',
+            tickMarks: '#tick-marks'
+        },
+        menu: {
+            container: '#menu-button',
+            button: 'button',
+        },
+        overlay: '#dimming-overlay',
+        fileInput: '#file-input',
+        fileButton: '#file-button'
+    },
+    defaultStyle: {
+        spacing: 1.4,
+        justify: true,
+        hyphenate: true
+    }
 }
 
 // formatters.ts
@@ -134,17 +201,168 @@ class BookMetadataFormatter {
 class EbookReader {
     private tocView: any
     private view: any
-    private defaultStyle: StyleConfig = {
-        spacing: 1.4,
-        justify: true,
-        hyphenate: true,
-    }
-    private  annotations: Map<number, AnnotationType[]> = new Map()
-    private  annotationsByValue: Map<string, AnnotationType> = new Map()
-    private  formatters: TextFormatters = new TextFormatters()
+    private readonly config: ReaderConfig
+    private readonly formatters: TextFormatters
+    private readonly elements: Map<string, Element>
+    private readonly annotations: Map<number, AnnotationType[]>
+    private readonly annotationsByValue: Map<string, AnnotationType>
+    private readonly defaultStyle: StyleConfig;
 
-    constructor() {
-        this.initializeUserInterface()
+    constructor(config: Partial<ReaderConfig> = {}) {
+        this.config = this.mergeConfig(DEFAULT_READER_CONFIG, config);
+        this.formatters = new TextFormatters();
+        this.elements = new Map();
+        this.annotations = new Map();
+        this.annotationsByValue = new Map();
+        this.defaultStyle = this.config.defaultStyle;
+
+        this.initializeElements();
+        this.initializeUserInterface();
+    }
+
+    private setupFileHandlers(): void {
+        const fileInput = this.getElement<HTMLInputElement>('fileInput')
+        const fileButton = this.getElement('fileButton')
+        const dropTarget = this.getElement('dropTarget')
+
+        if (!fileInput || !fileButton || !dropTarget) {
+            console.warn('setupFileHandlers: Could not find file input, file button, or drop target elements.');
+            return;
+        }
+
+        fileInput.addEventListener('change', (event) => {
+            const target = event.target as HTMLInputElement
+            const file = target.files?.[0]
+            if (file) {
+                this.openBook(file).catch(console.error)
+            }
+        })
+
+        fileButton.addEventListener('click', () => fileInput.click())
+        dropTarget.addEventListener('drop', this.handleFileDrop.bind(this))
+        dropTarget.addEventListener('dragover', (e) => e.preventDefault())
+    }
+
+    private handleFileDrop(event: DragEvent): void {
+        event.preventDefault()
+
+        const items = Array.from(event.dataTransfer?.items || [])
+        const fileItem = items.find(item => item.kind === 'file')
+
+        if (!fileItem) return
+
+        const entry = fileItem.webkitGetAsEntry()
+        const file = entry?.isFile ? fileItem.getAsFile() : entry
+
+        if (file) {
+            this.openBook(file).catch(console.error)
+        }
+    }
+
+    public initialize(): void {
+        const urlParams = new URLSearchParams(location.search)
+        const urlFile = urlParams.get('url')
+        const dropTarget = this.getElement('dropTarget')
+
+        if (urlFile) {
+            this.openBook(urlFile).catch(console.error)
+        } else if (dropTarget) {
+            dropTarget['style'].visibility = 'visible'
+        }
+
+        this.setupFileHandlers()
+    }
+
+    private mergeConfig(defaultConfig: ReaderConfig, userConfig: Partial<ReaderConfig>): ReaderConfig {
+        return {
+            ...defaultConfig,
+            ...userConfig,
+            elements: {
+                ...defaultConfig.elements,
+                ...userConfig.elements,
+                sidebar: {
+                    ...defaultConfig.elements.sidebar,
+                    ...userConfig.elements?.sidebar
+                },
+                navigation: {
+                    ...defaultConfig.elements.navigation,
+                    ...userConfig.elements?.navigation
+                },
+                menu: {
+                    ...defaultConfig.elements.menu,
+                    ...userConfig.elements?.menu
+                }
+            }
+        }
+    }
+
+    private initializeElements(): void {
+        // Helper to store element references
+        const storeElement = (key: string, selector: string, parent?: Element) => {
+            let element = parent
+              ? parent.querySelector(selector)
+              : document.querySelector(selector)
+            if (!element) {
+                console.warn(`initializeElements: Element with selector '${selector}' not found${parent ? ' within parent ' + parent.constructor.name : ''}. Key: ${key}`);
+                return; // Stop storing if element is not found and log it
+            }
+            this.elements.set(key, element);
+        }
+
+        // Store main container
+        storeElement('container', this.config.containerSelector)
+
+        // Store sidebar elements
+        Object.entries(this.config.elements.sidebar).forEach(([key, selector]) => {
+            storeElement(`sidebar.${key}`, selector)
+        })
+
+        // Store navigation elements
+        Object.entries(this.config.elements.navigation).forEach(([key, selector]) => {
+            storeElement(`navigation.${key}`, selector)
+        })
+
+        // Store menu elements
+        const menuContainer = document.querySelector(this.config.elements.menu.container)
+        if (menuContainer) {
+            this.elements.set('menu.container', menuContainer)
+            storeElement('menu.button', this.config.elements.menu.button, menuContainer)
+        } else {
+            console.warn(`initializeElements: Menu container element with selector '${this.config.elements.menu.container}' not found.`);
+        }
+
+
+        // Store other elements
+        storeElement('overlay', this.config.elements.overlay)
+        storeElement('fileInput', this.config.elements.fileInput)
+        storeElement('fileButton', this.config.elements.fileButton)
+        storeElement('dropTarget', this.config.elements.dropTarget)
+    }
+
+    private getElement<T extends Element>(key: string): T | null {
+        const element = this.elements.get(key) as T || null;
+        if (!element) {
+            console.warn(`getElement: Element with key '${key}' not found in elements map.`);
+        }
+        return element;
+    }
+
+    // Example of a refactored method using the new element access pattern
+    private showSidebar(): void {
+        const overlay = this.getElement('overlay')
+        const sidebar = this.getElement('sidebar.container')
+
+        if (!overlay) {
+            console.warn('showSidebar: overlay element not found.');
+            return;
+        }
+        if (!sidebar) {
+            console.warn('showSidebar: sidebar container element not found.');
+            return;
+        }
+
+        overlay.classList.add('show')
+        sidebar.classList.add('show')
     }
 
     private initializeUserInterface(): void {
@@ -153,24 +371,45 @@ class EbookReader {
     }
 
     private setupSidebarControls(): void {
-        const sidebarButton = document.querySelector('#side-bar-button')
-        const dimmingOverlay = document.querySelector('#dimming-overlay')
+        const sidebarButton = this.getElement('sidebar.button')
+        const dimmingOverlay = this.getElement('overlay')
 
-        sidebarButton?.addEventListener('click', () => this.showSidebar())
-        dimmingOverlay?.addEventListener('click', () => this.hideSidebar())
-    }
+        if (!sidebarButton) {
+            console.warn('setupSidebarControls: sidebar button element not found.');
+            return;
+        }
+        if (!dimmingOverlay) {
+            console.warn('setupSidebarControls: dimming overlay element not found.');
+            return;
+        }
 
-    private showSidebar(): void {
-        document.querySelector('#dimming-overlay')?.classList.add('show')
-        document.querySelector('#side-bar')?.classList.add('show')
+        sidebarButton.addEventListener('click', () => this.showSidebar())
+        dimmingOverlay.addEventListener('click', () => this.hideSidebar())
     }
 
     private hideSidebar(): void {
-        document.querySelector('#dimming-overlay')?.classList.remove('show')
-        document.querySelector('#side-bar')?.classList.remove('show')
+        const overlay = this.getElement('overlay')
+        const sidebarContainer = this.getElement('sidebar.container')
+
+        if (!overlay) {
+            console.warn('hideSidebar: overlay element not found.');
+            return;
+        }
+        if (!sidebarContainer) {
+            console.warn('hideSidebar: sidebar container element not found.');
+            return;
+        }
+
+        overlay.classList.remove('show')
+        sidebarContainer.classList.remove('show')
     }
 
     private setupLayoutMenu(): void {
+        const menuButton = this.getElement('menu.container')
+        if (!menuButton) {
+            console.warn('setupLayoutMenu: Menu button container not found');
+            return;
+        }
         const menu = createMenu([{
             name: 'layout',
             label: 'Layout',
@@ -186,28 +425,50 @@ class EbookReader {
     }
 
     private updateLayoutFlow(value: string): void {
-        this.view?.renderer.setAttribute('flow', value)
+        if (!this.view?.renderer) {
+            console.warn('updateLayoutFlow: view or renderer is not initialized.');
+            return;
+        }
+        this.view.renderer.setAttribute('flow', value)
     }
 
     private appendMenuToInterface(menu: any): void {
-        const menuButton = document.querySelector('#menu-button')
+        const menuButton = this.getElement('menu.container')
+        if (!menuButton) {
+            console.warn('appendMenuToInterface: Menu button container not found');
+            return;
+        }
         menu.element.classList.add('menu')
-        menuButton?.append(menu.element)
+        menuButton.append(menu.element)
 
-        const button = menuButton?.querySelector('button')
-        button?.addEventListener('click', () => menu.element.classList.toggle('show'))
+        const button = menuButton.querySelector(this.config.elements.menu.button)
+        if (!button) {
+            console.warn('appendMenuToInterface: Menu button not found within container.');
+            return;
+        }
+        button.addEventListener('click', () => menu.element.classList.toggle('show'))
 
         menu.groups.layout.select('paginated')
     }
 
     async openBook(file: File | string): Promise<void> {
         this.view = document.createElement('foliate-view')
-        const container = document.querySelector('#ebook-container')
+        const container = document.querySelector(this.config.containerSelector)
 
-        if (!container) throw new Error('Ebook container not found')
+        if (!container) {
+            console.error('openBook: Ebook container not found');
+            throw new Error('Ebook container not found'); // Stop execution if container is missing
+        }
 
         container.appendChild(this.view)
         container.classList.add('book-loaded')
+
+        const dropTarget = document.querySelector(this.config.elements.dropTarget)
+
+        if(dropTarget){
+            dropTarget.remove();
+            console.log('openBook: Drop target has been found and removed');
+        }
 
         await this.initializeBookView(file)
         await this.setupBookInterface()
@@ -216,11 +477,15 @@ class EbookReader {
     }
 
     private async initializeBookView(file: File | string): Promise<void> {
-        await this.view.open(file)
-        this.view.addEventListener('load', this.handleBookLoad.bind(this))
-        this.view.addEventListener('relocate', this.handleBookRelocate.bind(this))
-        this.view.renderer.setStyles?.(ReaderStyleGenerator.generateStyles(this.defaultStyle))
-        this.view.renderer.next()
+        if (!this.view) {
+            console.warn('initializeBookView: view is not initialized.');
+            return;
+        }
+        await this.view.open(file);
+        this.view.addEventListener('load', this.handleBookLoad.bind(this));
+        this.view.addEventListener('relocate', this.handleBookRelocate.bind(this));
+        this.view.renderer.setStyles?.(ReaderStyleGenerator.generateStyles(this.config.defaultStyle));
+        this.view.renderer.next();
     }
 
     private setupBookInterface(): void {
@@ -230,25 +495,47 @@ class EbookReader {
     }
 
     private showNavigationControls(): void {
-        const headerBar = document.querySelector('#header-bar')
-        const navBar = document.querySelector('#nav-bar')
+        const headerBar = this.getElement('navigation.headerBar')
+        const navBar = this.getElement('navigation.navBar')
 
-        if (headerBar) headerBar['style'].visibility = 'visible'
-        if (navBar) navBar['style'].visibility = 'visible'
+        if (!headerBar) {
+            console.warn('showNavigationControls: headerBar element not found.');
+        } else {
+            headerBar['style'].visibility = 'visible';
+        }
+
+        if (!navBar) {
+            console.warn('showNavigationControls: navBar element not found.');
+        } else {
+            navBar['style'].visibility = 'visible';
+        }
 
         this.setupNavigationButtons()
     }
 
     private setupNavigationButtons(): void {
-        document.querySelector('#left-button')
-          ?.addEventListener('click', () => this.view.goLeft())
-        document.querySelector('#right-button')
-          ?.addEventListener('click', () => this.view.goRight())
+        const leftButton = this.getElement('navigation.leftButton')
+        const rightButton = this.getElement('navigation.rightButton')
+
+        if (!leftButton) {
+            console.warn('setupNavigationButtons: leftButton element not found.');
+        } else {
+            leftButton.addEventListener('click', () => this.view.goLeft());
+        }
+
+        if (!rightButton) {
+            console.warn('setupNavigationButtons: rightButton element not found.');
+        } else {
+            rightButton.addEventListener('click', () => this.view.goRight());
+        }
     }
 
     private setupProgressSlider(): void {
-        const slider = document.querySelector('#progress-slider') as HTMLInputElement
-        if (!slider) return
+        const slider = this.getElement<HTMLInputElement>('navigation.progressSlider')
+        if (!slider) {
+            console.warn('setupProgressSlider: progressSlider element not found.');
+            return;
+        }
 
         slider.dir = this.view.book.dir
         slider.addEventListener('input', (e) => {
@@ -260,8 +547,11 @@ class EbookReader {
     }
 
     private addTickMarksToSlider(): void {
-        const tickMarks = document.querySelector('#tick-marks')
-        if (!tickMarks) return
+        const tickMarks = this.getElement('navigation.tickMarks')
+        if (!tickMarks) {
+            console.warn('addTickMarksToSlider: tickMarks element not found.');
+            return;
+        }
 
         for (const fraction of this.view.getSectionFractions()) {
             const option = document.createElement('option')
@@ -275,6 +565,10 @@ class EbookReader {
     }
 
     private handleKeyboardNavigation(event: KeyboardEvent): void {
+        if (!this.view) {
+            console.warn('handleKeyboardNavigation: view is not initialized.');
+            return;
+        }
         switch (event.key) {
             case 'ArrowLeft':
             case 'h':
@@ -288,6 +582,10 @@ class EbookReader {
     }
 
     private async loadBookMetadata(): Promise<void> {
+        if (!this.view?.book) {
+            console.warn('loadBookMetadata: view or book is not initialized.');
+            return;
+        }
         const { book } = this.view
         const metadata = book.metadata
 
@@ -300,23 +598,32 @@ class EbookReader {
     private updateBookTitle(metadata: BookMetadata): void {
         const title = BookMetadataFormatter.formatLanguageMap(metadata?.title) || 'Untitled Book'
         document.title = title
-        document.querySelector('#side-bar-title').textContent = title
+        const sidebarTitle = this.getElement('sidebar.title')
+        if (!sidebarTitle) {
+            console.warn('updateBookTitle: sidebar title element not found.');
+            return;
+        }
+        sidebarTitle.textContent = title
     }
 
     private updateAuthorInfo(metadata: BookMetadata): void {
-        const authorElement = document.querySelector('#side-bar-author')
-        if (authorElement) {
-            authorElement.textContent = BookMetadataFormatter.formatContributor(metadata?.author)
+        const authorElement = this.getElement('sidebar.author')
+        if (!authorElement) {
+            console.warn('updateAuthorInfo: sidebar author element not found.');
+            return;
         }
+        authorElement.textContent = BookMetadataFormatter.formatContributor(metadata?.author)
     }
 
     private async loadCoverImage(book: any): Promise<void> {
         const coverBlob = await book.getCover?.()
         if (coverBlob) {
-            const coverImage = document.querySelector('#side-bar-cover') as HTMLImageElement
-            if (coverImage) {
-                coverImage.src = URL.createObjectURL(coverBlob)
+            const coverImage = this.getElement<HTMLImageElement>('sidebar.cover')
+            if (!coverImage) {
+                console.warn('loadCoverImage: sidebar cover image element not found.');
+                return;
             }
+            coverImage.src = URL.createObjectURL(coverBlob)
         }
     }
 
@@ -329,10 +636,19 @@ class EbookReader {
             this.hideSidebar()
         })
 
-        document.querySelector('#toc-view')?.append(this.tocView.element)
+        const tocViewContainer = this.getElement('sidebar.tocView')
+        if (!tocViewContainer) {
+            console.warn('loadTableOfContents: sidebar tocView container element not found.');
+            return;
+        }
+        tocViewContainer.append(this.tocView.element)
     }
 
     private async loadAnnotations(): Promise<void> {
+        if (!this.view?.book) {
+            console.warn('loadAnnotations: view or book is not initialized.');
+            return;
+        }
         const bookmarks = await this.view.book.getCalibreBookmarks?.()
         if (!bookmarks) return
 
@@ -364,6 +680,10 @@ class EbookReader {
     }
 
     private setupAnnotationEventListeners(): void {
+        if (!this.view) {
+            console.warn('setupAnnotationEventListeners: view is not initialized.');
+            return;
+        }
         this.view.addEventListener('create-overlay', this.handleCreateOverlay.bind(this))
         this.view.addEventListener('draw-annotation', this.handleDrawAnnotation.bind(this))
         this.view.addEventListener('show-annotation', this.handleShowAnnotation.bind(this))
@@ -391,7 +711,11 @@ class EbookReader {
 
     private handleBookLoad(event: CustomEvent): void {
         const { doc } = event.detail
-        doc.addEventListener('keydown', this.handleKeyboardNavigation.bind(this))
+        if (doc) {
+            doc.addEventListener('keydown', this.handleKeyboardNavigation.bind(this))
+        } else {
+            console.warn('handleBookLoad: Document object is null in load event.');
+        }
     }
 
     private handleBookRelocate(event: CustomEvent<RelocateEvent>): void {
@@ -414,8 +738,11 @@ class EbookReader {
       percent: string,
       locationText: string
     ): void {
-        const slider = document.querySelector('#progress-slider') as HTMLInputElement
-        if (!slider) return
+        const slider = this.getElement<HTMLInputElement>('navigation.progressSlider')
+        if (!slider) {
+            console.warn('updateProgressSlider: progressSlider element not found.');
+            return;
+        }
 
         slider.style.visibility = 'visible'
         slider.value = fraction.toString()
@@ -424,62 +751,9 @@ class EbookReader {
 }
 
 // initialization.ts
-const initializeReader = async (file: File | string): Promise<void> => {
-    const reader = new EbookReader()
-    globalThis.reader = reader
-    await reader.openBook(file)
+export const createReader = async (config?: Partial<ReaderConfig>): Promise<EbookReader> => {
+    const reader = new EbookReader(config);
+    reader.initialize();
+    console.log("Finished creating new ebook reader!!")
+    return reader
 }
-
-const handleFileDrop = (event: DragEvent): void => {
-    event.preventDefault()
-
-    const items = Array.from(event.dataTransfer?.items || [])
-    const fileItem = items.find(item => item.kind === 'file')
-
-    if (!fileItem) return
-
-    const entry = fileItem.webkitGetAsEntry()
-    const file = entry?.isFile ? fileItem.getAsFile() : entry
-
-    if (file) {
-        initializeReader(file).catch(console.error)
-    }
-}
-
-const setupFileHandlers = (): void => {
-    const fileInput = document.querySelector('#file-input') as HTMLInputElement
-    const fileButton = document.querySelector('#file-button')
-    const dropTarget = document.querySelector('#drop-target')
-
-    if (!fileInput || !fileButton || !dropTarget) return
-
-    fileInput.addEventListener('change', (event) => {
-        const target = event.target as HTMLInputElement
-        const file = target.files?.[0]
-        if (file) {
-            initializeReader(file).catch(console.error)
-        }
-    })
-
-    fileButton.addEventListener('click', () => fileInput.click())
-    dropTarget.addEventListener('drop', handleFileDrop)
-    dropTarget.addEventListener('dragover', (e) => e.preventDefault())
-}
-
-// initialization.ts (continued)
-const initialize = (): void => {
-    const urlParams = new URLSearchParams(location.search)
-    const urlFile = urlParams.get('url')
-    const dropTarget = document.querySelector('#drop-target')
-
-    if (urlFile) {
-        initializeReader(urlFile).catch(console.error)
-    } else if (dropTarget) {
-        dropTarget['style'].visibility = 'visible'
-    }
-
-    setupFileHandlers()
-}
-
-// Start the application
-initialize()
