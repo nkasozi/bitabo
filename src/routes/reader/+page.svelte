@@ -47,7 +47,7 @@
 
 <div id="side-bar">
     <div id="side-bar-header">
-        <img id="side-bar-cover" alt="">
+        <img id="side-bar-cover" alt="" src="">
         <div>
             <h1 id="side-bar-title"></h1>
             <p id="side-bar-author"></p>
@@ -281,8 +281,7 @@
         pointer-events: auto;
     }
     :global(.menu li) {
-        padding: .5em 2em;
-        padding-left: 3em;
+        padding: .5em 2em .5em 3em;
         cursor: pointer;
     }
     :global(.menu li:hover) {
