@@ -13,9 +13,7 @@
 	</main>
 
 	<footer>
-		<p>
-
-		</p>
+		<p></p>
 	</footer>
 </div>
 
