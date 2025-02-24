@@ -60,25 +60,81 @@ const getFileEntries = async (entry) =>
 			).flat();
 
 const makeDirectoryLoader = async (entry) => {
+	console.log('Starting directory loader for entry:', entry.fullPath);
+
 	const entries = await getFileEntries(entry);
+	console.log('Found entries:', entries.map(e => e.fullPath));
+
+	console.log('Starting to process file entries...');
 	const files = await Promise.all(
 		entries.map(
 			(entry) =>
-				new Promise((resolve, reject) =>
+				new Promise((resolve, reject) => {
+					console.log('Processing entry:', entry.fullPath);
 					entry.file(
-						(file) => resolve([file, entry.fullPath]),
-						(error) => reject(error)
+						(file) => {
+							console.log('Successfully got file for:', entry.fullPath);
+							resolve([file, entry.fullPath]);
+						},
+						(error) => {
+							console.error('Error getting file for:', entry.fullPath, error);
+							reject(error);
+						}
 					)
-				)
+				})
 		)
 	);
-	const map = new Map(files.map(([file, path]) => [path.replace(entry.fullPath + '/', ''), file]));
+
+	console.log('All files processed, creating map...');
+	const map = new Map(files.map(([file, path]) => {
+		const key = path.replace(entry.fullPath + '/', '');
+		console.log('Mapping:', path, '->', key);
+		return [key, file];
+	}));
+
 	const decoder = new TextDecoder();
 	const decode = (x) => (x ? decoder.decode(x) : null);
-	const getBuffer = (name) => map.get(name)?.arrayBuffer() ?? null;
-	const loadText = async (name) => decode(await getBuffer(name));
-	const loadBlob = (name) => map.get(name);
-	const getSize = (name) => map.get(name)?.size ?? 0;
+
+	const getBuffer = (name) => {
+		console.log('Getting buffer for:', name);
+		const file = map.get(name);
+		if (!file) {
+			console.warn('File not found in map:', name);
+			return null;
+		}
+		return file.arrayBuffer();
+	};
+
+	const loadText = async (name) => {
+		console.log('Loading text for:', name);
+		const buffer = await getBuffer(name);
+		if (!buffer) {
+			console.warn('No buffer found for:', name);
+			return null;
+		}
+		const text = decode(buffer);
+		console.log('Text loaded for:', name, 'length:', text?.length);
+		return text;
+	};
+
+	const loadBlob = (name) => {
+		console.log('Loading blob for:', name);
+		const blob = map.get(name);
+		if (!blob) {
+			console.warn('Blob not found:', name);
+		} else {
+			console.log('Blob found:', name, 'size:', blob.size);
+		}
+		return blob;
+	};
+
+	const getSize = (name) => {
+		const size = map.get(name)?.size ?? 0;
+		console.log('Getting size for:', name, 'size:', size);
+		return size;
+	};
+
+	console.log('Directory loader ready. Map contains:', Array.from(map.keys()));
 	return { loadText, loadBlob, getSize };
 };
 
