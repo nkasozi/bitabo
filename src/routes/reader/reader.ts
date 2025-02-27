@@ -662,7 +662,7 @@ class EbookReader {
 		const bookmarks = await this.view.book.getCalibreBookmarks?.();
 		if (!bookmarks) return;
 
-		const { fromCalibreHighlight } = await import('/foliate-js/epubcfi.js?url');
+		const { fromCalibreHighlight } = await import('/static/foliate-js/epubcfi.js?url');
 
 		this.processBookmarks(bookmarks, fromCalibreHighlight);
 		this.setupAnnotationEventListeners();
@@ -755,9 +755,58 @@ class EbookReader {
 }
 
 // initialization.ts
-export const createReader = async (config?: Partial<ReaderConfig>): Promise<EbookReader> => {
+export const createReader = async (config?: Partial<ReaderConfig>): Promise<EbookReader & { openBook: any }> => {
 	const reader = new EbookReader(config);
 	reader.initialize();
 	console.log('Finished creating new ebook reader!!');
-	return reader;
+	
+	// Enhanced reader with additional method for cover extraction
+	const enhancedReader = {
+		...reader,
+		openBook: async (file: File | string, options: any = {}) => {
+			// If extractCoverOnly is true, just extract the cover
+			if (options.extractCoverOnly) {
+				if (file instanceof File && file.name.toLowerCase().endsWith('.epub')) {
+					try {
+						// Temporary open the book to extract cover
+						const view = document.createElement('foliate-view');
+						await view.open(file);
+						const book = view.book;
+						
+						if (book) {
+							// Extract cover image
+							const coverBlob = await book.getCover?.();
+							let coverUrl = '/placeholder-cover.png';
+							
+							if (coverBlob) {
+								coverUrl = URL.createObjectURL(coverBlob);
+							}
+							
+							// Extract title and author if available
+							const metadata = book.metadata || {};
+							const title = metadata.title ? 
+								(typeof metadata.title === 'string' ? metadata.title : Object.values(metadata.title)[0]) :
+								file.name.replace(/\.[^/.]+$/, "");
+								
+							const author = metadata.author ? 
+								(Array.isArray(metadata.author) ? 
+									metadata.author.map(a => typeof a === 'string' ? a : a.name).join(', ') : 
+									typeof metadata.author === 'string' ? metadata.author : '') : 
+								'Unknown Author';
+							
+							return { cover: coverUrl, title, author };
+						}
+					} catch (error) {
+						console.error('Failed to extract cover:', error);
+					}
+				}
+				return { cover: '/placeholder-cover.png' };
+			}
+			
+			// Normal book opening
+			return reader.openBook(file);
+		}
+	};
+	
+	return enhancedReader;
 };

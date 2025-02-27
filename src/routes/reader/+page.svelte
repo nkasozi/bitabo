@@ -1,11 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import Uppy from '@uppy/core';
-	import Dashboard from '@uppy/dashboard';
-	import GoogleDrive from '@uppy/google-drive';
-	import DropTarget from '@uppy/drop-target';
-	import '@uppy/core/dist/style.css';
-	import '@uppy/dashboard/dist/style.css';
 
 	// Reader configuration
 	const readerConfiguration = {
@@ -43,40 +37,8 @@
 
 	let isBookLoaded = false;
 	let reader: any = null;
-	let uppy: any = null;
 
 	onMount(async () => {
-		// Initialize Uppy
-		uppy = new Uppy({
-			restrictions: {
-				allowedFileTypes: ['.epub', '.pdf', '.mobi', '.azw3']
-			}
-		})
-			.use(Dashboard, {
-				inline: true,
-				target: '#reader-drop-target',
-				height: 400,
-				width: '100%',
-				proudlyDisplayPoweredByUppy: false,
-				showProgressDetails: true,
-				theme: 'light'
-			})
-			.use(GoogleDrive, {
-				companionUrl: 'https://companion.uppy.io'
-			})
-			.use(DropTarget, {
-				target: document.body
-			});
-
-		// Handle file selection
-		uppy.on('file-added', async (file: any) => {
-			try {
-				await handleFileSelection(file.data);
-			} catch (error) {
-				console.error('Error handling file:', error);
-				uppy.removeFile(file.id);
-			}
-		});
 
 		// Initialize reader
 		const { createReader } = await import('./reader');
@@ -85,7 +47,41 @@
 		// Check for URL parameters
 		const urlParams = new URLSearchParams(window.location.search);
 		const urlFile = urlParams.get('url');
-		if (urlFile) {
+		const sessionId = urlParams.get('session');
+		
+		// First check for session data (our new approach)
+		if (sessionId && sessionStorage.getItem(sessionId)) {
+			try {
+				console.log('Opening book from session storage');
+				const bookData = JSON.parse(sessionStorage.getItem(sessionId));
+				
+				// Convert data URL back to a file
+				const dataUrl = bookData.dataUrl;
+				const arr = dataUrl.split(',');
+				const mime = arr[0].match(/:(.*?);/)[1];
+				const bstr = atob(arr[1]);
+				let n = bstr.length;
+				const u8arr = new Uint8Array(n);
+				
+				while (n--) {
+					u8arr[n] = bstr.charCodeAt(n);
+				}
+				
+				// Create file from the data
+				const file = new File([u8arr], bookData.name, { type: mime });
+				
+				// Open the book
+				await reader.openBook(file);
+				isBookLoaded = true;
+				
+				// Clean up session storage after successful load
+				sessionStorage.removeItem(sessionId);
+			} catch (error) {
+				console.error('Error opening book from session storage:', error);
+			}
+		} 
+		// Fall back to URL parameter (original approach)
+		else if (urlFile) {
 			try {
 				await reader.openBook(urlFile);
 				isBookLoaded = true;
@@ -96,42 +92,13 @@
 	});
 
 	onDestroy(() => {
-		if (uppy) {
-			uppy.close();
-		}
+		// Cleanup if needed
 	});
 
-	async function handleFileSelection(file: File) {
-		if (!reader) {
-			console.warn('Reader not initialized');
-			return;
-		}
-
-		try {
-			await reader.openBook(file);
-			isBookLoaded = true;
-
-			// Hide the Uppy dashboard
-			const dropTarget = document.getElementById('reader-drop-target');
-			if (dropTarget) {
-				dropTarget.style.display = 'none';
-			}
-		} catch (error) {
-			console.error('Error opening book:', error);
-			throw error;
-		}
-	}
+	// Reader page is now focused only on displaying the selected book
 </script>
 
 <div id="ebook-container" class:book-loaded={isBookLoaded}></div>
-
-<div
-	id="reader-drop-target"
-	class:hidden={isBookLoaded}
-	style="background: white; padding: 20px; border-radius: 8px;"
->
-	<!-- Uppy will mount here -->
-</div>
 
 <div id="dimming-overlay" aria-hidden="true"></div>
 
@@ -212,20 +179,7 @@
         width: 100%;
     }
 
-    #reader-drop-target {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 90%;
-        max-width: 700px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        z-index: 1000;
-    }
-
-    #reader-drop-target.hidden {
-        display: none;
-    }
+    /* Removed Uppy drop target styles */
 
     :global(.icon) {
         display: block;
@@ -333,24 +287,5 @@
         color: GrayText;
     }
 
-    /* Uppy customization */
-    :global(.uppy-Dashboard-inner) {
-        border: none !important;
-    }
-
-    :global(.uppy-Dashboard-dropFilesHereHint) {
-        border: 2px dashed #ccc;
-    }
-
-    :global(.uppy-Dashboard-browse) {
-        color: #2275d7;
-    }
-
-    :global(.uppy-DashboardContent-bar) {
-        border-bottom: 1px solid #eaeaea;
-    }
-
-    :global(.uppy-Dashboard-upload) {
-        background-color: #2275d7;
-    }
+    /* Reader styles */
 </style>

@@ -13,7 +13,7 @@
 	</main>
 
 	<footer>
-		<p></p>
+		<p>Bitabo E-book Reader</p>
 	</footer>
 </div>
 
@@ -39,6 +39,8 @@
 		justify-content: center;
 		align-items: center;
 		padding: 12px;
+		font-size: 0.8rem;
+		color: #666;
 	}
 
 	footer a {
