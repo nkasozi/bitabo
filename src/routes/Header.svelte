@@ -4,17 +4,14 @@
 
 <header>
 	<div class="corner">
-		<a href="/">
+		<a href="/library">
 			<h1 class="logo">Bitabo</h1>
 		</a>
 	</div>
 
 	<nav>
 		<ul>
-			<li aria-current={$page.url.pathname === '/' ? 'page' : undefined}>
-				<a href="/">Home</a>
-			</li>
-			<li aria-current={$page.url.pathname === '/library' ? 'page' : undefined}>
+			<li aria-current={$page.url.pathname === '/library' || $page.url.pathname === '/' ? 'page' : undefined}>
 				<a href="/library">Library</a>
 			</li>
 		</ul>
