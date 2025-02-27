@@ -185,11 +185,74 @@
 		});
 	}
 	
+	// Prepare library books for storage by fetching cover blobs
+	async function prepareLibraryBooksForStorage() {
+		const preparedBooks = [];
+		
+		// Process books sequentially to avoid transaction timeout
+		for (let i = 0; i < libraryBooks.length; i++) {
+			const book = libraryBooks[i];
+			
+			// For books with blob URLs, store the actual cover blob
+			let coverBlob = null;
+			if (book.coverUrl && book.coverUrl.startsWith('blob:')) {
+				try {
+					// Fetch the actual blob data from the URL
+					const response = await fetch(book.coverUrl);
+					coverBlob = await response.blob();
+					console.log(`Successfully fetched cover blob for "${book.title}"`);
+				} catch (error) {
+					console.error(`Error fetching cover blob for "${book.title}":`, error);
+					// If we can't fetch the blob, we'll use null and a placeholder will be used later
+				}
+			} else if (book.coverUrl === '/placeholder-cover.png') {
+				// Leave coverBlob as null for placeholder images
+				console.log(`Using placeholder for "${book.title}"`);
+			}
+			
+			// Create a serializable book entry
+			const serializedBook = {
+				id: i.toString(), // Use index as ID
+				title: book.title,
+				author: book.author,
+				fileName: book.file.name,
+				fileType: book.file.type,
+				fileSize: book.file.size,
+				coverUrl: book.coverUrl.startsWith('blob:') ? null : book.coverUrl, // Only store non-blob URLs
+				coverBlob: coverBlob, // Store the actual blob data instead of URL
+				file: book.file,
+				lastAccessed: Date.now()
+			};
+			
+			console.log(`Prepared book "${book.title}" with coverBlob: ${!!coverBlob}`);
+			preparedBooks.push(serializedBook);
+		}
+		
+		return preparedBooks;
+	}
+	
 	// Save library state to IndexedDB
 	async function saveLibraryState() {
 		if (!browser || libraryBooks.length === 0) return;
 		
 		try {
+			// First prepare all book data (fetch blobs) before starting any transaction
+			const preparedBooks = await prepareLibraryBooksForStorage();
+			
+			// Create the library entry with the prepared books
+			const libraryEntry = {
+				id: 'current_library',
+				books: preparedBooks,
+				selectedIndex: selectedBookIndex,
+				timestamp: Date.now()
+			};
+			
+			console.log('Library entry prepared, now saving to IndexedDB:', JSON.stringify({
+				id: libraryEntry.id,
+				booksCount: libraryEntry.books.length,
+				selectedIndex: libraryEntry.selectedIndex
+			}));
+			
 			const db = await openDatabase();
 			
 			// Ensure the store exists before trying to use it
@@ -242,61 +305,49 @@
 				// Now save with the new database connection
 				const newDb = await openDatabase();
 				
-				// Create transaction with the new connection
+				// Start a new transaction
 				const transaction = newDb.transaction([LIBRARY_STORE], 'readwrite');
 				const store = transaction.objectStore(LIBRARY_STORE);
-				await saveLibraryData(store);
+				
+				// Save the prepared data
+				await new Promise<void>((resolve, reject) => {
+					const request = store.put(libraryEntry);
+					
+					request.onsuccess = function() {
+						console.log('Library state saved to IndexedDB successfully');
+						resolve();
+					};
+					
+					request.onerror = function(event) {
+						console.error('Error putting library data:', event.target.error);
+						reject(event.target.error);
+					};
+				});
+				
 				return;
 			}
 			
-			// Normal flow when store exists
+			// Normal flow when store exists - all async prep work is done
 			const transaction = db.transaction([LIBRARY_STORE], 'readwrite');
 			const store = transaction.objectStore(LIBRARY_STORE);
-			await saveLibraryData(store);
+			
+			// Save directly with the prepared data
+			await new Promise<void>((resolve, reject) => {
+				const request = store.put(libraryEntry);
+				
+				request.onsuccess = function() {
+					console.log('Library state saved to IndexedDB successfully');
+					resolve();
+				};
+				
+				request.onerror = function(event) {
+					console.error('Error putting library data:', event.target.error);
+					reject(event.target.error);
+				};
+			});
 		} catch (error) {
 			console.error('Error saving library state:', error);
 		}
-	}
-	
-	// Helper function to save library data to a store
-	async function saveLibraryData(store: IDBObjectStore) {
-		// Create a serializable version of the library books
-		const serializableBooks = await Promise.all(libraryBooks.map(async (book, index) => {
-			return {
-				id: index.toString(), // Use index as ID
-				title: book.title,
-				author: book.author,
-				fileName: book.file.name,
-				fileType: book.file.type,
-				fileSize: book.file.size,
-				coverUrl: book.coverUrl,
-				file: book.file,
-				lastAccessed: Date.now()
-			};
-		}));
-		
-		// Save as a single library entry
-		const libraryEntry = {
-			id: 'current_library',
-			books: serializableBooks,
-			selectedIndex: selectedBookIndex,
-			timestamp: Date.now()
-		};
-		
-		// Store in IndexedDB
-		return new Promise<void>((resolve, reject) => {
-			const request = store.put(libraryEntry);
-			
-			request.onsuccess = function() {
-				console.log('Library state saved to IndexedDB');
-				resolve();
-			};
-			
-			request.onerror = function(event) {
-				console.error('Error putting library data:', event.target.error);
-				reject(event.target.error);
-			};
-		});
 	}
 	
 	// Load library state from IndexedDB
@@ -322,13 +373,43 @@
 				
 				request.onsuccess = function(event) {
 					const libraryEntry = event.target.result;
+					console.log('Library entry from IndexedDB:', libraryEntry);
 					
 					if (libraryEntry && libraryEntry.books && libraryEntry.books.length > 0) {
 						// Restore books
 						console.log('Loading library from IndexedDB:', libraryEntry.books.length, 'books');
-						libraryBooks = libraryEntry.books;
+						
+						// Process each book to regenerate blob URLs for stored coverBlobs
+						libraryBooks = libraryEntry.books.map(book => {
+							console.log('Processing book:', book.title, 'coverBlob exists:', !!book.coverBlob, 'coverUrl:', book.coverUrl);
+							let coverUrl = book.coverUrl;
+							
+							// If we have a stored cover blob, create a new blob URL
+							if (book.coverBlob) {
+								try {
+									// Create a new blob URL from the stored blob
+									coverUrl = URL.createObjectURL(book.coverBlob);
+									console.log(`Regenerated blob URL for book "${book.title}": ${coverUrl}`);
+								} catch (error) {
+									console.error(`Error regenerating blob URL for "${book.title}":`, error);
+									// Fall back to placeholder if regeneration fails
+									coverUrl = '/placeholder-cover.png';
+								}
+							} else if (!coverUrl) {
+								// If no URL and no blob, use placeholder
+								console.log(`Using placeholder for "${book.title}" as no coverUrl or coverBlob found`);
+								coverUrl = '/placeholder-cover.png';
+							}
+							
+							return {
+								...book,
+								coverUrl: coverUrl
+							};
+						});
+						
 						selectedBookIndex = libraryEntry.selectedIndex || 0;
 						isLibraryLoaded = true;
+						console.log('Library loaded successfully with', libraryBooks.length, 'books');
 						resolve(true);
 					} else {
 						console.log('No saved library found in IndexedDB');
@@ -508,7 +589,7 @@
 				// Initialize coverflow with custom options to make it taller
 				coverflow = new window.Coverflow(bookshelf, {
 					size: '300',      // Larger cover images (was 180)
-					spacing: '40',    // More space between covers (was 20)
+					spacing: '80',    // More space between covers (was 20)
 					shadow: 'true',   // Enable shadow effect for depth
 					responsive: 'true', // Enable responsive resizing
 				});
@@ -586,7 +667,7 @@
 			showNotification(`Book removed from library.`);
 		}
 	}
-	
+
 	// Function to clear the entire library
 	async function clearLibrary() {
 		if (!browser || !isLibraryLoaded || libraryBooks.length === 0) return;
@@ -615,7 +696,7 @@
 			}
 		}
 	}
-	
+
 	// Function to show notification
 	function showNotification(message: string, type: 'info' | 'error' = 'info') {
 		if (!browser) return;
@@ -656,7 +737,7 @@
 			}
 		}, 3000);
 	}
-	
+
 	// Handle keyboard navigation
 	function handleKeyNavigation(event: KeyboardEvent) {
 		if (!browser || !coverflow || !isLibraryLoaded) return;
@@ -794,7 +875,13 @@
 			});
 			
 			// Save selected index before navigation
+			console.log('Before saving library state:', JSON.stringify({
+				libraryBooksCount: libraryBooks.length,
+				selectedBookIndex: selectedBookIndex
+			}));
+			
 			await saveLibraryState();
+			console.log('Library state saved, now navigating to reader');
 			
 			// Navigate to reader with the session ID
 			console.log(`Opening book "${selectedBook.title}" with session ID: ${bookSessionId}`);
@@ -930,9 +1017,16 @@
 		window.removeEventListener('keydown', handleKeyNavigation);
 		// No need to remove click handler as we're not adding it anymore
 
+		// Save library state before unmounting to ensure it's saved
+		console.log('Component being destroyed, saving library state with', libraryBooks.length, 'books');
+		saveLibraryState().catch(err => {
+			console.error('Failed to save library state on destroy:', err);
+		});
+
 		// Clean up any created object URLs
 		libraryBooks.forEach(book => {
 			if (book.coverUrl && book.coverUrl.startsWith('blob:')) {
+				console.log(`Revoking object URL for book "${book.title}": ${book.coverUrl}`);
 				URL.revokeObjectURL(book.coverUrl);
 			}
 		});

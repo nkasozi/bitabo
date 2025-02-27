@@ -11,9 +11,10 @@
     // Configuration with defaults
     const settings = {
       coverSize: parseInt(options?.size || container.dataset.size) || 300,
-      spacing: parseInt(options?.spacing || container.dataset.spacing) || 40,
+      spacing: parseInt(options?.spacing || container.dataset.spacing) || 70, // Increased default spacing from 40 to 70
       showReflection: (options?.shadow || container.dataset.shadow) === 'true',
       backgroundColor: options?.bgcolor || container.dataset.bgcolor || 'transparent',
+      // Start index will be set to middle item based on number of covers
       startIndex: parseInt(options?.index || container.dataset.index) || 0,
       responsive: (options?.responsive || container.dataset.responsive) !== 'false' // responsive by default
     };
@@ -288,6 +289,16 @@
       if (covers.length === 0) {
         console.warn("No cover images found in container");
         return null;
+      }
+      
+      // Calculate middle index if no specific startIndex was provided
+      if (!options?.index && !container.dataset.index) {
+        // If there are covers, select the middle one (for odd numbers)
+        // or one of the middle two (for even numbers)
+        if (covers.length > 0) {
+          selectedIndex = Math.floor(covers.length / 2);
+          console.log(`Auto-selecting middle book at index ${selectedIndex} out of ${covers.length} books`);
+        }
       }
       
       // Setup container, covers, and keyboard navigation
