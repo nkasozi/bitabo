@@ -7,6 +7,11 @@
 	import DropTarget from '@uppy/drop-target';
 	import '@uppy/core/dist/style.css';
 	import '@uppy/dashboard/dist/style.css';
+	
+	// Import service worker utilities
+	import { registerServiceWorker, getReadingProgress as swGetProgress, 
+	         addBookToLibrary, getAllBooks, deleteBook, migrateData, 
+	         sendMessageToSW } from '$lib/serviceWorker';
 
 	// Supported e-book formats
 	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3'];
@@ -18,12 +23,67 @@
 	let libraryBooks: any[] = [];
 	let selectedBookIndex = 0;
 	
-	// Database constants
+	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
 	const BOOKS_STORE = 'books';
-	const LIBRARY_STORE = 'library';
-	// Start with undefined version - we'll detect the actual version when opening
-	let dbVersion: number | undefined;
+	// LIBRARY_STORE has been eliminated in favor of storing books individually
+
+// Hash function for generating unique IDs - at module scope
+function hashString(str) {
+	let hash = 0;
+	for (let i = 0; i < str.length; i++) {
+		const char = str.charCodeAt(i);
+		hash = ((hash << 5) - hash) + char;
+		hash = hash & hash; // Convert to 32bit integer
+	}
+	return Math.abs(hash).toString(16); // Convert to hex string
+}
+	
+	// Flag to track service worker registration
+	let isServiceWorkerRegistered = false;
+	
+	// Initialize service worker
+	async function initServiceWorker() {
+		if (browser) {
+			console.log('[DEBUG] Registering service worker');
+			
+			try {
+				// Try to register service worker
+				isServiceWorkerRegistered = await registerServiceWorker();
+				console.log('[DEBUG] Service worker registered status:', isServiceWorkerRegistered);
+				
+				// If service worker is registered, make a test call to verify it's working
+				if (isServiceWorkerRegistered) {
+					try {
+						const response = await sendMessageToSW({ type: 'ping' });
+						console.log('[DEBUG] Service worker ping test response:', response);
+						
+						// If we made it here, service worker is responsive
+						if (response && response.type === 'pong') {
+							console.log('[DEBUG] Service worker communication verified!');
+							
+							// Try to migrate old data if present
+							console.log('[DEBUG] Checking for data to migrate...');
+							const migrated = await migrateData();
+							console.log('[DEBUG] Data migration status:', migrated);
+						} else {
+							console.error('[DEBUG] Service worker responded with unexpected format:', response);
+							isServiceWorkerRegistered = false;
+						}
+					} catch (error) {
+						console.error('[DEBUG] Service worker communication failed:', error);
+						isServiceWorkerRegistered = false;
+					}
+				}
+				
+				return isServiceWorkerRegistered;
+			} catch (error) {
+				console.error('[DEBUG] Service worker initialization failed:', error);
+				isServiceWorkerRegistered = false;
+				return false;
+			}
+		}
+	}
 
 	// Function to extract cover from e-book file
 	async function extractCover(file: File): Promise<{ url: string, title: string, author: string }> {
@@ -79,107 +139,39 @@
 		}
 	}
 
-	// Initialize or open IndexedDB
+	// Simple database open function - using only BOOKS_STORE
 	function openDatabase(): Promise<IDBDatabase> {
 		return new Promise((resolve, reject) => {
-			// First check if we need to get the current version
-			if (dbVersion === undefined) {
-				console.log(`Detecting existing database version for ${DB_NAME}`);
-				// Try to get the current version first without specifying a version
-				const detectRequest = indexedDB.open(DB_NAME);
-				
-				detectRequest.onsuccess = function(e) {
-					const db = e.target.result;
-					const currentVersion = db.version;
-					console.log(`Found existing database version: ${currentVersion}`);
-					dbVersion = currentVersion; // Update version tracker
-					db.close();
-					
-					// Now that we have the correct version, call openDatabase again
-					openDatabase().then(resolve).catch(reject);
-				};
-				
-				detectRequest.onerror = function(e) {
-					console.log(`No existing database found, will create with version 1`);
-					dbVersion = 1; // Default to version 1 if no database exists
-					openDatabase().then(resolve).catch(reject);
-				};
-				
-				return; // Exit here and wait for recursive call
-			}
-			
-			// We now have a version number, proceed with opening
-			console.log(`Opening database ${DB_NAME} with version ${dbVersion}`);
-			const request = indexedDB.open(DB_NAME, dbVersion);
+			console.log(`Opening database ${DB_NAME}`);
+			const request = indexedDB.open(DB_NAME);
 			
 			request.onupgradeneeded = function(event) {
 				const db = event.target.result;
-				console.log(`Database upgrade needed from ${event.oldVersion} to ${event.newVersion}`);
+				console.log(`Creating database stores if needed`);
 				
 				// Create books store if it doesn't exist
 				if (!db.objectStoreNames.contains(BOOKS_STORE)) {
 					console.log('Creating books store');
-					db.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
+					const bookStore = db.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
+					
+					// Add useful indexes
+					bookStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+					bookStore.createIndex('title', 'title', { unique: false });
+					bookStore.createIndex('author', 'author', { unique: false });
+					
+					console.log('Created books store with indexes');
 				}
-				
-				// Create library store if it doesn't exist
-				if (!db.objectStoreNames.contains(LIBRARY_STORE)) {
-					console.log('Creating library store');
-					const libraryStore = db.createObjectStore(LIBRARY_STORE, { keyPath: 'id' });
-					// Add index for easy retrieval
-					libraryStore.createIndex('timestamp', 'timestamp', { unique: false });
-				}
-			};
-			
-			request.onblocked = function() {
-				console.warn('Database upgrade was blocked - close other tabs and try again');
-				reject(new Error('Database upgrade blocked'));
 			};
 			
 			request.onerror = function(event) {
 				const error = event.target.error;
 				console.error('Error opening database:', error);
-				
-				// Handle version error specifically
-				if (error.name === 'VersionError') {
-					console.log('Version error detected, attempting to recover by using existing version');
-					// Try to get the current version
-					const req = indexedDB.open(DB_NAME);
-					req.onsuccess = function(e) {
-						const db = e.target.result;
-						const currentVersion = db.version;
-						console.log(`Found existing database version: ${currentVersion}`);
-						dbVersion = currentVersion; // Update our version tracker
-						db.close();
-						
-						// Retry with the correct version
-						const retryRequest = indexedDB.open(DB_NAME, currentVersion);
-						
-						retryRequest.onsuccess = function(ev) {
-							console.log('Successfully reopened database with correct version');
-							resolve(ev.target.result);
-						};
-						
-						retryRequest.onerror = function(ev) {
-							console.error('Still failed to open database:', ev.target.error);
-							reject(ev.target.error);
-						};
-					};
-					
-					req.onerror = function(e) {
-						console.error('Failed to recover from version error:', e.target.error);
-						reject(error);
-					};
-				} else {
-					reject(error);
-				}
+				reject(error);
 			};
 			
 			request.onsuccess = function(event) {
 				const db = event.target.result;
-				// Store the version for future reference
-				dbVersion = db.version;
-				console.log(`Successfully opened database with version ${dbVersion}`);
+				console.log(`Successfully opened database`);
 				resolve(db);
 			};
 		});
@@ -210,9 +202,16 @@
 				console.log(`Using placeholder for "${book.title}"`);
 			}
 			
+			// Generate a unique hash ID by combining book attributes
+			// Using hashString function defined at module scope
+			
+			// Create a unique book identifier from its attributes
+			const hashSource = `${book.title}-${book.author}-${book.file.name}-${book.file.size}`;
+			const uniqueId = hashString(hashSource);
+			
 			// Create a serializable book entry
 			const serializedBook = {
-				id: i.toString(), // Use index as ID
+				id: uniqueId, // Use hash as permanent unique ID
 				title: book.title,
 				author: book.author,
 				fileName: book.file.name,
@@ -231,255 +230,364 @@
 		return preparedBooks;
 	}
 	
-	// Save library state to IndexedDB
-	async function saveLibraryState() {
-		if (!browser || libraryBooks.length === 0) return;
+	// Save individual book to IndexedDB
+	async function saveBook(book) {
+		if (!browser) return false;
 		
 		try {
-			// First prepare all book data (fetch blobs) before starting any transaction
-			const preparedBooks = await prepareLibraryBooksForStorage();
+			// Ensure book has all required fields
+			if (!book.id) {
+				console.error('Cannot save book without ID', book);
+				return false;
+			}
 			
-			// Create the library entry with the prepared books
-			const libraryEntry = {
-				id: 'current_library',
-				books: preparedBooks,
-				selectedIndex: selectedBookIndex,
-				timestamp: Date.now()
-			};
+			// Prepare book data for storage - handle any blob data
+			let preparedBook = {...book};
 			
-			console.log('Library entry prepared, now saving to IndexedDB:', JSON.stringify({
-				id: libraryEntry.id,
-				booksCount: libraryEntry.books.length,
-				selectedIndex: libraryEntry.selectedIndex
-			}));
+			// If book has a coverUrl that's a blob and no coverBlob yet, convert it
+			if (book.coverUrl && book.coverUrl.startsWith('blob:') && !book.coverBlob) {
+				try {
+					// Fetch the blob data
+					const response = await fetch(book.coverUrl);
+					const coverBlob = await response.blob();
+					
+					// Add the blob data
+					preparedBook.coverBlob = coverBlob;
+					// Don't store the blob URL directly as it's temporary
+					preparedBook.coverUrl = null;
+					console.log(`Fetched cover blob for book "${book.title}"`);
+				} catch (error) {
+					console.error(`Error fetching cover blob for book "${book.title}":`, error);
+					// Keep the original book data without the blob
+				}
+			}
+			
+			// Always ensure lastAccessed is present
+			preparedBook.lastAccessed = preparedBook.lastAccessed || Date.now();
 			
 			const db = await openDatabase();
 			
-			// Ensure the store exists before trying to use it
-			if (!db.objectStoreNames.contains(LIBRARY_STORE)) {
-				console.log('Library store needs to be created first');
-				
-				// Close current connection
-				db.close();
-				
-				// Calculate new version
-				const newVersion = dbVersion + 1;
-				console.log(`Upgrading database from version ${dbVersion} to ${newVersion}`);
-				
-				// Update our tracked version
-				dbVersion = newVersion;
-				
-				// Open with a higher version to trigger upgrade
-				const upgradeRequest = indexedDB.open(DB_NAME, newVersion);
-				
-				await new Promise((resolve, reject) => {
-					upgradeRequest.onupgradeneeded = function(event) {
-						const upgradedDb = event.target.result;
-						console.log(`Upgrade in progress from ${event.oldVersion} to ${event.newVersion}`);
-						
-						// Create library store if it doesn't exist
-						if (!upgradedDb.objectStoreNames.contains(LIBRARY_STORE)) {
-							const libraryStore = upgradedDb.createObjectStore(LIBRARY_STORE, { keyPath: 'id' });
-							// Add index for easy retrieval
-							libraryStore.createIndex('timestamp', 'timestamp', { unique: false });
-							console.log('Library store created successfully');
-						}
-					};
-					
-					upgradeRequest.onblocked = function() {
-						console.warn('Database upgrade was blocked - close other tabs');
-						reject(new Error('Database upgrade blocked'));
-					};
-					
-					upgradeRequest.onsuccess = function(event) {
-						console.log('Database upgraded successfully');
-						resolve(undefined);
-					};
-					
-					upgradeRequest.onerror = function(event) {
-						console.error('Error upgrading database:', event.target.error);
-						reject(event.target.error);
-					};
-				});
-				
-				// Now save with the new database connection
-				const newDb = await openDatabase();
-				
-				// Start a new transaction
-				const transaction = newDb.transaction([LIBRARY_STORE], 'readwrite');
-				const store = transaction.objectStore(LIBRARY_STORE);
-				
-				// Save the prepared data
-				await new Promise<void>((resolve, reject) => {
-					const request = store.put(libraryEntry);
-					
-					request.onsuccess = function() {
-						console.log('Library state saved to IndexedDB successfully');
-						resolve();
-					};
-					
-					request.onerror = function(event) {
-						console.error('Error putting library data:', event.target.error);
-						reject(event.target.error);
-					};
-				});
-				
-				return;
-			}
+			// Start a transaction to save the book
+			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
+			const store = transaction.objectStore(BOOKS_STORE);
 			
-			// Normal flow when store exists - all async prep work is done
-			const transaction = db.transaction([LIBRARY_STORE], 'readwrite');
-			const store = transaction.objectStore(LIBRARY_STORE);
-			
-			// Save directly with the prepared data
+			// Save the book
 			await new Promise<void>((resolve, reject) => {
-				const request = store.put(libraryEntry);
+				const request = store.put(preparedBook);
 				
 				request.onsuccess = function() {
-					console.log('Library state saved to IndexedDB successfully');
+					console.log(`Book "${preparedBook.title}" saved to IndexedDB successfully`);
 					resolve();
 				};
 				
 				request.onerror = function(event) {
-					console.error('Error putting library data:', event.target.error);
+					console.error(`Error saving book "${preparedBook.title}":`, event.target.error);
 					reject(event.target.error);
 				};
 			});
+			
+			return true;
 		} catch (error) {
-			console.error('Error saving library state:', error);
+			console.error('Error saving book:', error);
+			return false;
 		}
 	}
 	
-	// Load library state from IndexedDB
+	// Save all books in the library
+	async function saveAllBooks() {
+		if (!browser || libraryBooks.length === 0) return false;
+		
+		console.log(`Saving ${libraryBooks.length} books to IndexedDB`);
+		
+		try {
+			// Save each book individually
+			for (const book of libraryBooks) {
+				await saveBook(book);
+			}
+			
+			console.log('All books saved successfully');
+			return true;
+		} catch (error) {
+			console.error('Error saving all books:', error);
+			return false;
+		}
+	}
+	
+	// Delete a book from the database by ID
+	async function removeBookFromDB(bookId) {
+		if (!browser || !bookId) return false;
+		
+		try {
+			const db = await openDatabase();
+			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
+			const store = transaction.objectStore(BOOKS_STORE);
+			
+			await new Promise<void>((resolve, reject) => {
+				const request = store.delete(bookId);
+				
+				request.onsuccess = function() {
+					console.log(`Book with ID ${bookId} deleted successfully`);
+					resolve();
+				};
+				
+				request.onerror = function(event) {
+					console.error(`Error deleting book with ID ${bookId}:`, event.target.error);
+					reject(event.target.error);
+				};
+			});
+			
+			return true;
+		} catch (error) {
+			console.error(`Error deleting book with ID ${bookId}:`, error);
+			return false;
+		}
+	}
+	
+	// Load all books directly from IndexedDB
 	async function loadLibraryState(): Promise<boolean> {
 		if (!browser) return false;
 		
 		try {
-			const db = await openDatabase();
+			console.log('[DEBUG] Loading books directly from IndexedDB');
 			
-			// Check if the store exists before attempting to use it
-			if (!db.objectStoreNames.contains(LIBRARY_STORE)) {
-				console.log('Library store not found in database, will be created on first save');
-				return false;
+			// Ensure service worker is registered for background operations
+			if (!isServiceWorkerRegistered) {
+				console.log('[DEBUG] Service worker not registered, initializing');
+				await initServiceWorker();
 			}
 			
-			// Now we can safely start a transaction
-			const transaction = db.transaction([LIBRARY_STORE], 'readonly');
-			const store = transaction.objectStore(LIBRARY_STORE);
+			// Initialize an empty array for books
+			let books: any[] = [];
 			
-			// Get the current library
-			return new Promise((resolve) => {
-				const request = store.get('current_library');
+			// Use standard IndexedDB operations to get all books
+			try {
+				const db = await openDatabase();
 				
-				request.onsuccess = function(event) {
-					const libraryEntry = event.target.result;
-					console.log('Library entry from IndexedDB:', libraryEntry);
+				// Check if the books store exists
+				if (db.objectStoreNames.contains(BOOKS_STORE)) {
+					console.log('[DEBUG] Using BOOKS_STORE to get all books');
+					const transaction = db.transaction([BOOKS_STORE], 'readonly');
+					const store = transaction.objectStore(BOOKS_STORE);
 					
-					if (libraryEntry && libraryEntry.books && libraryEntry.books.length > 0) {
-						// Restore books
-						console.log('Loading library from IndexedDB:', libraryEntry.books.length, 'books');
+					// Get all books using getAll()
+					const allBooks = await new Promise<any[]>((resolve) => {
+						const request = store.getAll();
 						
-						// Process each book to regenerate blob URLs for stored coverBlobs
-						libraryBooks = libraryEntry.books.map(book => {
-							console.log('Processing book:', book.title, 'coverBlob exists:', !!book.coverBlob, 'coverUrl:', book.coverUrl);
-							let coverUrl = book.coverUrl;
+						request.onsuccess = function() {
+							resolve(request.result || []);
+						};
+						
+						request.onerror = function() {
+							console.error('[DEBUG] Error getting books:', request.error);
+							resolve([]);
+						};
+					});
+					
+					if (allBooks.length > 0) {
+						console.log('[DEBUG] Found books in books store:', allBooks.length);
+						books = allBooks;
+						selectedBookIndex = 0; // Default to first book
+					} else {
+						console.log('[DEBUG] No books found in books store');
+					}
+				} else {
+					console.log('[DEBUG] Books store not found in database');
+					
+					// Try legacy approach using LIBRARY_STORE (for backward compatibility)
+					if (db.objectStoreNames.contains('library')) {
+						console.log('[DEBUG] Attempting to migrate from old library store format');
+						
+						const transaction = db.transaction(['library'], 'readonly');
+						const store = transaction.objectStore('library');
+						
+						const libraryEntry = await new Promise<any>((resolve) => {
+							const request = store.get('current_library');
 							
-							// If we have a stored cover blob, create a new blob URL
-							if (book.coverBlob) {
-								try {
-									// Create a new blob URL from the stored blob
-									coverUrl = URL.createObjectURL(book.coverBlob);
-									console.log(`Regenerated blob URL for book "${book.title}": ${coverUrl}`);
-								} catch (error) {
-									console.error(`Error regenerating blob URL for "${book.title}":`, error);
-									// Fall back to placeholder if regeneration fails
-									coverUrl = '/placeholder-cover.png';
-								}
-							} else if (!coverUrl) {
-								// If no URL and no blob, use placeholder
-								console.log(`Using placeholder for "${book.title}" as no coverUrl or coverBlob found`);
-								coverUrl = '/placeholder-cover.png';
-							}
+							request.onsuccess = function() {
+								resolve(request.result);
+							};
 							
-							return {
-								...book,
-								coverUrl: coverUrl
+							request.onerror = function() {
+								console.error('[DEBUG] Error getting library entry:', request.error);
+								resolve(null);
 							};
 						});
 						
-						selectedBookIndex = libraryEntry.selectedIndex || 0;
-						isLibraryLoaded = true;
-						console.log('Library loaded successfully with', libraryBooks.length, 'books');
-						resolve(true);
-					} else {
-						console.log('No saved library found in IndexedDB');
-						resolve(false);
+						if (libraryEntry && libraryEntry.books && libraryEntry.books.length > 0) {
+							console.log('[DEBUG] Found books in old library store, migrating:', libraryEntry.books.length);
+							books = libraryEntry.books;
+							
+							// Save these to the new format
+							for (const book of books) {
+								await saveBook(book);
+							}
+							
+							console.log('[DEBUG] Migration complete');
+						}
 					}
-				};
+				}
+			} catch (dbError) {
+				console.error('[DEBUG] Error accessing IndexedDB directly:', dbError);
+			}
+			
+			// Final check if we have any books to display
+			if (books.length > 0) {
+				console.log('[DEBUG] Processing', books.length, 'books for display');
 				
-				request.onerror = function(event) {
-					console.error('Error loading library state:', event.target.error);
-					resolve(false);
-				};
-			});
+				// Process each book to regenerate blob URLs for stored coverBlobs
+				libraryBooks = books.map(book => {
+					console.log('[DEBUG] Processing book:', book.title, 
+						'coverBlob exists:', !!book.coverBlob, 
+						'coverUrl:', book.coverUrl);
+					
+					let coverUrl = book.coverUrl;
+					
+					// If we have a stored cover blob, create a new blob URL
+					if (book.coverBlob) {
+						try {
+							// Create a new blob URL from the stored blob
+							coverUrl = URL.createObjectURL(book.coverBlob);
+							console.log(`[DEBUG] Regenerated blob URL for book "${book.title}": ${coverUrl}`);
+						} catch (error) {
+							console.error(`[DEBUG] Error regenerating blob URL for "${book.title}":`, error);
+							// Fall back to placeholder if regeneration fails
+							coverUrl = '/placeholder-cover.png';
+						}
+					} else if (!coverUrl) {
+						// If no URL and no blob, use placeholder
+						console.log(`[DEBUG] Using placeholder for "${book.title}" as no coverUrl or coverBlob found`);
+						coverUrl = '/placeholder-cover.png';
+					}
+					
+					// Ensure the book has a file object - might be missing after migration
+					if (!book.file && book.fileName) {
+						console.warn(`[DEBUG] Book "${book.title}" missing file object, creating placeholder`);
+						// Create a placeholder File object for compatibility
+						book.file = new File([''], book.fileName, { 
+							type: book.fileType || 'application/octet-stream',
+							lastModified: book.lastModified || Date.now()
+						});
+					}
+					
+					return {
+						...book,
+						coverUrl: coverUrl
+					};
+				});
+				
+				// Sort books by last accessed
+				libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+				
+				selectedBookIndex = 0; // Start with the most recently accessed book
+				isLibraryLoaded = true;
+				console.log('[DEBUG] Library loaded successfully with', libraryBooks.length, 'books');
+				return true;
+			} else {
+				console.log('[DEBUG] No books found in any storage');
+				return false;
+			}
 		} catch (error) {
-			console.error('Error loading library state:', error);
+			console.error('[DEBUG] Error loading library state:', error);
 			return false;
 		}
 	}
 	
 	// Process folder of e-books
 	async function processFolder(files: File[]) {
-		console.log('Processing folder with', files.length, 'files');
+		console.log('[DEBUG] Processing folder with', files.length, 'files');
 
 		// Filter for supported e-book formats
 		const bookFiles = files.filter(file =>
 			SUPPORTED_FORMATS.some(format => file.name.toLowerCase().endsWith(format))
 		);
 
-		console.log('Found', bookFiles.length, 'supported e-book files');
+		console.log('[DEBUG] Found', bookFiles.length, 'supported e-book files');
 
 		if (bookFiles.length === 0) {
 			alert('No supported e-book files found. Supported formats: ' + SUPPORTED_FORMATS.join(', '));
 			return;
 		}
 
-		// Clear previous library
-		libraryBooks = [];
+		// Ensure service worker is registered for background updates
+		if (!isServiceWorkerRegistered) {
+			console.log('[DEBUG] Service worker not registered, initializing');
+			await initServiceWorker();
+		}
 
 		// Tracking for summary dialog
 		const summary = {
 			total: bookFiles.length,
 			succeeded: 0,
 			failed: 0,
+			new: 0,
+			updated: 0,
 			failedBooks: []
 		};
 
+		// Initialize empty array for new books
+		const newBooks: any[] = [];
+
+		// Using the hashString function defined at module scope
+		
 		// Process each book file
 		for (const file of bookFiles) {
-			console.log('Processing book file:', file.name);
+			console.log('[DEBUG] Processing book file:', file.name);
 			try {
 				// Get book metadata
 				const { url, title, author } = await extractCover(file);
-				console.log('Extracted metadata:', { title, author, coverUrl: url });
+				console.log('[DEBUG] Extracted metadata:', { title, author, coverUrl: url });
+				
+				// Create a unique hash ID
+				const hashSource = `${title}-${author}-${file.name}-${file.size}`;
+				const uniqueId = hashString(hashSource);
 
-				// Add to library
-				libraryBooks.push({
+				// Create book data object
+				const bookData = {
+					id: uniqueId, // Add unique ID immediately
 					title,
 					author,
 					file,
-					coverUrl: url
-				});
+					fileName: file.name,
+					fileType: file.type,
+					fileSize: file.size,
+					coverUrl: url,
+					progress: 0,
+					lastAccessed: Date.now(),
+					dateAdded: Date.now()
+				};
+				
+				// Add the book directly to our in-memory array
+				newBooks.push(bookData);
 				summary.succeeded++;
-				console.log('Added book to library:', title);
+				summary.new++;
+				
+				// Also add to service worker in background (don't wait)
+				if (isServiceWorkerRegistered) {
+					addBookToLibrary(bookData).catch(err => {
+						console.error('[DEBUG] Background save to service worker failed:', err);
+					});
+				}
 			} catch (error) {
-				console.error('Error processing book:', file.name, error);
+				console.error('[DEBUG] Error processing book:', file.name, error);
 				summary.failed++;
 				summary.failedBooks.push(file.name);
 			}
 		}
 
-		// Show summary notification banner instead of dialog
+		// Add new books to existing library
+		if (newBooks.length > 0) {
+			libraryBooks = [...libraryBooks, ...newBooks];
+			
+			// Sort books by last accessed time
+			libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+			
+			// Save each book individually to IndexedDB
+			for (const book of newBooks) {
+				await saveBook(book);
+			}
+		}
+		
+		// Show summary notification banner
 		if (summary.total > 0) {
 			const failedList = summary.failed > 0 
 			  ? summary.failedBooks.slice(0, 5).join(', ') +
@@ -493,10 +601,10 @@
 				<div class="notification-content">
 					<h3>Book Processing Summary:</h3>
 					<p>Total files: ${summary.total}</p>
-					<p>Successfully added: ${summary.succeeded}</p>
+					<p>Successfully added: ${summary.succeeded} (${summary.new} new, ${summary.updated} updated)</p>
 					<p>Failed to process: ${summary.failed}</p>
 					${summary.failed > 0 ? `<p>Failed books include: ${failedList}</p>` : ''}
-					<p><small>The library will only show successfully processed books.</small></p>
+					<p><small>Total books in library: ${libraryBooks.length}</small></p>
 				</div>
 				<button class="close-button" aria-label="Close notification">×</button>
 			`;
@@ -530,28 +638,23 @@
 
 		// Update UI
 		isLibraryLoaded = libraryBooks.length > 0;
-		console.log('Library loaded:', isLibraryLoaded, 'with', libraryBooks.length, 'books');
+		console.log('[DEBUG] Library loaded:', isLibraryLoaded, 'with', libraryBooks.length, 'books');
 		
-		// Save library state to IndexedDB
-		if (isLibraryLoaded) {
-			await saveLibraryState();
-		}
-
 		// Make sure coverflow script is loaded (only in browser)
 		if (browser) {
 			if (typeof window.Coverflow === 'undefined') {
-				console.log('Coverflow not loaded yet, loading script before initializing');
+				console.log('[DEBUG] Coverflow not loaded yet, loading script before initializing');
 				try {
 					await loadCoverflowScript();
 				} catch (err) {
-					console.error('Failed to load Coverflow script:', err);
+					console.error('[DEBUG] Failed to load Coverflow script:', err);
 					return;
 				}
 			}
 
 			// Initialize coverflow after script is loaded and DOM is updated
 			if (isLibraryLoaded) {
-				console.log('Setting timeout to initialize coverflow');
+				console.log('[DEBUG] Setting timeout to initialize coverflow');
 				setTimeout(initCoverflow, 100);
 			}
 		}
@@ -600,8 +703,8 @@
 					console.log('Cover selected:', e.detail);
 					if (e && e.detail && typeof e.detail.index === 'number') {
 						selectedBookIndex = e.detail.index;
-						// Save state when book selection changes
-						saveLibraryState();
+						// No need to save state when selection changes
+						// We're storing books individually now
 					}
 				});
 
@@ -626,7 +729,10 @@
 		if (!browser || !coverflow || !isLibraryLoaded || libraryBooks.length === 0) return;
 		
 		if (confirm(`Remove "${libraryBooks[selectedBookIndex].title}" from your library?`)) {
-			console.log('Removing book at index', selectedBookIndex);
+			console.log('[DEBUG] Removing book at index', selectedBookIndex);
+			
+			// Get book ID for service worker (if it exists)
+			const bookId = libraryBooks[selectedBookIndex].id;
 			
 			// Remove book from array
 			libraryBooks.splice(selectedBookIndex, 1);
@@ -635,18 +741,16 @@
 			// If library is now empty
 			if (libraryBooks.length === 0) {
 				isLibraryLoaded = false;
-				console.log('Library is now empty');
-				// No need to save an empty library
+				console.log('[DEBUG] Library is now empty');
 				
-				// Clear IndexedDB library entry
-				try {
-					const db = await openDatabase();
-					const transaction = db.transaction([LIBRARY_STORE], 'readwrite');
-					const store = transaction.objectStore(LIBRARY_STORE);
-					store.delete('current_library');
-					console.log('Library entry cleared from database');
-				} catch (error) {
-					console.error('Error clearing library from database:', error);
+				// Nothing to do for clearing an empty library
+				// (Individual book was already deleted)
+				
+				// Also try to remove from service worker in background
+				if (isServiceWorkerRegistered && bookId) {
+					deleteBook(bookId).catch(err => {
+						console.error('[DEBUG] Error deleting book from service worker:', err);
+					});
 				}
 				
 				return;
@@ -657,11 +761,18 @@
 				selectedBookIndex = libraryBooks.length - 1;
 			}
 			
+			// Remove the book from the database
+			await removeBookFromDB(bookId);
+			
 			// Re-initialize coverflow with updated books
 			initCoverflow();
 			
-			// Save updated library state
-			await saveLibraryState();
+			// Also remove from service worker in background (if ID exists)
+			if (isServiceWorkerRegistered && bookId) {
+				deleteBook(bookId).catch(err => {
+					console.error('[DEBUG] Error deleting book from service worker:', err);
+				});
+			}
 			
 			// Show notification
 			showNotification(`Book removed from library.`);
@@ -673,27 +784,49 @@
 		if (!browser || !isLibraryLoaded || libraryBooks.length === 0) return;
 		
 		if (confirm('Are you sure you want to clear your entire library? This action cannot be undone.')) {
-			console.log('Clearing entire library');
+			console.log('[DEBUG] Clearing entire library');
 			
-			// Reset library state
+			// Save book IDs for service worker deletion
+			const bookIds = libraryBooks.filter(book => book.id).map(book => book.id);
+			
+			// Clear local array immediately
 			libraryBooks = [];
 			selectedBookIndex = 0;
 			isLibraryLoaded = false;
 			
-			// Clear the IndexedDB storage
+			// Clear all books from IndexedDB
 			try {
 				const db = await openDatabase();
-				const transaction = db.transaction([LIBRARY_STORE], 'readwrite');
-				const store = transaction.objectStore(LIBRARY_STORE);
-				store.delete('current_library');
-				console.log('Library cleared from database');
-				
-				// Show notification
-				showNotification('Library cleared successfully.');
+				if (db.objectStoreNames.contains(BOOKS_STORE)) {
+					const transaction = db.transaction([BOOKS_STORE], 'readwrite');
+					const store = transaction.objectStore(BOOKS_STORE);
+					
+					// Clear entire object store
+					await new Promise<void>((resolve, reject) => {
+						const request = store.clear();
+						request.onsuccess = () => resolve();
+						request.onerror = () => reject(request.error);
+					});
+					console.log('[DEBUG] All books cleared from database successfully');
+				}
 			} catch (error) {
-				console.error('Error clearing library from database:', error);
-				showNotification('Error clearing library. Please try again.', 'error');
+				console.error('[DEBUG] Error clearing books from database:', error);
+				showNotification('Error clearing library from database.', 'error');
+				return;
 			}
+			
+			// Also delete from service worker in background
+			if (isServiceWorkerRegistered && bookIds.length > 0) {
+				console.log('[DEBUG] Deleting books from service worker in background');
+				// Delete each book asynchronously (don't wait)
+				bookIds.forEach(id => {
+					deleteBook(id).catch(err => {
+						console.error('[DEBUG] Error deleting book from service worker:', id, err);
+					});
+				});
+			}
+			
+			showNotification('Library cleared successfully.');
 		}
 	}
 
@@ -747,8 +880,7 @@
 			if (selectedBookIndex > 0) {
 				selectedBookIndex--;
 				coverflow.select(selectedBookIndex);
-				// Save state when selection changes
-				saveLibraryState();
+				// No need to save selection state
 			}
 			event.preventDefault();
 		} else if (event.key === 'ArrowRight') {
@@ -756,8 +888,7 @@
 			if (selectedBookIndex < libraryBooks.length - 1) {
 				selectedBookIndex++;
 				coverflow.select(selectedBookIndex);
-				// Save state when selection changes
-				saveLibraryState();
+				// No need to save selection state
 			}
 			event.preventDefault();
 		} else if (event.key === 'Enter') {
@@ -773,20 +904,8 @@
 		}
 	}
 
-	// Handle book click
-	function handleBookClick(event: MouseEvent) {
-		if (!browser) return;
 
-		const selectedBook = libraryBooks[selectedBookIndex];
-
-		if (selectedBook) {
-			// Navigate to reader with the selected book
-			const bookObjectUrl = URL.createObjectURL(selectedBook.file);
-			window.location.href = `/reader?url=${encodeURIComponent(bookObjectUrl)}`;
-		}
-	}
-
-	// Open selected book using IndexedDB
+	// Open selected book - using filename and array index approach
 	async function openSelectedBook() {
 		if (!browser) return;
 
@@ -794,101 +913,40 @@
 		if (!selectedBook) return;
 
 		try {
-			// Create a unique ID for this book session
-			const bookSessionId = `book_${Date.now()}`;
+			console.log('[DEBUG] Opening book:', selectedBook.title);
 			
-			// Use our improved openDatabase function
-			const db = await openDatabase();
-			
-			// Make sure the books store exists
-			if (!db.objectStoreNames.contains(BOOKS_STORE)) {
-				console.log('Books store missing, upgrading database...');
-				
-				// Close current connection
-				db.close();
-				
-				// Calculate new version - ensure dbVersion is defined
-				const currentVersion = dbVersion || 1;
-				const newVersion = currentVersion + 1;
-				console.log(`Upgrading database from version ${currentVersion} to ${newVersion}`);
-				
-				// Update tracked version
-				dbVersion = newVersion;
-				
-				// Upgrade database
-				await new Promise((resolve, reject) => {
-					const upgradeRequest = indexedDB.open(DB_NAME, newVersion);
-					
-					upgradeRequest.onupgradeneeded = function(event) {
-						const upgradedDb = event.target.result;
-						console.log(`Creating books store during upgrade from ${event.oldVersion} to ${event.newVersion}`);
-						
-						if (!upgradedDb.objectStoreNames.contains(BOOKS_STORE)) {
-							upgradedDb.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
-						}
-					};
-					
-					upgradeRequest.onsuccess = function() {
-						console.log('Database upgraded successfully for books store');
-						resolve(undefined);
-					};
-					
-					upgradeRequest.onerror = function(event) {
-						console.error('Error upgrading database for books store:', event.target.error);
-						reject(event.target.error);
-					};
-				});
-				
-				// Reopen database with upgraded schema
-				return openSelectedBook(); // Retry with the updated database
+			// Make sure we have a file to work with
+			if (!selectedBook.file) {
+				console.error('[DEBUG] No file object found for book:', selectedBook.title);
+				alert('Cannot open book: file data is missing. Try uploading the book again.');
+				return;
 			}
 			
-			// Start a transaction to store the book
-			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
-			const store = transaction.objectStore(BOOKS_STORE);
+			// Update book's lastAccessed time
+			selectedBook.lastAccessed = Date.now();
 			
-			// Create a record with minimal data
-			const record = {
-				id: bookSessionId,
-				name: selectedBook.file.name,
-				type: selectedBook.file.type,
-				title: selectedBook.title,
-				author: selectedBook.author,
-				file: selectedBook.file,
-				timestamp: Date.now()
-			};
+			// Update in memory array
+			libraryBooks[selectedBookIndex] = selectedBook;
 			
-			// Add to IndexedDB
-			const storeRequest = store.add(record);
+			// Save to IndexedDB - individual book
+			await saveBook(selectedBook);
 			
-			// Use a Promise to handle the storage operation
-			await new Promise<void>((resolve, reject) => {
-				storeRequest.onsuccess = function() {
-					console.log('Book stored in IndexedDB successfully');
-					resolve();
-				};
-				
-				storeRequest.onerror = function(event) {
-					console.error('Error storing book in IndexedDB:', event.target.error);
-					reject(event.target.error);
-				};
-			});
+			// Create reader URL with essential parameters
+			console.log(`[DEBUG] Opening book "${selectedBook.title}" at index: ${selectedBookIndex}`);
 			
-			// Save selected index before navigation
-			console.log('Before saving library state:', JSON.stringify({
-				libraryBooksCount: libraryBooks.length,
-				selectedBookIndex: selectedBookIndex
-			}));
+			// URL with bookId as the unique book identifier
+			let url = `/reader?bookId=${encodeURIComponent(selectedBook.id)}`;
+
 			
-			await saveLibraryState();
-			console.log('Library state saved, now navigating to reader');
+			// Add existing progress if available
+			if (selectedBook.progress) {
+				url += `&progress=${encodeURIComponent(selectedBook.progress)}`;
+			}
 			
-			// Navigate to reader with the session ID
-			console.log(`Opening book "${selectedBook.title}" with session ID: ${bookSessionId}`);
-			window.location.href = `/reader?session=${encodeURIComponent(bookSessionId)}`;
-			
+			// Navigate to reader
+			window.location.href = url;
 		} catch (error) {
-			console.error('Error preparing book for reader:', error);
+			console.error('[DEBUG] Error preparing book for reader:', error);
 			alert('There was an error opening the book. Please try again.');
 		}
 	}
@@ -943,8 +1001,18 @@
 		});
 	}
 
+
 	onMount(async () => {
 		if (!browser) return;
+		
+		// Check URL for progress updates from the reader - simplified approach
+		const params = new URLSearchParams(window.location.search);
+		console.log('[DEBUG] Library component mounted, URL parameters:', params.toString());
+		
+		// First load the library
+		console.log('[DEBUG] Loading library state');
+		const loaded = await loadLibraryState();
+		console.log('[DEBUG] Library loaded:', loaded);
 
 		// Declare the Coverflow type
 		declare global {
@@ -1017,10 +1085,10 @@
 		window.removeEventListener('keydown', handleKeyNavigation);
 		// No need to remove click handler as we're not adding it anymore
 
-		// Save library state before unmounting to ensure it's saved
-		console.log('Component being destroyed, saving library state with', libraryBooks.length, 'books');
-		saveLibraryState().catch(err => {
-			console.error('Failed to save library state on destroy:', err);
+		// Save any updated books before unmounting
+		console.log('Component being destroyed, saving any updated books', libraryBooks.length, 'books');
+		saveAllBooks().catch(err => {
+			console.error('Failed to save books on destroy:', err);
 		});
 
 		// Clean up any created object URLs

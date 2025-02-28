@@ -1,8 +1,23 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import Header from './Header.svelte';
 	import '../app.css';
-
+	import { registerServiceWorker } from '$lib/serviceWorker';
+	
 	let { children } = $props();
+	
+	// Register service worker on app load
+	onMount(async () => {
+		if (browser) {
+			try {
+				const registered = await registerServiceWorker();
+				console.log('Service worker registered from layout:', registered);
+			} catch (error) {
+				console.error('Error registering service worker:', error);
+			}
+		}
+	});
 </script>
 
 <div class="app">

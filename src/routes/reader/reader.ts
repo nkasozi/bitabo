@@ -308,9 +308,9 @@ class EbookReader {
 		const storeElement = (key: string, selector: string, parent?: Element) => {
 			let element = parent ? parent.querySelector(selector) : document.querySelector(selector);
 			if (!element) {
-				console.warn(
-					`initializeElements: Element with selector '${selector}' not found${parent ? ' within parent ' + parent.constructor.name : ''}. Key: ${key}`
-				);
+				// console.warn(
+				// 	`initializeElements: Element with selector '${selector}' not found${parent ? ' within parent ' + parent.constructor.name : ''}. Key: ${key}`
+				// );
 				return; // Stop storing if element is not found and log it
 			}
 			this.elements.set(key, element);
@@ -335,9 +335,9 @@ class EbookReader {
 			this.elements.set('menu.container', menuContainer);
 			storeElement('menu.button', this.config.elements.menu.button, menuContainer);
 		} else {
-			console.warn(
-				`initializeElements: Menu container element with selector '${this.config.elements.menu.container}' not found.`
-			);
+			// console.warn(
+			// 	`initializeElements: Menu container element with selector '${this.config.elements.menu.container}' not found.`
+			// );
 		}
 
 		// Store other elements
@@ -350,7 +350,7 @@ class EbookReader {
 	private getElement<T extends Element>(key: string): T | null {
 		const element = (this.elements.get(key) as T) || null;
 		if (!element) {
-			console.warn(`getElement: Element with key '${key}' not found in elements map.`);
+			//console.warn(`getElement: Element with key '${key}' not found in elements map.`);
 		}
 		return element;
 	}
@@ -361,11 +361,11 @@ class EbookReader {
 		const sidebar = this.getElement('sidebar.container');
 
 		if (!overlay) {
-			console.warn('showSidebar: overlay element not found.');
+			//console.warn('showSidebar: overlay element not found.');
 			return;
 		}
 		if (!sidebar) {
-			console.warn('showSidebar: sidebar container element not found.');
+			//console.warn('showSidebar: sidebar container element not found.');
 			return;
 		}
 
@@ -383,11 +383,11 @@ class EbookReader {
 		const dimmingOverlay = this.getElement('overlay');
 
 		if (!sidebarButton) {
-			console.warn('setupSidebarControls: sidebar button element not found.');
+			//console.warn('setupSidebarControls: sidebar button element not found.');
 			return;
 		}
 		if (!dimmingOverlay) {
-			console.warn('setupSidebarControls: dimming overlay element not found.');
+			//console.warn('setupSidebarControls: dimming overlay element not found.');
 			return;
 		}
 
@@ -400,11 +400,11 @@ class EbookReader {
 		const sidebarContainer = this.getElement('sidebar.container');
 
 		if (!overlay) {
-			console.warn('hideSidebar: overlay element not found.');
+			//console.warn('hideSidebar: overlay element not found.');
 			return;
 		}
 		if (!sidebarContainer) {
-			console.warn('hideSidebar: sidebar container element not found.');
+			//console.warn('hideSidebar: sidebar container element not found.');
 			return;
 		}
 
@@ -415,7 +415,7 @@ class EbookReader {
 	private setupLayoutMenu(): void {
 		const menuButton = this.getElement('menu.container');
 		if (!menuButton) {
-			console.warn('setupLayoutMenu: Menu button container not found');
+			//console.warn('setupLayoutMenu: Menu button container not found');
 			return;
 		}
 		const menu = menujs.createMenu([
@@ -436,7 +436,7 @@ class EbookReader {
 
 	private updateLayoutFlow(value: string): void {
 		if (!this.view?.renderer) {
-			console.warn('updateLayoutFlow: view or renderer is not initialized.');
+			//console.warn('updateLayoutFlow: view or renderer is not initialized.');
 			return;
 		}
 		this.view.renderer.setAttribute('flow', value);
@@ -445,7 +445,7 @@ class EbookReader {
 	private appendMenuToInterface(menu: any): void {
 		const menuButton = this.getElement('menu.container');
 		if (!menuButton) {
-			console.warn('appendMenuToInterface: Menu button container not found');
+			//console.warn('appendMenuToInterface: Menu button container not found');
 			return;
 		}
 		menu.element.classList.add('menu');
@@ -453,7 +453,7 @@ class EbookReader {
 
 		const button = menuButton.querySelector(this.config.elements.menu.button);
 		if (!button) {
-			console.warn('appendMenuToInterface: Menu button not found within container.');
+			//console.warn('appendMenuToInterface: Menu button not found within container.');
 			return;
 		}
 		button.addEventListener('click', () => menu.element.classList.toggle('show'));
@@ -477,7 +477,7 @@ class EbookReader {
 
 		if (dropTarget) {
 			dropTarget.remove();
-			console.log('openBook: Drop target has been found and removed');
+			//console.log('openBook: Drop target has been found and removed');
 		}
 
 		await this.initializeBookView(file);
