@@ -42,6 +42,12 @@ function hashString(str) {
 	// Flag to track service worker registration
 	let isServiceWorkerRegistered = false;
 	
+	// Editing state variables
+	let isEditingTitle = false;
+	let isEditingAuthor = false;
+	let editedTitle = '';
+	let editedAuthor = '';
+	
 	// Initialize service worker
 	async function initServiceWorker() {
 		if (browser) {
@@ -779,6 +785,97 @@ function hashString(str) {
 		}
 	}
 
+	// Edit book title function
+	function startEditingTitle() {
+		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
+		
+		isEditingTitle = true;
+		editedTitle = libraryBooks[selectedBookIndex].title;
+	}
+	
+	// Edit book author function
+	function startEditingAuthor() {
+		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
+		
+		isEditingAuthor = true;
+		editedAuthor = libraryBooks[selectedBookIndex].author;
+	}
+	
+	// Save edited book title
+	async function saveEditedTitle() {
+		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
+		
+		// Trim and validate title
+		const newTitle = editedTitle.trim();
+		if (!newTitle) {
+			// Don't allow empty titles, revert to original
+			editedTitle = libraryBooks[selectedBookIndex].title;
+			isEditingTitle = false;
+			return;
+		}
+		
+		// Update title in memory
+		libraryBooks[selectedBookIndex].title = newTitle;
+		
+		// Save to database
+		await saveBook(libraryBooks[selectedBookIndex]);
+		
+		// Exit editing mode
+		isEditingTitle = false;
+		
+		// Show notification
+		showNotification('Book title updated');
+	}
+	
+	// Save edited book author
+	async function saveEditedAuthor() {
+		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
+		
+		// Trim and validate author
+		const newAuthor = editedAuthor.trim();
+		if (!newAuthor) {
+			// Don't allow empty authors, revert to original or use "Unknown"
+			editedAuthor = libraryBooks[selectedBookIndex].author || 'Unknown Author';
+			isEditingAuthor = false;
+			return;
+		}
+		
+		// Update author in memory
+		libraryBooks[selectedBookIndex].author = newAuthor;
+		
+		// Save to database
+		await saveBook(libraryBooks[selectedBookIndex]);
+		
+		// Exit editing mode
+		isEditingAuthor = false;
+		
+		// Show notification
+		showNotification('Book author updated');
+	}
+	
+	// Cancel editing (for escape key or cancel button)
+	function cancelEditing() {
+		isEditingTitle = false;
+		isEditingAuthor = false;
+	}
+	
+	// Handle keydown event in input fields
+	function handleEditKeydown(event, type) {
+		if (event.key === 'Enter') {
+			// Save on Enter
+			event.preventDefault();
+			if (type === 'title') {
+				saveEditedTitle();
+			} else if (type === 'author') {
+				saveEditedAuthor();
+			}
+		} else if (event.key === 'Escape') {
+			// Cancel on Escape
+			event.preventDefault();
+			cancelEditing();
+		}
+	}
+	
 	// Function to clear the entire library
 	async function clearLibrary() {
 		if (!browser || !isLibraryLoaded || libraryBooks.length === 0) return;
@@ -874,6 +971,9 @@ function hashString(str) {
 	// Handle keyboard navigation
 	function handleKeyNavigation(event: KeyboardEvent) {
 		if (!browser || !coverflow || !isLibraryLoaded) return;
+		
+		// Skip navigation if we're in editing mode
+		if (isEditingTitle || isEditingAuthor) return;
 
 		if (event.key === 'ArrowLeft') {
 			// Select previous book
@@ -900,6 +1000,14 @@ function hashString(str) {
 		} else if (event.key === 'Delete' || event.key === 'Backspace') {
 			// Remove selected book
 			removeSelectedBook();
+			event.preventDefault();
+		} else if (event.key === 'e' || event.key === 'E') {
+			// Edit title with E key
+			startEditingTitle();
+			event.preventDefault();
+		} else if (event.key === 'a' || event.key === 'A') {
+			// Edit author with A key
+			startEditingAuthor();
 			event.preventDefault();
 		}
 	}
@@ -1217,8 +1325,62 @@ function hashString(str) {
 		<!-- Show selected book info -->
 		<div class="book-info" class:hidden={!isLibraryLoaded}>
 			{#if libraryBooks[selectedBookIndex]}
-				<h2 class="book-title">{libraryBooks[selectedBookIndex].title}</h2>
-				<p class="book-author">{libraryBooks[selectedBookIndex].author}</p>
+				{#if isEditingTitle}
+					<!-- Title edit mode -->
+					<div class="edit-container">
+						<input 
+							type="text" 
+							class="edit-input"
+							bind:value={editedTitle}
+							on:keydown={(e) => handleEditKeydown(e, 'title')}
+							on:blur={saveEditedTitle}
+							autofocus
+						/>
+						<div class="edit-buttons">
+							<button class="btn-icon" on:click={saveEditedTitle} title="Save">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+							</button>
+							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							</button>
+						</div>
+					</div>
+				{:else}
+					<!-- Title display mode -->
+					<h2 class="book-title" on:click={startEditingTitle} title="Click to edit title">
+						{libraryBooks[selectedBookIndex].title}
+						<span class="edit-icon">✎</span>
+					</h2>
+				{/if}
+				
+				{#if isEditingAuthor}
+					<!-- Author edit mode -->
+					<div class="edit-container">
+						<input 
+							type="text" 
+							class="edit-input"
+							bind:value={editedAuthor}
+							on:keydown={(e) => handleEditKeydown(e, 'author')}
+							on:blur={saveEditedAuthor}
+							autofocus
+						/>
+						<div class="edit-buttons">
+							<button class="btn-icon" on:click={saveEditedAuthor} title="Save">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+							</button>
+							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							</button>
+						</div>
+					</div>
+				{:else}
+					<!-- Author display mode -->
+					<p class="book-author" on:click={startEditingAuthor} title="Click to edit author">
+						{libraryBooks[selectedBookIndex].author}
+						<span class="edit-icon">✎</span>
+					</p>
+				{/if}
+				
 				<div class="flex justify-center gap-4">
 					<button class="btn btn-primary mt-4" on:click={() => { openSelectedBook().catch(err => console.error('Error opening book:', err)); }}>
 						Open Book
@@ -1237,7 +1399,7 @@ function hashString(str) {
 
 		<!-- Keyboard navigation hints -->
 		<div class="navigation-hints">
-			<p>Use ← and → arrow keys to browse books, Enter to open the selected book</p>
+			<p>Use ← and → to browse, Enter to open book, E to edit title, A to edit author</p>
 		</div>
 	</div>
 </div>
@@ -1295,6 +1457,69 @@ function hashString(str) {
         color: var(--color-text);
         opacity: 0.7;
         margin-bottom: 1rem;
+        cursor: pointer;
+    }
+    
+    .book-title {
+        cursor: pointer;
+    }
+    
+    .edit-icon {
+        visibility: hidden;
+        opacity: 0;
+        margin-left: 5px;
+        font-size: 0.8em;
+        transition: opacity 0.2s ease;
+    }
+    
+    .book-title:hover .edit-icon,
+    .book-author:hover .edit-icon {
+        visibility: visible;
+        opacity: 0.7;
+    }
+    
+    .edit-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 1rem;
+        width: 100%;
+        max-width: 500px;
+        margin: 0 auto 1rem;
+    }
+    
+    .edit-input {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--color-theme-1);
+        border-radius: 4px;
+        font-size: 1.1rem;
+        background-color: var(--color-bg-2);
+        color: var(--color-text);
+        margin-bottom: 0.5rem;
+    }
+    
+    .edit-buttons {
+        display: flex;
+        gap: 8px;
+    }
+    
+    .btn-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        cursor: pointer;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        color: var(--color-theme-1);
+        transition: background-color 0.2s;
+    }
+    
+    .btn-icon:hover {
+        background-color: rgba(128, 128, 128, 0.2);
     }
 
     .mt-4 {
@@ -1383,14 +1608,15 @@ function hashString(str) {
         top: 20px;
         right: 20px;
         width: 350px;
-        background-color: white;
+        background-color: var(--color-bg-2);
+        color: var(--color-text);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         border-radius: 5px;
         z-index: 10000;
         display: flex;
         flex-direction: column;
         opacity: 1;
-        transition: opacity 0.3s ease;
+        transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease;
     }
     
     :global(.notification-banner.fade-out) {
@@ -1406,11 +1632,18 @@ function hashString(str) {
         margin-bottom: 10px;
         font-size: 16px;
         font-weight: bold;
+        color: var(--color-text);
     }
     
     :global(.notification-content p) {
         margin: 5px 0;
         font-size: 14px;
+        color: var(--color-text);
+    }
+    
+    :global(.notification-content.error) {
+        background-color: rgba(239, 68, 68, 0.2);
+        border-left: 4px solid #ef4444;
     }
     
     :global(.close-button) {
@@ -1421,11 +1654,13 @@ function hashString(str) {
         border: none;
         font-size: 20px;
         cursor: pointer;
-        color: #666;
+        color: var(--color-text);
+        opacity: 0.7;
+        transition: opacity 0.2s;
     }
     
     :global(.close-button:hover) {
-        color: #000;
+        opacity: 1;
     }
     
     /* Feature cards styling */
