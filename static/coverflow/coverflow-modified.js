@@ -24,7 +24,6 @@
     
     // Tracking
     let selectedIndex = settings.startIndex;
-    let titleElement = null;
     
     function initializeContainer() {
       console.log("Setting up coverflow container");
@@ -38,8 +37,10 @@
       container.style.overflow = 'hidden';
       container.style.perspective = '1000px';
       container.style.transformStyle = 'preserve-3d';
+      container.style.width = '100%'; // Ensure full width
+      container.style.display = 'block'; // Ensure block display
       
-      // For perspective origin
+      // For perspective origin - ensure it's exactly centered
       container.style.perspectiveOrigin = '50% 50%';
       
       // Create a container for the books to allow proper centering
@@ -60,19 +61,7 @@
       
       container.appendChild(innerContainer);
       
-      // Create title display
-      titleElement = document.createElement('div');
-      titleElement.className = 'coverflow-title';
-      titleElement.style.position = 'absolute';
-      titleElement.style.bottom = '20px';
-      titleElement.style.left = '0';
-      titleElement.style.width = '100%';
-      titleElement.style.textAlign = 'center';
-      titleElement.style.color = '#333';
-      titleElement.style.fontSize = '16px';
-      titleElement.style.fontWeight = 'bold';
-      
-      container.appendChild(titleElement);
+      // Title display removed as we're using the book-title element in the page instead
       
       // Store inner container reference
       container.innerContainer = innerContainer;
@@ -159,18 +148,13 @@
         opacity = 1;
       }
       
-      // Apply transitions
-      cover.style.transform = `translateX(${xPosition}px) translateZ(${zPosition}px) rotateY(${rotationY}deg)`;
+      // Apply transitions - using percentage-based vertical positioning for more reliable centering
+      cover.style.top = '50%'; // Position at 50% from top
+      cover.style.transform = `translateX(${xPosition}px) translateZ(${zPosition}px) rotateY(${rotationY}deg) translateY(-50%)`; // Translate up by 50% of height
       cover.style.opacity = opacity;
       cover.style.zIndex = offset === 0 ? 1000 : 500 - Math.abs(offset);
       
-      // Set vertical position
-      cover.style.top = `${centerY}px`;
-      
-      // Show title of selected cover
-      if (isSelected && cover.dataset.info) {
-        titleElement.textContent = cover.dataset.info;
-      }
+      // Title display is now handled by the outer page elements
     }
     
     function updateCoverflow(newIndex) {
@@ -312,11 +296,17 @@
       // Initial positioning
       updateCoverflow(selectedIndex);
       
+      // Add a delayed second positioning after DOM has stabilized
+      // This helps ensure books are centered properly after the browser has fully rendered
+      setTimeout(() => {
+        console.log("Running delayed positioning update");
+        updateCoverflow(selectedIndex);
+      }, 100);
+      
       // Return public API
       return {
         container: container,
         images: covers,
-        titleBox: titleElement,
         
         // Get current selected index
         showSelectedCover: function() {

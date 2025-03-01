@@ -655,7 +655,7 @@ function hashString(str) {
 			// Initialize coverflow after script is loaded and DOM is updated
 			if (isLibraryLoaded) {
 				console.log('[DEBUG] Setting timeout to initialize coverflow');
-				setTimeout(initCoverflow, 100);
+				setTimeout(initCoverflow, 300); // Increased timeout for better positioning
 			}
 		}
 	}
@@ -1035,8 +1035,8 @@ function hashString(str) {
 		const libraryLoaded = await loadLibraryState();
 		
 		if (libraryLoaded) {
-			// Initialize coverflow with the loaded books
-			setTimeout(initCoverflow, 100);
+			// Initialize coverflow with the loaded books (longer timeout for better positioning)
+			setTimeout(initCoverflow, 300);
 		}
 
 		// Initialize Uppy
