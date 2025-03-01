@@ -24,137 +24,106 @@
     
     // Tracking
     let selectedIndex = settings.startIndex;
-    
+
     function initializeContainer() {
-      console.log("Setting up coverflow container");
-      
-      // Always set a fixed height to fix the 80px issue
-      container.style.height = settings.showReflection ? '400px' : '350px';
-      
+      // Set the correct height to match original
+      //container.style.height = '260px';
+
       // Basic container styling
       container.style.position = 'relative';
-      container.style.backgroundColor = 'transparent'; // Force transparency
-      container.style.overflow = 'hidden';
-      container.style.perspective = '1000px';
-      container.style.transformStyle = 'preserve-3d';
-      container.style.width = '100%'; // Ensure full width
-      container.style.display = 'block'; // Ensure block display
-      
-      // For perspective origin - ensure it's exactly centered
-      container.style.perspectiveOrigin = '50% 50%';
-      
-      // Create a container for the books to allow proper centering
-      const innerContainer = document.createElement('div');
-      innerContainer.className = 'coverflow-inner';
-      innerContainer.style.position = 'absolute';
-      innerContainer.style.width = '100%';
-      innerContainer.style.height = '100%';
-      innerContainer.style.left = '0';
-      innerContainer.style.top = '0';
-      innerContainer.style.transformStyle = 'preserve-3d';
-      innerContainer.style.backgroundColor = 'transparent';
-      
-      // Move all existing children to the inner container
-      while (container.childNodes.length > 0) {
-        innerContainer.appendChild(container.childNodes[0]);
-      }
-      
-      container.appendChild(innerContainer);
-      
-      // Title display removed as we're using the book-title element in the page instead
-      
-      // Store inner container reference
-      container.innerContainer = innerContainer;
-      
+      container.style.backgroundColor = settings.backgroundColor;
+      container.style.overflow = 'scroll'; // Match original overflow
+      container.style.overflowX = 'scroll';
+      container.style.perspective = '600px'; // Match original perspective
+      container.style.transform = 'rotateY(0deg) translateZ(-5px)';
+      container.style.width = '100%';
+
+      // Remove the inner container approach - original doesn't use it
+      // Instead, style all elements directly in the main container
+
       // Set data attribute for index tracking
       container.dataset.index = selectedIndex;
     }
-    
+
     function setupCovers() {
-      console.log(`Setting up ${covers.length} covers`);
-      
       covers.forEach((cover, index) => {
         // Basic styling for each cover
         cover.style.position = 'absolute';
         cover.style.width = `${settings.coverSize}px`;
         cover.style.height = 'auto';
-        cover.style.transition = 'all 0.4s ease';
-        cover.style.transformOrigin = 'center center';
-        cover.style.cursor = 'pointer';
-        
-        // Add reflection if enabled and make background transparent
-        if (settings.showReflection) {
-          cover.style.webkitBoxReflect = 'below 0px -webkit-gradient(linear, left top, left bottom, from(transparent), color-stop(0.7, transparent), to(rgba(0, 0, 0, 0.4)))';
-        } else {
-          cover.style.boxShadow = '0 5px 20px rgba(0,0,0,0.3)';
-        }
-        
-        // Make background transparent
-        cover.style.backgroundColor = 'transparent';
-        
-        // Add click event - only select the book, don't open it
+        cover.style.bottom = '60px'; // Position from bottom
+        cover.style.boxShadow = 'rgba(0, 0, 0, 0.3) 0px 10px 30px';
+        cover.style.transition = '-webkit-transform 0.4s, margin-left 0.4s, -webkit-filter 0.4s';
+
+        // Remove any reflections
+        cover.style.webkitBoxReflect = 'none';
+
+        // Add click event
         cover.addEventListener('click', (e) => {
-          // Prevent any default behavior or bubbling
           e.preventDefault();
           e.stopPropagation();
-          
-          // Just update the coverflow selection
           updateCoverflow(index);
-          
-          // Log for debugging
-          console.log(`Clicked on cover at index ${index}, only selecting, not opening`);
         });
       });
     }
-    
+
     function positionCover(cover, index, isSelected) {
       const offset = index - selectedIndex;
-      
-      // Get current cover size - either from the element's width or from settings
+
+      // Get current cover size
       const currentCoverSize = cover.offsetWidth || settings.coverSize;
-      
-      // Calculate responsive spacing based on container width
+
+      // Calculate responsive spacing
       let currentSpacing = settings.spacing;
       if (container.offsetWidth < 768) {
         currentSpacing = Math.floor(settings.spacing * 0.6);
       } else if (container.offsetWidth < 1024) {
         currentSpacing = Math.floor(settings.spacing * 0.8);
       }
-      
-      // Center position calculation
+
+      // Add a constant for the perspective depth
+      const perspectiveDepth = 600;
+
+      // Calculate center position
       const centerX = container.offsetWidth / 2 - currentCoverSize / 2;
-      const centerY = container.offsetHeight / 2 - (cover.offsetHeight || currentCoverSize) / 2;
-      
-      // Different transformations based on position
-      let xPosition, zPosition, rotationY, opacity;
-      
-      if (offset < 0) {
-        // Covers to the left
-        rotationY = 55;
-        xPosition = centerX - (Math.abs(offset) * currentSpacing);
-        zPosition = -200;
-        opacity = 0.5;
-      } else if (offset > 0) {
-        // Covers to the right
-        rotationY = -55;
-        xPosition = centerX + (offset * currentSpacing);
-        zPosition = -200;
-        opacity = 0.5;
-      } else {
-        // Currently selected cover
+
+      let xPosition, zPosition, rotationY, opacity, zIndex;
+
+      if (offset === 0) {
+        // Selected cover
         rotationY = 0;
         xPosition = centerX;
         zPosition = 0;
         opacity = 1;
+        zIndex = 1000;
+      } else if (offset < 0) {
+        // Covers to the left - use progressive transformations
+        const absOffset = Math.abs(offset);
+        rotationY = Math.min(55 + (absOffset * 5), 90); // Increase angle progressively
+        xPosition = centerX - (currentSpacing * absOffset);
+        zPosition = -30 * absOffset; // Progressive Z depth
+        opacity = 0.7;
+        zIndex = 500 - absOffset;
+      } else {
+        // Covers to the right - use progressive transformations
+        rotationY = Math.min(-(55 + (offset * 5)), -55); // Increase angle progressively
+        xPosition = centerX + (currentSpacing * offset);
+        zPosition = -30 * offset; // Progressive Z depth
+        opacity = 0.7;
+        zIndex = 500 - offset;
       }
-      
-      // Apply transitions - using percentage-based vertical positioning for more reliable centering
-      cover.style.top = '50%'; // Position at 50% from top
-      cover.style.transform = `translateX(${xPosition}px) translateZ(${zPosition}px) rotateY(${rotationY}deg) translateY(-50%)`; // Translate up by 50% of height
-      cover.style.opacity = opacity;
-      cover.style.zIndex = offset === 0 ? 1000 : 500 - Math.abs(offset);
-      
-      // Title display is now handled by the outer page elements
+
+      // Apply transformations - matching original positioning
+      cover.style.position = 'absolute';
+      cover.style.bottom = '60px'; // Position from bottom like original
+      cover.style.top = 'auto'; // Clear top positioning
+      cover.style.transform = `rotateY(${rotationY}deg) translateZ(${zPosition}px)`;
+      cover.style.filter = offset === 0 ? 'none' : 'brightness(0.7)';
+      cover.style.zIndex = zIndex;
+      cover.style.left = `${xPosition}px`;
+
+      // Remove any vertical centering
+      cover.style.transform = `rotateY(${rotationY}deg) translateZ(${zPosition}px)`;
     }
     
     function updateCoverflow(newIndex) {
@@ -189,22 +158,11 @@
     }
     
     function setupKeyboardNavigation() {
-      const handleKeydown = function(event) {
-        if (event.key === 'ArrowLeft' && selectedIndex > 0) {
-          console.log(`ArrowLeft pressed, current index: ${selectedIndex}, moving to ${selectedIndex - 1}`);
-          updateCoverflow(selectedIndex - 1);
-          event.preventDefault();
-        } else if (event.key === 'ArrowRight' && selectedIndex < covers.length - 1) {
-          console.log(`ArrowRight pressed, current index: ${selectedIndex}, moving to ${selectedIndex + 1}`);
-          updateCoverflow(selectedIndex + 1);
-          event.preventDefault();
-        }
-      };
+      // NOTE: Keyboard navigation is now handled by the parent page component
+      // This avoids duplicate key event handlers that could cause skipping items
       
-      document.addEventListener('keydown', handleKeydown);
-      
-      // Store reference for cleanup later
-      container.keyboardHandler = handleKeydown;
+      // Store an empty function for cleanup compatibility
+      container.keyboardHandler = function() {};
     }
     
     // Handle window resize events to make coverflow responsive
@@ -320,8 +278,7 @@
         
         // Clean up
         destroy: function() {
-          // Remove keyboard handler
-          document.removeEventListener('keydown', container.keyboardHandler);
+          // No keyboard handler to remove
           
           // Remove resize observers/handlers
           if (container.resizeObserver) {
