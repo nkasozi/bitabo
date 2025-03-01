@@ -27,7 +27,6 @@
 
     function initializeContainer() {
       // Set the correct height to match original
-      //container.style.height = '260px';
 
       // Basic container styling
       container.style.position = 'relative';
@@ -37,9 +36,6 @@
       container.style.perspective = '600px'; // Match original perspective
       container.style.transform = 'rotateY(0deg) translateZ(-5px)';
       container.style.width = '100%';
-
-      // Remove the inner container approach - original doesn't use it
-      // Instead, style all elements directly in the main container
 
       // Set data attribute for index tracking
       container.dataset.index = selectedIndex;
@@ -59,11 +55,13 @@
         cover.style.webkitBoxReflect = 'none';
 
         // Add click event
-        cover.addEventListener('click', (e) => {
+        const clickHandler = (e) => {
           e.preventDefault();
           e.stopPropagation();
           updateCoverflow(index);
-        });
+        };
+        cover.clickHandler = clickHandler;
+        cover.addEventListener('click', clickHandler);
       });
     }
 
@@ -129,14 +127,10 @@
     function updateCoverflow(newIndex) {
       if (newIndex < 0 || newIndex >= covers.length) return;
       
-      console.log(`Updating coverflow to index ${newIndex}, total covers: ${covers.length}`);
-      
       // Validate the new index is an integer and within range
       newIndex = Math.floor(newIndex);
       if (newIndex < 0) newIndex = 0;
       if (newIndex >= covers.length) newIndex = covers.length - 1;
-      
-      console.log(`Using validated index ${newIndex}`);
       
       // Update selected index
       selectedIndex = newIndex;
@@ -157,12 +151,9 @@
       container.dispatchEvent(event);
     }
     
+    // Keyboard navigation is now handled by the parent component
     function setupKeyboardNavigation() {
-      // NOTE: Keyboard navigation is now handled by the parent page component
-      // This avoids duplicate key event handlers that could cause skipping items
-      
-      // Store an empty function for cleanup compatibility
-      container.keyboardHandler = function() {};
+      // Nothing to set up - keyboard navigation is handled externally
     }
     
     // Handle window resize events to make coverflow responsive
@@ -170,8 +161,6 @@
       if (!settings.responsive) return;
       
       const handleResize = function() {
-        console.log('Window resized, updating coverflow layout');
-        
         // Calculate responsive cover size based on container width
         const containerWidth = container.offsetWidth;
         
@@ -188,8 +177,6 @@
           responsiveCoverSize = Math.floor(settings.coverSize * 0.8);
           responsiveSpacing = Math.floor(settings.spacing * 0.8);
         }
-        
-        console.log(`Responsive sizing: width=${containerWidth}, coverSize=${responsiveCoverSize}, spacing=${responsiveSpacing}`);
         
         // Update cover styling with new sizes
         covers.forEach(cover => {
@@ -221,8 +208,6 @@
     
     // Initialize the coverflow
     function initialize() {
-      console.log("Initializing coverflow");
-      
       if (!container) {
         console.error("No container element provided");
         return null;
@@ -239,7 +224,6 @@
         // or one of the middle two (for even numbers)
         if (covers.length > 0) {
           selectedIndex = Math.floor(covers.length / 2);
-          console.log(`Auto-selecting middle book at index ${selectedIndex} out of ${covers.length} books`);
         }
       }
       
@@ -257,7 +241,6 @@
       // Add a delayed second positioning after DOM has stabilized
       // This helps ensure books are centered properly after the browser has fully rendered
       setTimeout(() => {
-        console.log("Running delayed positioning update");
         updateCoverflow(selectedIndex);
       }, 100);
       
@@ -278,8 +261,6 @@
         
         // Clean up
         destroy: function() {
-          // No keyboard handler to remove
-          
           // Remove resize observers/handlers
           if (container.resizeObserver) {
             container.resizeObserver.disconnect();
@@ -291,7 +272,7 @@
           
           // Remove click listeners
           covers.forEach(cover => {
-            cover.onclick = null;
+            cover.removeEventListener('click', cover.clickHandler);
           });
         }
       };
@@ -306,7 +287,6 @@
   
   // Auto-initialize on load
   window.addEventListener('load', function() {
-    console.log('Auto-initializing coverflow elements');
     const coverflows = document.getElementsByClassName('coverflow');
     
     for (let i = 0; i < coverflows.length; i++) {

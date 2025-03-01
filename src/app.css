@@ -17,8 +17,6 @@
 	--color-header-text: #333;
 	--color-header-logo: #2275d7;
 	--color-header-border: #2275d7;
-	--column-width: 42rem;
-	--column-margin-top: 4rem;
 	font-family: var(--font-body);
 	color: var(--color-text);
 }

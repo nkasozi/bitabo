@@ -654,8 +654,8 @@ function hashString(str) {
 
 			// Initialize coverflow after script is loaded and DOM is updated
 			if (isLibraryLoaded) {
-				console.log('[DEBUG] Setting timeout to initialize coverflow');
-				setTimeout(initCoverflow, 300); // Increased timeout for better positioning
+				// Initialize with increased timeout for better positioning
+				setTimeout(initCoverflow, 300);
 			}
 		}
 	}
