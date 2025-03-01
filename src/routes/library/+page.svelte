@@ -48,6 +48,13 @@ function hashString(str) {
 	let editedTitle = '';
 	let editedAuthor = '';
 	
+	// Search functionality
+	let searchQuery = '';
+	let debouncedSearchQuery = '';
+	let searchResults = [];
+	let searchTimeout: any;
+	let isSearching = false;
+	
 	// Initialize service worker
 	async function initServiceWorker() {
 		if (browser) {
@@ -670,29 +677,35 @@ function hashString(str) {
 	function initCoverflow() {
 		if (!browser) return;
 
-		console.log('Initializing coverflow with', libraryBooks.length, 'books');
-		console.log('Coverflow script loaded?', typeof window.Coverflow !== 'undefined');
-		console.log('Bookshelf element exists?', !!bookshelf);
-
 		// Make sure the coverflow script is loaded
 		if (typeof window.Coverflow !== 'undefined' && bookshelf) {
 			// Clear existing content
 			bookshelf.innerHTML = '';
-			console.log('Cleared bookshelf content');
-
-			// Create img elements for each book directly (as in the example HTML)
-			libraryBooks.forEach((book, index) => {
-				console.log('Adding book to shelf:', book.title, 'at index', index);
+			
+			// Determine which books to display
+			const booksToDisplay = isSearching && searchResults.length > 0 
+				? searchResults 
+				: libraryBooks;
+			
+			// Create img elements for each book directly
+			booksToDisplay.forEach((book, index) => {
 				const img = document.createElement('img');
 				img.src = book.coverUrl;
 				img.alt = book.title;
 				img.setAttribute('data-info', book.title);
+				
+				// Add custom attribute to help track original book index
+				if (isSearching) {
+					// Find index in original array
+					const originalIndex = libraryBooks.findIndex(b => b.id === book.id);
+					if (originalIndex >= 0) {
+						img.setAttribute('data-original-index', originalIndex.toString());
+					}
+				}
 
 				// Add to the bookshelf
 				bookshelf.appendChild(img);
 			});
-
-			console.log('All books added to bookshelf, creating Coverflow instance');
 
 			try {
 				// Initialize coverflow with custom options to make it taller
@@ -702,31 +715,38 @@ function hashString(str) {
 					shadow: 'true',   // Enable shadow effect for depth
 					responsive: 'true', // Enable responsive resizing
 				});
-				console.log('Coverflow instance created successfully:', coverflow);
 
 				// Set up cover selection event
 				bookshelf.addEventListener('coverselect', (e: any) => {
-					console.log('Cover selected:', e.detail);
 					if (e && e.detail && typeof e.detail.index === 'number') {
-						selectedBookIndex = e.detail.index;
-						// No need to save state when selection changes
-						// We're storing books individually now
+						if (isSearching && searchResults.length > 0) {
+							// When searching, get the correct book from search results
+							const coverflowIndex = e.detail.index;
+							
+							// Make sure the index is valid
+							if (coverflowIndex >= 0 && coverflowIndex < searchResults.length) {
+								// Find the corresponding book in the full library
+								const resultBook = searchResults[coverflowIndex];
+								const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
+								
+								if (libraryIndex >= 0) {
+									selectedBookIndex = libraryIndex;
+								}
+							}
+						} else {
+							// Normal selection - direct mapping
+							selectedBookIndex = e.detail.index;
+						}
 					}
 				});
 
 				// Add keyboard navigation for coverflow
 				window.addEventListener('keydown', handleKeyNavigation);
-				
-				// No longer add click handler to open book directly
-				// User must click the "Open Book" button instead
-				console.log('Book selection via coverflow click enabled');
 			} catch (error) {
 				console.error('Error initializing Coverflow:', error);
 			}
 		} else {
 			console.error('Coverflow script not loaded or bookshelf element not found');
-			console.log('Window.Coverflow:', typeof window.Coverflow);
-			console.log('Bookshelf element:', bookshelf);
 		}
 	}
 
@@ -859,6 +879,90 @@ function hashString(str) {
 		isEditingAuthor = false;
 	}
 	
+	// Debounced search function
+	function handleSearch(event) {
+		const query = event.target.value;
+		searchQuery = query; // Update immediately for UI
+		
+		// Clear any existing timeout
+		if (searchTimeout) {
+			clearTimeout(searchTimeout);
+		}
+		
+		// Set searching state
+		isSearching = query.trim().length > 0;
+		
+		// If empty query, clear results immediately
+		if (!query.trim()) {
+			debouncedSearchQuery = '';
+			searchResults = [];
+			
+			// Select the first book if there are any books
+			if (libraryBooks.length > 0) {
+				selectedBookIndex = 0;
+				if (coverflow) {
+					coverflow.select(selectedBookIndex);
+				}
+			}
+			return;
+		}
+		
+		// Debounce search execution (300ms delay)
+		searchTimeout = setTimeout(() => {
+			debouncedSearchQuery = query.trim().toLowerCase();
+			performSearch();
+		}, 300);
+	}
+	
+	// Perform the actual search
+	function performSearch() {
+		if (!debouncedSearchQuery) {
+			searchResults = [];
+			return;
+		}
+		
+		// Filter books based on title or author matching the query
+		searchResults = libraryBooks.filter(book => {
+			const title = (book.title || '').toLowerCase();
+			const author = (book.author || '').toLowerCase();
+			
+			return title.includes(debouncedSearchQuery) || 
+				   author.includes(debouncedSearchQuery);
+		});
+		
+		// Select the first matching book if there are results
+		if (searchResults.length > 0) {
+			// Find the index of the first matching book in the original array
+			const firstMatchIndex = libraryBooks.findIndex(book => 
+				book.id === searchResults[0].id);
+			
+			if (firstMatchIndex >= 0) {
+				selectedBookIndex = firstMatchIndex;
+				
+				// Update coverflow selection
+				if (coverflow) {
+					coverflow.select(selectedBookIndex);
+				}
+			}
+		}
+	}
+	
+	// Clear search
+	function clearSearch() {
+		searchQuery = '';
+		debouncedSearchQuery = '';
+		searchResults = [];
+		isSearching = false;
+		
+		// Select the first book again
+		if (libraryBooks.length > 0) {
+			selectedBookIndex = 0;
+			if (coverflow) {
+				coverflow.select(selectedBookIndex);
+			}
+		}
+	}
+	
 	// Handle keydown event in input fields
 	function handleEditKeydown(event, type) {
 		if (event.key === 'Enter') {
@@ -972,23 +1076,73 @@ function hashString(str) {
 	function handleKeyNavigation(event: KeyboardEvent) {
 		if (!browser || !coverflow || !isLibraryLoaded) return;
 		
-		// Skip navigation if we're in editing mode
-		if (isEditingTitle || isEditingAuthor) return;
+		// Skip navigation if we're in editing mode or if focus is in search field
+		if (isEditingTitle || isEditingAuthor || 
+			(document.activeElement && document.activeElement.classList.contains('search-input'))) {
+			return;
+		}
+		
+		// Clear search on Escape key
+		if (event.key === 'Escape' && isSearching) {
+			clearSearch();
+			event.preventDefault();
+			return;
+		}
 
 		if (event.key === 'ArrowLeft') {
 			// Select previous book
-			if (selectedBookIndex > 0) {
-				selectedBookIndex--;
-				coverflow.select(selectedBookIndex);
-				// No need to save selection state
+			if (isSearching && searchResults.length > 0) {
+				// When searching, navigate only through search results
+				const currentIndex = searchResults.findIndex(book => {
+					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
+				});
+				
+				if (currentIndex > 0) {
+					// Move to previous search result - get library index first
+					const prevResultIndex = libraryBooks.findIndex(book => 
+						book.id === searchResults[currentIndex - 1].id);
+					
+					if (prevResultIndex >= 0) {
+						// Update selected book index (in original array)
+						selectedBookIndex = prevResultIndex;
+						// But select visual index in coverflow (which is filtered)
+						coverflow.select(currentIndex - 1);
+					}
+				}
+			} else {
+				// Normal navigation
+				if (selectedBookIndex > 0) {
+					selectedBookIndex--;
+					coverflow.select(selectedBookIndex);
+				}
 			}
 			event.preventDefault();
 		} else if (event.key === 'ArrowRight') {
 			// Select next book
-			if (selectedBookIndex < libraryBooks.length - 1) {
-				selectedBookIndex++;
-				coverflow.select(selectedBookIndex);
-				// No need to save selection state
+			if (isSearching && searchResults.length > 0) {
+				// When searching, navigate only through search results
+				const currentIndex = searchResults.findIndex(book => {
+					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
+				});
+				
+				if (currentIndex >= 0 && currentIndex < searchResults.length - 1) {
+					// Move to next search result - get library index first
+					const nextResultIndex = libraryBooks.findIndex(book => 
+						book.id === searchResults[currentIndex + 1].id);
+					
+					if (nextResultIndex >= 0) {
+						// Update selected book index (in original array)
+						selectedBookIndex = nextResultIndex;
+						// But select visual index in coverflow (which is filtered)
+						coverflow.select(currentIndex + 1);
+					}
+				}
+			} else {
+				// Normal navigation
+				if (selectedBookIndex < libraryBooks.length - 1) {
+					selectedBookIndex++;
+					coverflow.select(selectedBookIndex);
+				}
 			}
 			event.preventDefault();
 		} else if (event.key === 'Enter') {
@@ -997,8 +1151,8 @@ function hashString(str) {
 				console.error('Error opening book:', err);
 			});
 			event.preventDefault();
-		} else if (event.key === 'Delete' || event.key === 'Backspace') {
-			// Remove selected book
+		} else if (event.key === 'Delete') {
+			// Remove selected book (only on Delete key, not Backspace)
 			removeSelectedBook();
 			event.preventDefault();
 		} else if (event.key === 'e' || event.key === 'E') {
@@ -1009,6 +1163,17 @@ function hashString(str) {
 			// Edit author with A key
 			startEditingAuthor();
 			event.preventDefault();
+		} else if (event.key === 'f' || event.key === 'F' || event.key === '/') {
+			// Focus search box with F or /
+			const searchInput = document.querySelector('.search-input') as HTMLInputElement;
+			if (searchInput) {
+				searchInput.focus();
+				// If there's existing search text, select it for easy replacement
+				if (searchQuery) {
+					searchInput.select();
+				}
+				event.preventDefault();
+			}
 		}
 	}
 
@@ -1110,17 +1275,44 @@ function hashString(str) {
 	}
 
 
+	// Setup event tracking for UI updates from search
+	$: {
+		// When search query or results change, update UI
+		if (isSearching && searchResults.length > 0) {
+			// When we have search results, reinitialize coverflow
+			// This runs after searchResults is populated
+			setTimeout(initCoverflow, 100);
+		} else if (!isSearching && libraryBooks.length > 0) {
+			// When search is cleared, reinitialize coverflow with all books
+			setTimeout(initCoverflow, 100);
+		}
+	}
+	
+	// Track selected book to ensure it's part of search results
+	$: if (isSearching && libraryBooks[selectedBookIndex]) {
+		// Check if the currently selected book is in search results
+		const isBookInResults = searchResults.some(book => book.id === libraryBooks[selectedBookIndex].id);
+		
+		// If not in results and we have results, select the first result
+		if (!isBookInResults && searchResults.length > 0) {
+			const firstMatchIndex = libraryBooks.findIndex(book => book.id === searchResults[0].id);
+			if (firstMatchIndex >= 0) {
+				selectedBookIndex = firstMatchIndex;
+				if (coverflow) {
+					coverflow.select(selectedBookIndex);
+				}
+			}
+		}
+	}
+	
 	onMount(async () => {
 		if (!browser) return;
 		
 		// Check URL for progress updates from the reader - simplified approach
 		const params = new URLSearchParams(window.location.search);
-		console.log('[DEBUG] Library component mounted, URL parameters:', params.toString());
 		
 		// First load the library
-		console.log('[DEBUG] Loading library state');
 		const loaded = await loadLibraryState();
-		console.log('[DEBUG] Library loaded:', loaded);
 
 		// Declare the Coverflow type
 		declare global {
@@ -1129,12 +1321,9 @@ function hashString(str) {
 			}
 		}
 
-		console.log('Component mounted, checking for Coverflow script');
-
 		// Try to preload coverflow script
 		try {
 			await loadCoverflowScript();
-			console.log('Coverflow script preloaded on mount');
 		} catch (err) {
 			console.error('Failed to preload Coverflow script:', err);
 		}
@@ -1277,35 +1466,73 @@ function hashString(str) {
 	<!-- Library header when books are loaded -->
 	<h1 class="text-2xl font-bold text-center my-4">Your Library</h1>
 
-	<div class="flex justify-center mb-8">
-		<!-- Native directory picker for better folder handling -->
-		<label class="btn btn-primary mx-2">
-			Select Folder
-			<input
-				type="file"
-				webkitdirectory
-				directory
-				multiple
-				class="hidden"
-				on:change={(e) => handleDirectorySelection(e.target.files)}
-			/>
-		</label>
+	<div class="flex flex-col justify-center mb-4">
+		<!-- Search box -->
+		<div class="search-container mb-8">
+			<div class="search-input-wrapper">
+				<input
+					type="text"
+					placeholder="Search by title or author..."
+					class="search-input"
+					bind:value={searchQuery}
+					on:input={handleSearch}
+					on:keydown={(e) => {
+						if (e.key === 'Escape') {
+							clearSearch();
+							e.target.blur();
+							e.preventDefault();
+						}
+					}}
+				/>
+				{#if searchQuery}
+					<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+					</button>
+				{:else}
+					<span class="search-icon">
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+					</span>
+				{/if}
+			</div>
+			
+			{#if searchQuery && searchResults.length === 0}
+				<div class="search-results-count empty">No matching books found</div>
+			{:else if searchQuery && searchResults.length > 0}
+				<div class="search-results-count">Found {searchResults.length} book{searchResults.length !== 1 ? 's' : ''}</div>
+			{/if}
+		</div>
+		
+		<!-- Button row -->
+		<div class="flex justify-center mb-4">
+			<!-- Native directory picker for better folder handling -->
+			<label class="btn btn-primary mx-2">
+				Select Folder
+				<input
+					type="file"
+					webkitdirectory
+					directory
+					multiple
+					class="hidden"
+					on:change={(e) => handleDirectorySelection(e.target.files)}
+				/>
+			</label>
 
-		<button
-			class="btn btn-secondary mx-2"
-			on:click={() => {
-				if (browser) {
-					const fileInput = document.createElement('input');
-					fileInput.type = 'file';
-					fileInput.multiple = true;
-					fileInput.accept = SUPPORTED_FORMATS.join(',');
-					fileInput.onchange = (e) => handleDirectorySelection(e.target.files);
-					fileInput.click();
-				}
-			}}
-		>
-			Select Files
-		</button>
+			<button
+				class="btn btn-secondary mx-2"
+				on:click={() => {
+					if (browser) {
+						const fileInput = document.createElement('input');
+						fileInput.type = 'file';
+						fileInput.multiple = true;
+						fileInput.accept = SUPPORTED_FORMATS.join(',');
+						fileInput.onchange = (e) => handleDirectorySelection(e.target.files);
+						fileInput.click();
+					}
+				}}
+			>
+				Select Files
+			</button>
+		</div>
 	</div>
 	{/if}
 
@@ -1399,7 +1626,7 @@ function hashString(str) {
 
 		<!-- Keyboard navigation hints -->
 		<div class="navigation-hints">
-			<p>Use ← and → to browse, Enter to open book, E to edit title, A to edit author</p>
+			<p>Use ← → to browse, Enter to open, E to edit title, A to edit author, F to search, Delete to remove</p>
 		</div>
 	</div>
 </div>
@@ -1661,6 +1888,76 @@ function hashString(str) {
     
     :global(.close-button:hover) {
         opacity: 1;
+    }
+    
+    /* Search styling */
+    .search-container {
+        width: 100%;
+        max-width: 500px;
+        margin: 0 auto 1rem;
+    }
+    
+    .search-input-wrapper {
+        position: relative;
+        width: 100%;
+    }
+    
+    .search-input {
+        width: 100%;
+        padding: 10px 40px 10px 40px;
+        border-radius: 5px;
+        border: 1px solid rgba(128, 128, 128, 0.3);
+        background-color: var(--color-bg-2);
+        color: var(--color-text);
+        font-size: 1rem;
+        transition: border-color 0.3s, box-shadow 0.3s, background-color 0.3s;
+    }
+    
+    .search-input:focus {
+        outline: none;
+        border-color: var(--color-theme-1);
+        box-shadow: 0 0 0 2px rgba(34, 117, 215, 0.2);
+    }
+    
+    .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--color-text);
+        opacity: 0.5;
+    }
+    
+    .search-clear-btn {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text);
+        opacity: 0.5;
+        padding: 4px;
+        border-radius: 50%;
+        transition: opacity 0.2s, background-color 0.2s;
+    }
+    
+    .search-clear-btn:hover {
+        opacity: 1;
+        background-color: rgba(128, 128, 128, 0.1);
+    }
+    
+    .search-results-count {
+        text-align: center;
+        margin-top: 8px;
+        font-size: 0.9rem;
+        color: var(--color-text);
+        opacity: 0.7;
+    }
+    
+    .search-results-count.empty {
+        color: #ef4444;
     }
     
     /* Feature cards styling */
