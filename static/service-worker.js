@@ -848,10 +848,111 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Handle fetch events (for potential future offline support)
+// Offline support - cache essential app files
+const CACHE_NAME = 'bitabo-app-v1';
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/coverflow/coverflow-modified.js',
+  '/placeholder-cover.png',
+  '/favicon.png',
+  '/manifest.json',
+  '/service-worker.js'
+];
+
+// Cache essential app files during installation
+self.addEventListener('install', (event) => {
+  debugLog(`Service worker installing, version ${SW_VERSION}`);
+  
+  // Cache static assets
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      debugLog('Caching static assets');
+      return cache.addAll(STATIC_ASSETS);
+    })
+  );
+  
+  self.skipWaiting(); // Activate worker immediately
+});
+
+// Handle fetch events for offline support
 self.addEventListener('fetch', (event) => {
-  // Currently just pass through, will enhance later for offline support
-  event.respondWith(fetch(event.request));
+  // Skip cross-origin requests
+  if (!event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+  
+  // Network-first strategy for HTML files
+  if (event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          // Cache the latest version
+          let responseClone = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseClone);
+          });
+          return response;
+        })
+        .catch(() => {
+          // If network fails, try cache
+          return caches.match(event.request).then(cachedResponse => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            // If not in cache, try the root page as fallback
+            return caches.match('/');
+          });
+        })
+    );
+    return;
+  }
+  
+  // Cache-first strategy for assets
+  if (
+    event.request.url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/)
+  ) {
+    event.respondWith(
+      caches.match(event.request).then(cachedResponse => {
+        if (cachedResponse) {
+          // Return from cache
+          return cachedResponse;
+        }
+        // Fetch from network, then cache
+        return fetch(event.request).then(response => {
+          if (response.ok) {
+            let responseClone = response.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+  
+  // Network first, falling back to cache for other requests
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        // Only cache successful responses
+        if (response.ok) {
+          let responseClone = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        // Fall back to cache
+        return caches.match(event.request).then(cachedResponse => {
+          return cachedResponse || Promise.reject('fetch-failed');
+        });
+      })
+  );
 });
 
 debugLog(`Service worker loaded, version ${SW_VERSION}`);

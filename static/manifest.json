@@ -1,0 +1,66 @@
+{
+  "name": "Bitabo E-book Reader",
+  "short_name": "Bitabo",
+  "description": "A beautiful client-side e-book reader and library manager",
+  "start_url": "/library",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2275d7",
+  "icons": [
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["books", "education", "productivity"],
+  "dir": "ltr",
+  "lang": "en-US",
+  "orientation": "any",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "serviceworker": {
+    "src": "/service-worker.js",
+    "scope": "/"
+  },
+  "shortcuts": [
+    {
+      "name": "Library",
+      "url": "/library",
+      "description": "View your e-book library",
+      "icons": [
+        {
+          "src": "/icons/icon-96x96.png",
+          "sizes": "32x32",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop.png",
+      "sizes": "3602x1954",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Bitabo library view on desktop"
+    },
+    {
+      "src": "/screenshots/mobile.png",
+      "sizes": "846x1486",
+      "type": "image/png",
+      "label": "Bitabo library view on mobile"
+    }
+  ]
+}

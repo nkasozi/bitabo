@@ -2,11 +2,121 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+		<link rel="icon" href="%sveltekit.assets%/icons/icon-192x192.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		
+		<!-- PWA Support -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.json" />
+		<meta name="theme-color" content="#2275d7" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="Bitabo" />
+		<meta name="application-name" content="Bitabo E-book Reader" />
+		<meta name="description" content="A beautiful client-side e-book reader and library manager" />
+		
+		<!-- iOS icons -->
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/icon-192x192.png" />
+		
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>
+		
+		<!-- PWA installation notification -->
+		<script>
+			// Check if the app can be installed
+			window.addEventListener('load', () => {
+				let deferredPrompt;
+				const pwaInstallButton = document.createElement('div');
+				pwaInstallButton.style.display = 'none';
+				
+				window.addEventListener('beforeinstallprompt', (e) => {
+					// Prevent the mini-infobar from appearing on mobile
+					e.preventDefault();
+					// Stash the event so it can be triggered later
+					deferredPrompt = e;
+					// Show the install button
+					setTimeout(() => {
+						if (deferredPrompt && !localStorage.getItem('pwaInstallDismissed')) {
+							const banner = document.createElement('div');
+							banner.className = 'pwa-install-banner';
+							banner.innerHTML = `
+								<div class="pwa-install-content">
+									<p><strong>Install Bitabo</strong> for offline use</p>
+									<div class="pwa-install-buttons">
+										<button class="pwa-install-button">Install</button>
+										<button class="pwa-dismiss-button">Not now</button>
+									</div>
+								</div>
+							`;
+							document.body.appendChild(banner);
+							
+							banner.querySelector('.pwa-install-button').addEventListener('click', async () => {
+								deferredPrompt.prompt();
+								const { outcome } = await deferredPrompt.userChoice;
+								deferredPrompt = null;
+								banner.remove();
+							});
+							
+							banner.querySelector('.pwa-dismiss-button').addEventListener('click', () => {
+								localStorage.setItem('pwaInstallDismissed', 'true');
+								banner.remove();
+							});
+							
+							// Add styles
+							const style = document.createElement('style');
+							style.textContent = `
+								.pwa-install-banner {
+									position: fixed;
+									bottom: 20px;
+									left: 50%;
+									transform: translateX(-50%);
+									background-color: white;
+									box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+									border-radius: 8px;
+									z-index: 10000;
+									width: 320px;
+									max-width: 90%;
+								}
+								.pwa-install-content {
+									padding: 16px;
+								}
+								.pwa-install-buttons {
+									display: flex;
+									justify-content: flex-end;
+									gap: 10px;
+									margin-top: 12px;
+								}
+								.pwa-install-button, .pwa-dismiss-button {
+									padding: 8px 12px;
+									border-radius: 4px;
+									border: none;
+									cursor: pointer;
+								}
+								.pwa-install-button {
+									background-color: #2275d7;
+									color: white;
+								}
+								.pwa-dismiss-button {
+									background-color: transparent;
+									color: #333;
+								}
+							`;
+							document.head.appendChild(style);
+						}
+					}, 5000); // Show after 5 seconds
+				});
+				
+				// Handle PWA life cycle
+				window.addEventListener('appinstalled', () => {
+					// App was installed
+					console.log('PWA installed');
+					// Hide the install button
+					const banner = document.querySelector('.pwa-install-banner');
+					if (banner) banner.remove();
+				});
+			});
+		</script>
 	</body>
 </html>

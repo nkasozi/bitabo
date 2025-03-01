@@ -69,9 +69,8 @@ function hashString(str) {
 				if (isServiceWorkerRegistered) {
 					try {
 						const response = await sendMessageToSW({ type: 'ping' });
-						console.log('[DEBUG] Service worker ping test response:', response);
 						
-						// If we made it here, service worker is responsive
+						// Check response type to handle different service worker states
 						if (response && response.type === 'pong') {
 							console.log('[DEBUG] Service worker communication verified!');
 							
@@ -79,13 +78,24 @@ function hashString(str) {
 							console.log('[DEBUG] Checking for data to migrate...');
 							const migrated = await migrateData();
 							console.log('[DEBUG] Data migration status:', migrated);
-						} else {
-							console.error('[DEBUG] Service worker responded with unexpected format:', response);
-							isServiceWorkerRegistered = false;
+						} 
+						else if (response && ['sw-not-supported', 'sw-not-controlling-yet', 
+						         'sw-registration-failed', 'message-error', 'sw-timeout'].includes(response.type)) {
+							// These are expected conditions when the service worker is not fully ready
+							console.info('[DEBUG] Service worker not fully ready yet:', response.type);
+							// Still consider it registered - it will be available after page refresh
+							isServiceWorkerRegistered = true;
+						}
+						else {
+							console.warn('[DEBUG] Service worker responded with unexpected format:', response);
+							// Still consider it registered but log a warning
+							isServiceWorkerRegistered = true;
 						}
 					} catch (error) {
-						console.error('[DEBUG] Service worker communication failed:', error);
-						isServiceWorkerRegistered = false;
+						// This should rarely happen now with the improved error handling
+						console.warn('[DEBUG] Service worker communication exception:', error);
+						// We'll still consider it registered since the actual registration succeeded
+						isServiceWorkerRegistered = true;
 					}
 				}
 				

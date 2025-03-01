@@ -107,16 +107,38 @@ export async function registerServiceWorker(): Promise<boolean> {
 // Send a message to the service worker and wait for a response
 export function sendMessageToSW(message: any): Promise<any> {
   return new Promise((resolve, reject) => {
+    // First check if service workers are supported
+    if (!('serviceWorker' in navigator)) {
+      console.warn('Service workers are not supported in this browser');
+      resolve({ type: 'sw-not-supported' });
+      return;
+    }
+    
     // Get the active service worker
     const sw = navigator.serviceWorker.controller;
     
     if (!sw) {
-      console.error('No active service worker controller found');
-      reject(new Error('No active service worker controller found'));
+      // Instead of rejecting, we'll handle this situation gracefully
+      console.info('No active service worker controller found yet, waiting for activation');
+      
+      // Check if there's a registration in progress
+      navigator.serviceWorker.ready.then(() => {
+        // Try again after service worker is ready
+        if (navigator.serviceWorker.controller) {
+          // Now we can try sending the message again
+          sendMessageToSW(message).then(resolve).catch(reject);
+        } else {
+          // Service worker is ready but not controlling the page yet
+          console.info('Service worker is ready but not controlling the page yet');
+          resolve({ type: 'sw-not-controlling-yet' });
+        }
+      }).catch(() => {
+        console.warn('Service worker registration failed');
+        resolve({ type: 'sw-registration-failed' });
+      });
+      
       return;
     }
-    
-    console.log('Sending message to service worker:', message);
     
     // Create a unique message ID
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -135,7 +157,6 @@ export function sendMessageToSW(message: any): Promise<any> {
         navigator.serviceWorker.removeEventListener('message', messageHandler);
         
         // Resolve with the response data
-        console.log('Received response from service worker:', event.data);
         resolve(event.data);
       }
     };
@@ -144,14 +165,22 @@ export function sendMessageToSW(message: any): Promise<any> {
     navigator.serviceWorker.addEventListener('message', messageHandler);
     
     // Send the message
-    sw.postMessage(msgWithId);
+    try {
+      sw.postMessage(msgWithId);
+    } catch (err) {
+      // Handle potential errors when posting messages
+      console.warn('Error posting message to service worker:', err);
+      navigator.serviceWorker.removeEventListener('message', messageHandler);
+      resolve({ type: 'message-error', error: err.message });
+      return;
+    }
     
     // Set a timeout to prevent hanging
     setTimeout(() => {
       navigator.serviceWorker.removeEventListener('message', messageHandler);
-      console.warn('Service worker did not respond in time for message:', message);
-      // Still resolve with a null response to prevent crashes
-      resolve(null);
+      console.info('Service worker did not respond in time, continuing without waiting');
+      // Still resolve with a status response to prevent crashes
+      resolve({ type: 'sw-timeout' });
     }, 5000);
   });
 }
