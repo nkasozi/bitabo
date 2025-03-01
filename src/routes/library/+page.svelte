@@ -1292,7 +1292,8 @@ function hashString(str) {
     }
 
     .book-author {
-        color: #666;
+        color: var(--color-text);
+        opacity: 0.7;
         margin-bottom: 1rem;
     }
 
@@ -1320,7 +1321,8 @@ function hashString(str) {
     .navigation-hints {
         text-align: center;
         margin-top: 1rem;
-        color: #666;
+        color: var(--color-text);
+        opacity: 0.7;
         font-size: 0.9rem;
     }
 
@@ -1336,21 +1338,24 @@ function hashString(str) {
     }
 
     .btn-primary {
-        background-color: #2275d7;
+        background-color: var(--color-theme-1);
         color: white;
+        transition: background-color 0.3s;
     }
 
     .btn-primary:hover {
-        background-color: #1c5eb3;
+        background-color: var(--color-theme-2);
     }
 
     .btn-secondary {
-        background-color: #f3f4f6;
-        color: #111827;
+        background-color: var(--color-bg-2);
+        color: var(--color-text);
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        transition: background-color 0.3s, border-color 0.3s;
     }
 
     .btn-secondary:hover {
-        background-color: #e5e7eb;
+        background-color: var(--color-bg-1);
     }
 
     .btn-danger {
@@ -1431,11 +1436,11 @@ function hashString(str) {
     }
     
     .feature-card {
-        background-color: #f9fafb;
+        background-color: var(--color-bg-2);
         padding: 2rem;
         border-radius: 0.5rem;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        transition: transform 0.3s, box-shadow 0.3s;
+        transition: transform 0.3s, box-shadow 0.3s, background-color 0.3s;
     }
     
     .feature-card:hover {
