@@ -1809,7 +1809,7 @@
 		</div>
 	{:else}
 		<!-- Library header when books are loaded -->
-		<h1 class="text-2xl font-bold text-center">Your Library</h1>
+		<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
 		
 		<div class="epic-quote text-center mb-4">
 			<p>One place to house them, One shelf to hold them,</p>
