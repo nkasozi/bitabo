@@ -3,8 +3,7 @@
 	import { browser } from '$app/environment';
 
 	// Import service worker utilities
-	import { registerServiceWorker, getReadingProgress as swGetProgress,
-		addBookToLibrary, getAllBooks, deleteBook, migrateData,
+	import { registerServiceWorker, addBookToLibrary, deleteBook, migrateData,
 		sendMessageToSW } from '$lib/serviceWorker';
 
 	// Supported e-book formats
@@ -1787,8 +1786,12 @@
 					<img src="/icons/icon-128x128.png" alt="Bitabo" width="128" height="128" />
 				</div>
 				<h2 class="text-2xl font-bold mb-4">Your Library is Empty</h2>
-				<p class="mb-6">Start building your e-book collection by uploading your files</p>
-
+				
+				<div class="epic-quote mb-6">
+					<p>One place to house them, One shelf to hold them,</p>
+					<p>One search to find them, And in knowledge bind them</p>
+				</div>
+				
 				<button
 					class="btn btn-primary btn-lg"
 					on:click={toggleUploadModal}
@@ -1806,7 +1809,12 @@
 		</div>
 	{:else}
 		<!-- Library header when books are loaded -->
-		<h1 class="text-2xl font-bold text-center my-4">Your Library</h1>
+		<h1 class="text-2xl font-bold text-center">Your Library</h1>
+		
+		<div class="epic-quote text-center mb-4">
+			<p>One place to house them, One shelf to hold them,</p>
+			<p>One search to find them, And in knowledge bind them</p>
+		</div>
 
 		<div class="flex flex-col justify-center mb-4">
 			<!-- Search box -->
@@ -1852,6 +1860,9 @@
 					on:click={toggleUploadModal}
 				>
 					Upload Your Books
+				</button>
+				<button class="btn btn-danger-outline" on:click={clearLibrary}>
+					Clear Your Library
 				</button>
 			</div>
 		</div>
@@ -1985,17 +1996,12 @@
 						Remove Book
 					</button>
 				</div>
-				<div class="mt-8">
-					<button class="btn btn-danger-outline" on:click={clearLibrary}>
-						Clear Library
-					</button>
-				</div>
 			{/if}
 		</div>
 
 		<!-- Keyboard navigation hints -->
 		<div class="navigation-hints">
-			<p>Use ← → to browse, Enter to open, E to edit title, A to edit author, F to search, Delete to remove</p>
+			<p>Use the arrow keys ← → to browse through your books</p>
 		</div>
 	</div>
 </div>
@@ -2098,7 +2104,7 @@
         width: 100%;
         max-width: 1200px;
         margin: 0 auto;
-        padding: 2rem;
+        padding: 1rem;
     }
 
     /* Responsive container adjustments */
@@ -2114,10 +2120,8 @@
 
     /* Coverflow container */
     .coverflow {
-        height: 600px;
+        height: 550px;
         width: 100%;
-        margin: 0 auto;
-        margin-bottom: 60px;
         position: relative;
         background-color: transparent !important;
     }
@@ -2139,13 +2143,11 @@
     .book-title {
         font-weight: bold;
         font-size: 1.5rem;
-        margin-bottom: 0.5rem;
     }
 
     .book-author {
         color: var(--color-text);
         opacity: 0.7;
-        margin-bottom: 1rem;
         cursor: pointer;
     }
 
@@ -2564,6 +2566,21 @@
         font-size: 1.1rem;
     }
 
+    .epic-quote {
+        font-family: 'Georgia', serif;
+        font-style: italic;
+        line-height: 1.6;
+        margin: 15px auto;
+        max-width: 600px;
+        text-align: center;
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+
+    .epic-quote p {
+        margin-bottom: 5px;
+    }
+
     .features-summary {
         margin-top: 30px;
         text-align: left;
@@ -2575,5 +2592,23 @@
     .features-summary p {
         margin-bottom: 8px;
         opacity: 0.8;
+    }
+
+    /* Book styling for empty library */
+    .empty-library-container {
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 30px;
+        background-color: var(--color-bg-2);
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .empty-library-container:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
     }
 </style>
