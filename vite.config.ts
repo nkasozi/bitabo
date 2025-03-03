@@ -33,7 +33,23 @@ export default defineConfig({
 		host: true,               // Listen on all network interfaces
 		fs: {
 			allow: ['static']       // Allow serving files from static directory
-		}
+		},
+		// Add custom middleware to handle direct index.html requests
+		middlewareMode: false     // Disable middleware mode for compatibility
+	},
+	
+	// Add custom Vite plugin for handling requests
+	configureServer(server) {
+		// Add a middleware to redirect /index.html to /
+		server.middlewares.use((req, res, next) => {
+			if (req.url === '/index.html') {
+				console.log('Redirecting /index.html request to /');
+				res.writeHead(301, { Location: '/' });
+				res.end();
+				return;
+			}
+			next();
+		});
 	},
 
 	// Build configuration

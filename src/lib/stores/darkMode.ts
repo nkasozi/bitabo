@@ -1,14 +1,13 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
 
-// Initialize dark mode from localStorage if available, otherwise use system preference
+// Initialize dark mode from localStorage if available, otherwise default to dark mode
 function createDarkModeStore() {
-  // Default to system preference if localStorage is not available
-  const prefersDark = browser && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Default to dark mode unless explicitly set to light mode in localStorage
   
   // Check localStorage for saved preference
   const storedDarkMode = browser && localStorage.getItem('darkMode');
-  const initialValue = storedDarkMode !== null ? JSON.parse(storedDarkMode) : prefersDark;
+  const initialValue = storedDarkMode !== null ? JSON.parse(storedDarkMode) : true; // Default to true (dark mode)
   
   const { subscribe, set, update } = writable(initialValue);
   

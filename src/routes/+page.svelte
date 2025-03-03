@@ -1,14 +1,6 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-
-	onMount(() => {
-		if (browser) {
-			// Automatically redirect to library page
-			goto('/library');
-		}
-	});
+	// This is a lightweight placeholder page
+	// The server-side redirect in hooks.server.js will automatically send users to /library
 </script>
 
 <svelte:head>
@@ -16,7 +8,7 @@
 	<meta name="description" content="A client-side e-book reader and library manager" />
 </svelte:head>
 
-<!-- This page now just redirects to the library page -->
+<!-- This is just a placeholder - the server-side redirect should happen before this is seen -->
 <div class="container mx-auto px-4 py-8 text-center">
-	<p>Redirecting to library page...</p>
+	<p>Redirecting to library...</p>
 </div>

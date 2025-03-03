@@ -36,7 +36,7 @@
 
 	<nav>
 		<ul>
-			<li aria-current={$page.url.pathname === '/library' || $page.url.pathname === '/' ? 'page' : undefined}>
+			<li aria-current={$page && $page.url && $page.url.pathname && ($page.url.pathname === '/library' || $page.url.pathname === '/') ? 'page' : undefined}>
 				<a href="/library">Library</a>
 			</li>
 		</ul>

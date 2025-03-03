@@ -1,0 +1,91 @@
+/* Empty library styling - Book shaped container */
+.empty-library-container {
+    max-width: 800px;
+    margin: 40px auto;
+    position: relative;
+    perspective: 1000px;
+}
+
+.empty-library-container::before,
+.empty-library-container::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 50%;
+    height: 100%;
+    background-color: var(--color-bg-2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    z-index: -1;
+    transform-style: preserve-3d;
+    transition: transform 0.6s ease;
+}
+
+.empty-library-container::before {
+    left: 0;
+    transform-origin: right center;
+    transform: rotateY(15deg);
+    border-radius: 10px 0 0 10px;
+    border-right: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.empty-library-container::after {
+    right: 0;
+    transform-origin: left center;
+    transform: rotateY(-15deg);
+    border-radius: 0 10px 10px 0;
+    border-left: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.empty-library-container:hover::before {
+    transform: rotateY(20deg);
+}
+
+.empty-library-container:hover::after {
+    transform: rotateY(-20deg);
+}
+
+.empty-library-content {
+    position: relative;
+    z-index: 1;
+    padding: 50px 40px;
+    background: linear-gradient(to right, 
+        var(--color-bg-1) 0%, 
+        var(--color-bg-1) 49.9%, 
+        var(--color-bg-1) 50.1%,
+        var(--color-bg-1) 100%);
+    background-size: 100% 100%;
+    text-align: center;
+    border-radius: 10px;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.05);
+}
+
+.empty-library-content::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    background-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+    z-index: 2;
+}
+
+.empty-library-icon {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.empty-library-icon img {
+    display: block;
+    margin: 0 auto;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+    transition: transform 0.3s ease;
+}
+
+.empty-library-container:hover .empty-library-icon img {
+    transform: scale(1.1);
+}
