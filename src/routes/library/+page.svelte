@@ -681,7 +681,7 @@
 	function initCoverflow() {
 		if (!browser) return;
 
-		// Make sure the coverflow script is loaded
+		// Make sure the coverflow script is loaded and the bookshelf element exists
 		if (typeof window.Coverflow !== 'undefined' && bookshelf) {
 			// Clear existing content
 			bookshelf.innerHTML = '';
@@ -690,6 +690,31 @@
 			const booksToDisplay = isSearching && searchResults.length > 0
 				? searchResults
 				: libraryBooks;
+				
+			// Check if there are any books to display
+			if (booksToDisplay.length === 0) {
+				// If no books, show the empty library placeholder
+				if (!isLibraryLoaded) {
+					const placeholder = document.createElement('div');
+					placeholder.className = 'empty-library-placeholder';
+					
+					const img = document.createElement('img');
+					img.src = '/empty-library-image.png';
+					img.alt = 'Empty Library';
+					img.className = 'empty-library-image';
+					
+					placeholder.appendChild(img);
+					bookshelf.appendChild(placeholder);
+				}
+				
+				// Clear any existing coverflow instance
+				if (coverflow && typeof coverflow.destroy === 'function') {
+					coverflow.destroy();
+					coverflow = null;
+				}
+				
+				return;
+			}
 
 			// Create img elements for each book directly
 			booksToDisplay.forEach((book, index) => {
@@ -756,7 +781,7 @@
 
 	// Function to remove the selected book
 	async function removeSelectedBook() {
-		if (!browser || !coverflow || !isLibraryLoaded || libraryBooks.length === 0) return;
+		if (!browser || !isLibraryLoaded || libraryBooks.length === 0) return;
 
 		if (confirm(`Remove "${libraryBooks[selectedBookIndex].title}" from your library?`)) {
 			console.log('[DEBUG] Removing book at index', selectedBookIndex);
@@ -768,21 +793,41 @@
 			libraryBooks.splice(selectedBookIndex, 1);
 			libraryBooks = [...libraryBooks]; // Trigger reactivity
 
+			// Remove the book from the database
+			await removeBookFromDB(bookId);
+
 			// If library is now empty
 			if (libraryBooks.length === 0) {
 				isLibraryLoaded = false;
 				console.log('[DEBUG] Library is now empty');
-
-				// Nothing to do for clearing an empty library
-				// (Individual book was already deleted)
-
+				
+				// Force UI update to show empty state
+				if (bookshelf) {
+					// Clear existing content
+					bookshelf.innerHTML = '';
+					
+					// Add the empty library placeholder
+					const placeholder = document.createElement('div');
+					placeholder.className = 'empty-library-placeholder';
+					
+					const img = document.createElement('img');
+					img.src = '/empty-library-image.png';
+					img.alt = 'Empty Library';
+					img.className = 'empty-library-image';
+					
+					placeholder.appendChild(img);
+					bookshelf.appendChild(placeholder);
+				}
+				
 				// Also try to remove from service worker in background
 				if (isServiceWorkerRegistered && bookId) {
 					deleteBook(bookId).catch(err => {
 						console.error('[DEBUG] Error deleting book from service worker:', err);
 					});
 				}
-
+				
+				// Show notification
+				showNotification(`Book removed from library. Your library is now empty.`);
 				return;
 			}
 
@@ -791,11 +836,19 @@
 				selectedBookIndex = libraryBooks.length - 1;
 			}
 
-			// Remove the book from the database
-			await removeBookFromDB(bookId);
-
 			// Re-initialize coverflow with updated books
-			initCoverflow();
+			if (coverflow) {
+				// Destroy the existing coverflow instance if it exists
+				if (typeof coverflow.destroy === 'function') {
+					coverflow.destroy();
+				}
+				
+				// Re-initialize with updated books
+				setTimeout(initCoverflow, 100);
+			} else {
+				// If no coverflow instance, just initialize
+				initCoverflow();
+			}
 
 			// Also remove from service worker in background (if ID exists)
 			if (isServiceWorkerRegistered && bookId) {
@@ -1018,6 +1071,30 @@
 				console.error('[DEBUG] Error clearing books from database:', error);
 				showNotification('Error clearing library from database.', 'error');
 				return;
+			}
+			
+			// Update UI to show empty state
+			if (bookshelf) {
+				// Clear existing content
+				bookshelf.innerHTML = '';
+				
+				// Add the empty library placeholder
+				const placeholder = document.createElement('div');
+				placeholder.className = 'empty-library-placeholder';
+				
+				const img = document.createElement('img');
+				img.src = '/empty-library-image.png';
+				img.alt = 'Empty Library';
+				img.className = 'empty-library-image';
+				
+				placeholder.appendChild(img);
+				bookshelf.appendChild(placeholder);
+				
+				// Clear coverflow instance if it exists
+				if (coverflow && typeof coverflow.destroy === 'function') {
+					coverflow.destroy();
+					coverflow = null;
+				}
 			}
 
 			// Also delete from service worker in background
@@ -1654,6 +1731,35 @@
 	}
 
 
+	// Setup reactive updates for UI
+	$: {
+		// When isLibraryLoaded changes (such as when clearing the library), update the UI
+		if (browser && bookshelf) {
+			if (!isLibraryLoaded) {
+				// If library became empty, show the empty state
+				bookshelf.innerHTML = '';
+				
+				// Add the empty library placeholder
+				const placeholder = document.createElement('div');
+				placeholder.className = 'empty-library-placeholder';
+				
+				const img = document.createElement('img');
+				img.src = '/empty-library-image.png';
+				img.alt = 'Empty Library';
+				img.className = 'empty-library-image';
+				
+				placeholder.appendChild(img);
+				bookshelf.appendChild(placeholder);
+				
+				// Clear any existing coverflow instance
+				if (coverflow && typeof coverflow.destroy === 'function') {
+					coverflow.destroy();
+					coverflow = null;
+				}
+			}
+		}
+	}
+	
 	// Setup event tracking for UI updates from search
 	$: {
 		// When search query or results change, update UI
@@ -1774,99 +1880,70 @@
 </svelte:head>
 
 <div class="library-container">
+	<!-- Consistent library header for all states -->
+	<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
+	
+	<div class="epic-quote text-center mb-4">
+		<p>One place to house them, One shelf to hold them,</p>
+		<p>One search to find them, And in knowledge bind them</p>
+	</div>
 
-	<!-- Welcome section (only visible if no books are loaded) -->
-	{#if !isLibraryLoaded}
-		<div class="welcome-section">
-			<h1 class="text-4xl font-bold mb-4">Bitabo E-book Reader</h1>
-			<p class="text-xl mb-8">A beautiful client-side e-book reader and library manager</p>
+	<div class="flex flex-col justify-center mb-4">
+			<!-- Search box (only visible when books are loaded) -->
+			{#if isLibraryLoaded}
+				<div class="search-container mb-8 fade-in">
+					<div class="search-input-wrapper">
+						<input
+							type="text"
+							placeholder="Search by title or author..."
+							class="search-input"
+							bind:value={searchQuery}
+							on:input={handleSearch}
+							on:keydown={(e) => {
+							if (e.key === 'Escape') {
+								clearSearch();
+								e.target.blur();
+								e.preventDefault();
+							}
+						}}
+						/>
+						{#if searchQuery}
+							<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							</button>
+						{:else}
+						<span class="search-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+						</span>
+						{/if}
+					</div>
 
-			<div class="empty-library-container">
-				<div class="empty-library-icon">
-					<img src="/icons/icon-128x128.png" alt="Bitabo" width="128" height="128" />
-				</div>
-				<h2 class="text-2xl font-bold mb-4">Your Library is Empty</h2>
-				
-				<div class="epic-quote mb-6">
-					<p>One place to house them, One shelf to hold them,</p>
-					<p>One search to find them, And in knowledge bind them</p>
-				</div>
-				
-				<button
-					class="btn btn-primary btn-lg"
-					on:click={toggleUploadModal}
-				>
-					Upload Your Books
-				</button>
-
-				<div class="features-summary mt-8">
-					<p>✓ Support for EPUB, PDF, MOBI and AZW3 formats</p>
-					<p>✓ Organize books in a visual shelf</p>
-					<p>✓ Import from Google Drive or local files</p>
-					<p>✓ Client-side processing - your files never leave your device</p>
-				</div>
-			</div>
-		</div>
-	{:else}
-		<!-- Library header when books are loaded -->
-		<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
-		
-		<div class="epic-quote text-center mb-4">
-			<p>One place to house them, One shelf to hold them,</p>
-			<p>One search to find them, And in knowledge bind them</p>
-		</div>
-
-		<div class="flex flex-col justify-center mb-4">
-			<!-- Search box -->
-			<div class="search-container mb-8">
-				<div class="search-input-wrapper">
-					<input
-						type="text"
-						placeholder="Search by title or author..."
-						class="search-input"
-						bind:value={searchQuery}
-						on:input={handleSearch}
-						on:keydown={(e) => {
-						if (e.key === 'Escape') {
-							clearSearch();
-							e.target.blur();
-							e.preventDefault();
-						}
-					}}
-					/>
-					{#if searchQuery}
-						<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-						</button>
-					{:else}
-					<span class="search-icon">
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-					</span>
+					{#if searchQuery && searchResults.length === 0}
+						<div class="search-results-count empty">No matching books found</div>
+					{:else if searchQuery && searchResults.length > 0}
+						<div class="search-results-count">Found {searchResults.length} book{searchResults.length !== 1 ? 's' : ''}</div>
 					{/if}
 				</div>
-
-				{#if searchQuery && searchResults.length === 0}
-					<div class="search-results-count empty">No matching books found</div>
-				{:else if searchQuery && searchResults.length > 0}
-					<div class="search-results-count">Found {searchResults.length} book{searchResults.length !== 1 ? 's' : ''}</div>
-				{/if}
-			</div>
+			{/if}
 
 			<!-- Button row -->
 			<div class="flex justify-center mb-4">
-				<!-- Our custom file upload button -->
+				<!-- Upload button (always visible) -->
 				<button
 					class="btn btn-primary mx-2"
 					on:click={toggleUploadModal}
 				>
 					Upload Your Books
 				</button>
-				<button class="btn btn-danger-outline" on:click={clearLibrary}>
-					Clear Your Library
-				</button>
+				
+				<!-- Clear library button (only visible when books are loaded) -->
+				{#if isLibraryLoaded}
+					<button class="btn btn-danger-outline fade-in" on:click={clearLibrary}>
+						Clear Your Library
+					</button>
+				{/if}
 			</div>
 		</div>
-	{/if}
 
 	<!-- Upload modal dialog -->
 	{#if isUploadModalOpen}
@@ -1920,17 +1997,23 @@
 		accept=".epub,.pdf,.mobi,.azw3"
 	/>
 
-	<div class:hidden={!isLibraryLoaded}>
-		<!-- Main coverflow container -->
-		<div
-			bind:this={bookshelf}
-			class="coverflow"
-		>
-			<!-- Books will be added here dynamically as img tags -->
-		</div>
+	<div>
+			<!-- Main coverflow container -->
+			<div
+				bind:this={bookshelf}
+				class="coverflow"
+			>
+				{#if !isLibraryLoaded}
+					<!-- Empty library placeholder -->
+					<div class="empty-library-placeholder">
+						<img src="/empty-library-image.png" alt="Empty Library" class="empty-library-image" />
+					</div>
+				{/if}
+				<!-- Books will be added here dynamically as img tags when library has books -->
+			</div>
 
-		<!-- Show selected book info -->
-		<div class="book-info" class:hidden={!isLibraryLoaded}>
+		<!-- Show selected book info (only when books exist) -->
+			<div class="book-info" class:hidden={!isLibraryLoaded} class:fade-in={isLibraryLoaded}>
 			{#if libraryBooks[selectedBookIndex]}
 				{#if isEditingTitle}
 					<!-- Title edit mode -->
@@ -1999,14 +2082,46 @@
 			{/if}
 		</div>
 
-		<!-- Keyboard navigation hints -->
-		<div class="navigation-hints">
+		<!-- Keyboard navigation hints (only visible when books exist) -->
+			<div class="navigation-hints" class:hidden={!isLibraryLoaded} class:fade-in={isLibraryLoaded}>
 			<p>Use the arrow keys ← → to browse through your books</p>
 		</div>
 	</div>
 </div>
 
 <style>
+
+	    /* Animation for UI elements appearing when books are added */
+	    .fade-in {
+	        animation: fadeIn 0.8s ease-in-out;
+	    }
+	    
+	    @keyframes fadeIn {
+	        from { opacity: 0; transform: translateY(10px); }
+	        to { opacity: 1; transform: translateY(0); }
+	    }
+	    
+	    /* Empty library placeholder styling */
+	    .empty-library-placeholder {
+	        width: 100%;
+	        height: 100%;
+	        display: flex;
+	        justify-content: center;
+	        align-items: center;
+	    }
+	    
+	    .empty-library-image {
+	        max-width: 90%;
+	        max-height: 80%;
+	        object-fit: contain;
+	        border-radius: 8px;
+	        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+	        transition: transform 0.3s ease;
+	    }
+	    
+	    .empty-library-image:hover {
+	        transform: scale(1.03);
+	    }
     /* Modal dialog styling */
     .upload-modal-overlay {
         position: fixed;
