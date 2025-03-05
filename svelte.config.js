@@ -15,7 +15,8 @@ const config = {
 			pages: 'build',
 			assets: 'build',
 			fallback: 'index.html', // For SPA-style routing
-			precompress: false
+			precompress: false,
+			strict:true
 		}),
 		// Enable SPA mode
 		paths: {
