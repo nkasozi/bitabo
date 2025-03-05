@@ -225,13 +225,13 @@
         </button>
     </div>
 
-    <!-- Load libraries directly with script tags -->
-    <script src="/foliate-js/view.js"></script>
-    <script src="/foliate-js/ui/menu.js"></script>
-    <script src="/foliate-js/ui/tree.js"></script>
-    <script src="/foliate-js/overlayer.js"></script>
+    <!-- Load libraries directly with script tags as ES modules -->
+    <script type="module" src="/foliate-js/view.js"></script>
+    <script type="module" src="/foliate-js/ui/menu.js"></script>
+    <script type="module" src="/foliate-js/ui/tree.js"></script>
+    <script type="module" src="/foliate-js/overlayer.js"></script>
 
-    <script>
+    <script type="module">
         // Simple event-driven communication with parent frame
         window.addEventListener('message', function(event) {
             // Handle messages from the parent frame
