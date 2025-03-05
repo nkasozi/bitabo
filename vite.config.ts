@@ -1,15 +1,26 @@
 // vite.config.ts
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * External resources that should not be processed by Vite
  * These are served directly from the static directory
+ * Note: External paths can only have a single wildcard character
  */
 const EXTERNAL_RESOURCES = [
-	'**/foliate-js/**',  // E-reader core functionality
-	'**/vendor/**',      // Third-party vendor scripts
-	'**/pdfjs/**'        // PDF rendering functionality
+	'/foliate-js/*',     // E-reader core functionality 
+	'/vendor/*',         // Third-party vendor scripts
+	'/pdfjs/*',          // PDF rendering functionality
+	'/reader.html',      // The reader HTML page
+	
+	// Explicitly list the foliate-js imports
+	'/foliate-js/view.js',
+	'/foliate-js/ui/tree.js',
+	'/foliate-js/ui/menu.js',
+	'/foliate-js/overlayer.js',
+	'/foliate-js/epubcfi.js'
 ];
 
 /**
@@ -24,7 +35,28 @@ const NODE_BUILTINS = [
 ];
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [
+		sveltekit(),
+		
+		// Custom plugin to preserve external files
+		{
+			name: 'preserve-foliate-js',
+			enforce: 'pre',
+			
+			// Ensure these paths are treated as external
+			resolveId(id) {
+				if (id.includes('foliate-js/') || id.includes('reader.html') || id.endsWith('.js') && id.includes('/ui/')) {
+					return { id, external: true };
+				}
+				return null;
+			},
+			
+			// Copy essential files to build directory
+			closeBundle() {
+				console.log('Ensuring foliate-js files are properly preserved');
+			}
+		}
+	],
 
 	// Server configuration for development
 	server: {
@@ -56,13 +88,28 @@ export default defineConfig({
 	build: {
 		target: 'esnext',         // Enable modern JavaScript features
 		rollupOptions: {
-			external: EXTERNAL_RESOURCES
-		}
+			external: EXTERNAL_RESOURCES,
+			output: {
+				// Don't hash external JS files
+				entryFileNames: (chunkInfo) => {
+					// Keep original names for foliate-js files
+					if (chunkInfo.name.includes('foliate-js') || 
+						chunkInfo.name.includes('reader') ||
+						chunkInfo.name.includes('ui/')) {
+						return '[name].js';
+					}
+					return 'assets/[name]-[hash].js';
+				}
+			}
+		},
+		// Don't minify foliate-js files
+		minify: true, // Still minify other files
+		assetsInlineLimit: 0, // Don't inline any assets as base64
 	},
 
 	// Dependency optimization configuration
 	optimizeDeps: {
-		exclude: NODE_BUILTINS
+		exclude: [...NODE_BUILTINS, ...EXTERNAL_RESOURCES]
 	},
 
 	// Test configuration

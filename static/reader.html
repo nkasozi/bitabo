@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitabo Reader</title>
+    <style>
+        :root {
+            --active-bg: rgba(0, 0, 0, 0.05);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --active-bg: rgba(255, 255, 255, 0.1);
+            }
+        }
+
+        html {
+            height: 100%;
+        }
+
+        body {
+            margin: 0 auto;
+            height: 100%;
+            font: menu;
+            font-family: system-ui, sans-serif;
+        }
+
+        .book-loaded {
+            display: block;
+            position: absolute;
+            top: 48px;
+            bottom: 48px;
+            left: 0;
+            right: 0;
+            overflow: hidden;
+            z-index: 0;
+            height: calc(100vh - 96px);
+            width: 100%;
+        }
+
+        .icon {
+            display: block;
+            fill: currentcolor;
+            stroke: none;
+        }
+
+        .toolbar {
+            box-sizing: border-box;
+            position: absolute;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 48px;
+            padding: 6px 12px;
+            transition: opacity 250ms ease;
+        }
+
+        .toolbar button {
+            padding: 3px;
+            border-radius: 6px;
+            background: none;
+            border: 0;
+            color: GrayText;
+            flex-shrink: 0;
+        }
+
+        .toolbar button:hover {
+            background: var(--active-bg);
+            color: currentcolor;
+        }
+
+        #header-bar {
+            top: 0;
+        }
+
+        #nav-bar {
+            bottom: 0;
+            display: flex;
+            gap: 12px;
+            visibility: hidden;
+        }
+
+        #nav-bar.visible {
+            visibility: visible;
+        }
+
+        #progress-slider {
+            flex: 1;
+            min-width: 0;
+            margin: 0;
+        }
+
+        #side-bar {
+            box-sizing: border-box;
+            position: absolute;
+            z-index: 2;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 320px;
+            transform: translateX(-320px);
+            display: flex;
+            flex-direction: column;
+            background: Canvas;
+            border-right: 1px solid ThreeDShadow;
+            transition: transform 250ms ease;
+        }
+
+        #side-bar.show {
+            transform: none;
+        }
+
+        #dimming-overlay {
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 250ms ease;
+        }
+
+        #dimming-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #side-bar-header {
+            padding: 1em;
+            border-bottom: 1px solid ThreeDShadow;
+        }
+
+        #side-bar-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 0.5em;
+        }
+
+        #side-bar-author {
+            color: GrayText;
+        }
+
+        #reader-drop-target {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: Canvas;
+            border: 3px dashed ThreeDShadow;
+            border-radius: 10px;
+            margin: 2em;
+            z-index: 0;
+            visibility: hidden;
+        }
+
+        #back-to-library-button {
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="ebook-container"></div>
+    <div id="reader-drop-target">
+        <h2>Drop an EPUB file here</h2>
+        <p>Or <button id="file-button">choose a file</button> to read</p>
+        <input type="file" id="file-input" hidden accept=".epub,.cbz,.fb2,.mobi,.azw3,.pdf" />
+    </div>
+
+    <div id="dimming-overlay" aria-hidden="true"></div>
+
+    <div id="side-bar">
+        <div id="side-bar-header">
+            <img id="side-bar-cover" alt="" src="" />
+            <div>
+                <h1 id="side-bar-title"></h1>
+                <p id="side-bar-author"></p>
+            </div>
+        </div>
+        <div id="toc-view"></div>
+    </div>
+
+    <div id="header-bar" class="toolbar">
+        <button id="back-to-library-button" aria-label="Return to Library">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
+            </svg>
+        </button>
+        <button id="side-bar-button" aria-label="Show sidebar">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
+            </svg>
+        </button>
+        <div id="menu-button" class="menu-container">
+            <button aria-label="Show settings" aria-haspopup="true">
+                <svg class="icon" width="24" height="24" aria-hidden="true">
+                    <path d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="nav-bar" class="toolbar">
+        <button id="left-button" aria-label="Go left">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 15 6 L 9 12 L 15 18" />
+            </svg>
+        </button>
+        <input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
+        <datalist id="tick-marks"></datalist>
+        <button id="right-button" aria-label="Go right">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 9 6 L 15 12 L 9 18" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Load libraries directly with script tags -->
+    <script src="/foliate-js/view.js"></script>
+    <script src="/foliate-js/ui/menu.js"></script>
+    <script src="/foliate-js/ui/tree.js"></script>
+    <script src="/foliate-js/overlayer.js"></script>
+
+    <script>
+        // Simple event-driven communication with parent frame
+        window.addEventListener('message', function(event) {
+            // Handle messages from the parent frame
+            if (event.data && event.data.type === 'openBook') {
+                // We need to fetch the file from the parent frame
+                fetch(event.data.fileUrl)
+                    .then(response => response.blob())
+                    .then(fileBlob => {
+                        const file = new File([fileBlob], event.data.filename, { type: event.data.mimeType });
+                        window.reader.openBook(file)
+                            .then(() => {
+                                // Set progress if provided
+                                if (event.data.progress) {
+                                    const progress = parseFloat(event.data.progress);
+                                    if (!isNaN(progress)) {
+                                        setTimeout(() => {
+                                            const slider = document.getElementById('progress-slider');
+                                            if (slider) {
+                                                slider.value = progress;
+                                                slider.dispatchEvent(new Event('input', { bubbles: true }));
+                                            }
+                                        }, 1000);
+                                    }
+                                }
+                                
+                                // Send success message to parent
+                                window.parent.postMessage({ type: 'bookOpened', success: true }, '*');
+                            })
+                            .catch(error => {
+                                console.error('Error opening book:', error);
+                                window.parent.postMessage({ 
+                                    type: 'error', 
+                                    message: 'Failed to open book',
+                                    details: error.message
+                                }, '*');
+                            });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching file:', error);
+                        window.parent.postMessage({ 
+                            type: 'error', 
+                            message: 'Failed to fetch book file',
+                            details: error.message
+                        }, '*');
+                    });
+            }
+        });
+
+        // Handle "back to library" button clicks
+        document.getElementById('back-to-library-button').addEventListener('click', function() {
+            // Get the progress value before navigating away
+            const progressSlider = document.getElementById('progress-slider');
+            const progress = progressSlider ? progressSlider.value : 0;
+            
+            // Send message to parent frame with the current progress
+            window.parent.postMessage({ 
+                type: 'backToLibrary',
+                progress: progress
+            }, '*');
+        });
+        
+        // Reader configuration
+        const readerConfiguration = {
+            containerSelector: '#ebook-container',
+            elements: {
+                dropTarget: '#reader-drop-target',
+                sidebar: {
+                    container: '#side-bar',
+                    button: '#side-bar-button',
+                    title: '#side-bar-title',
+                    author: '#side-bar-author',
+                    cover: '#side-bar-cover',
+                    tocView: '#toc-view'
+                },
+                navigation: {
+                    headerBar: '#header-bar',
+                    navBar: '#nav-bar',
+                    leftButton: '#left-button',
+                    rightButton: '#right-button',
+                    progressSlider: '#progress-slider',
+                    tickMarks: '#tick-marks'
+                },
+                menu: {
+                    container: '#menu-button',
+                    button: 'button'
+                },
+                overlay: '#dimming-overlay',
+                fileInput: '#file-input',
+                fileButton: '#file-button'
+            },
+            defaultStyle: {
+                spacing: 1.4,
+                justify: true,
+                hyphenate: true
+            }
+        };
+
+        class EbookReader {
+            constructor(config = {}) {
+                this.config = this.mergeConfig(readerConfiguration, config);
+                this.elements = new Map();
+                this.view = null;
+                this.tocView = null;
+                
+                this.initializeElements();
+                this.initializeUserInterface();
+            }
+            
+            mergeConfig(defaultConfig, userConfig) {
+                return {
+                    ...defaultConfig,
+                    ...userConfig,
+                    elements: {
+                        ...defaultConfig.elements,
+                        ...userConfig.elements,
+                        sidebar: {
+                            ...defaultConfig.elements.sidebar,
+                            ...userConfig.elements?.sidebar
+                        },
+                        navigation: {
+                            ...defaultConfig.elements.navigation,
+                            ...userConfig.elements?.navigation
+                        },
+                        menu: {
+                            ...defaultConfig.elements.menu,
+                            ...userConfig.elements?.menu
+                        }
+                    }
+                };
+            }
+            
+            initializeElements() {
+                // Helper to store element references
+                const storeElement = (key, selector, parent) => {
+                    let element = parent ? parent.querySelector(selector) : document.querySelector(selector);
+                    if (!element) return;
+                    this.elements.set(key, element);
+                };
+                
+                // Store main container
+                storeElement('container', this.config.containerSelector);
+                
+                // Store sidebar elements
+                Object.entries(this.config.elements.sidebar).forEach(([key, selector]) => {
+                    storeElement(`sidebar.${key}`, selector);
+                });
+                
+                // Store navigation elements
+                Object.entries(this.config.elements.navigation).forEach(([key, selector]) => {
+                    storeElement(`navigation.${key}`, selector);
+                });
+                
+                // Store menu elements
+                const menuContainer = document.querySelector(this.config.elements.menu.container);
+                if (menuContainer) {
+                    this.elements.set('menu.container', menuContainer);
+                    storeElement('menu.button', this.config.elements.menu.button, menuContainer);
+                }
+                
+                // Store other elements
+                storeElement('overlay', this.config.elements.overlay);
+                storeElement('fileInput', this.config.elements.fileInput);
+                storeElement('fileButton', this.config.elements.fileButton);
+                storeElement('dropTarget', this.config.elements.dropTarget);
+            }
+            
+            getElement(key) {
+                return this.elements.get(key) || null;
+            }
+            
+            initialize() {
+                const dropTarget = this.getElement('dropTarget');
+                if (dropTarget) {
+                    dropTarget.style.visibility = 'visible';
+                }
+                
+                this.setupFileHandlers();
+            }
+            
+            setupFileHandlers() {
+                const fileInput = this.getElement('fileInput');
+                const fileButton = this.getElement('fileButton');
+                const dropTarget = this.getElement('dropTarget');
+                
+                if (fileInput && fileButton) {
+                    fileInput.addEventListener('change', (event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                            this.openBook(file).catch(console.error);
+                        }
+                    });
+                    
+                    fileButton.addEventListener('click', () => fileInput.click());
+                }
+                
+                if (dropTarget) {
+                    dropTarget.addEventListener('drop', this.handleFileDrop.bind(this));
+                    dropTarget.addEventListener('dragover', (e) => e.preventDefault());
+                }
+            }
+            
+            handleFileDrop(event) {
+                event.preventDefault();
+                
+                const items = Array.from(event.dataTransfer?.items || []);
+                const fileItem = items.find((item) => item.kind === 'file');
+                
+                if (!fileItem) return;
+                
+                const file = fileItem.getAsFile();
+                if (file) {
+                    this.openBook(file).catch(console.error);
+                }
+            }
+            
+            initializeUserInterface() {
+                this.setupSidebarControls();
+                this.setupLayoutMenu();
+            }
+            
+            setupSidebarControls() {
+                const sidebarButton = this.getElement('sidebar.button');
+                const dimmingOverlay = this.getElement('overlay');
+                
+                if (sidebarButton && dimmingOverlay) {
+                    sidebarButton.addEventListener('click', () => this.showSidebar());
+                    dimmingOverlay.addEventListener('click', () => this.hideSidebar());
+                }
+            }
+            
+            showSidebar() {
+                const overlay = this.getElement('overlay');
+                const sidebar = this.getElement('sidebar.container');
+                
+                if (overlay && sidebar) {
+                    overlay.classList.add('show');
+                    sidebar.classList.add('show');
+                }
+            }
+            
+            hideSidebar() {
+                const overlay = this.getElement('overlay');
+                const sidebarContainer = this.getElement('sidebar.container');
+                
+                if (overlay && sidebarContainer) {
+                    overlay.classList.remove('show');
+                    sidebarContainer.classList.remove('show');
+                }
+            }
+            
+            setupLayoutMenu() {
+                const menuButton = this.getElement('menu.container');
+                if (!menuButton) return;
+                
+                // Use the global createMenu function from menu.js
+                const menu = createMenu([
+                    {
+                        name: 'layout',
+                        label: 'Layout',
+                        type: 'radio',
+                        items: [
+                            ['Paginated', 'paginated'],
+                            ['Scrolled', 'scrolled']
+                        ],
+                        onclick: (value) => this.updateLayoutFlow(value)
+                    }
+                ]);
+                
+                this.appendMenuToInterface(menu);
+            }
+            
+            updateLayoutFlow(value) {
+                if (!this.view?.renderer) return;
+                this.view.renderer.setAttribute('flow', value);
+            }
+            
+            appendMenuToInterface(menu) {
+                const menuButton = this.getElement('menu.container');
+                if (!menuButton) return;
+                
+                menu.element.classList.add('menu');
+                menuButton.append(menu.element);
+                
+                const button = menuButton.querySelector(this.config.elements.menu.button);
+                if (button) {
+                    button.addEventListener('click', () => menu.element.classList.toggle('show'));
+                }
+                
+                menu.groups.layout.select('paginated');
+            }
+            
+            async openBook(file) {
+                this.view = document.createElement('foliate-view');
+                const container = document.querySelector(this.config.containerSelector);
+                
+                if (!container) {
+                    throw new Error('Ebook container not found');
+                }
+                
+                container.appendChild(this.view);
+                container.classList.add('book-loaded');
+                
+                const dropTarget = document.querySelector(this.config.elements.dropTarget);
+                if (dropTarget) {
+                    dropTarget.style.display = 'none';
+                }
+                
+                await this.initializeBookView(file);
+                this.setupBookInterface();
+                await this.loadBookMetadata();
+                
+                // Send book info to parent frame
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'bookInfo',
+                        title: document.title,
+                        author: this.getElement('sidebar.author')?.textContent || 'Unknown Author'
+                    }, '*');
+                }
+                
+                return this.view;
+            }
+            
+            async initializeBookView(file) {
+                if (!this.view) return;
+                
+                await this.view.open(file);
+                this.view.addEventListener('load', this.handleBookLoad.bind(this));
+                this.view.addEventListener('relocate', this.handleBookRelocate.bind(this));
+                
+                // Apply default styles
+                const styles = this.generateStyles(this.config.defaultStyle);
+                this.view.renderer.setStyles?.(styles);
+                this.view.renderer.next();
+            }
+            
+            generateStyles(config) {
+                return `
+                    @namespace epub "http://www.idpf.org/2007/ops";
+                    html {
+                        color-scheme: light dark;
+                    }
+                    @media (prefers-color-scheme: dark) {
+                        a:link {
+                            color: lightblue;
+                        }
+                    }
+                    p, li, blockquote, dd {
+                        line-height: ${config.spacing};
+                        text-align: ${config.justify ? 'justify' : 'start'};
+                        -webkit-hyphens: ${config.hyphenate ? 'auto' : 'manual'};
+                        hyphens: ${config.hyphenate ? 'auto' : 'manual'};
+                        -webkit-hyphenate-limit-before: 3;
+                        -webkit-hyphenate-limit-after: 2;
+                        -webkit-hyphenate-limit-lines: 2;
+                        hanging-punctuation: allow-end last;
+                        widows: 2;
+                    }
+                    [align="left"] { text-align: left; }
+                    [align="right"] { text-align: right; }
+                    [align="center"] { text-align: center; }
+                    [align="justify"] { text-align: justify; }
+                
+                    pre {
+                        white-space: pre-wrap !important;
+                    }
+                    aside[epub|type~="endnote"],
+                    aside[epub|type~="footnote"],
+                    aside[epub|type~="note"],
+                    aside[epub|type~="rearnote"] {
+                        display: none;
+                    }
+                `;
+            }
+            
+            setupBookInterface() {
+                this.showNavigationControls();
+                this.setupProgressSlider();
+                this.setupKeyboardNavigation();
+                
+                // Periodic progress update to parent frame
+                setInterval(() => {
+                    if (this.view && window.parent && window.parent !== window) {
+                        const slider = document.getElementById('progress-slider');
+                        if (slider) {
+                            window.parent.postMessage({
+                                type: 'progressUpdate',
+                                progress: parseFloat(slider.value)
+                            }, '*');
+                        }
+                    }
+                }, 10000); // Every 10 seconds
+            }
+            
+            showNavigationControls() {
+                const headerBar = this.getElement('navigation.headerBar');
+                const navBar = this.getElement('navigation.navBar');
+                
+                if (headerBar) {
+                    headerBar.style.visibility = 'visible';
+                }
+                
+                if (navBar) {
+                    navBar.style.visibility = 'visible';
+                }
+                
+                this.setupNavigationButtons();
+            }
+            
+            setupNavigationButtons() {
+                const leftButton = this.getElement('navigation.leftButton');
+                const rightButton = this.getElement('navigation.rightButton');
+                
+                if (leftButton) {
+                    leftButton.addEventListener('click', () => this.view.goLeft());
+                }
+                
+                if (rightButton) {
+                    rightButton.addEventListener('click', () => this.view.goRight());
+                }
+            }
+            
+            setupProgressSlider() {
+                const slider = this.getElement('navigation.progressSlider');
+                if (!slider || !this.view?.book) return;
+                
+                slider.dir = this.view.book.dir;
+                slider.addEventListener('input', (e) => {
+                    this.view.goToFraction(parseFloat(e.target.value));
+                });
+                
+                this.addTickMarksToSlider();
+            }
+            
+            addTickMarksToSlider() {
+                const tickMarks = this.getElement('navigation.tickMarks');
+                if (!tickMarks || !this.view) return;
+                
+                for (const fraction of this.view.getSectionFractions()) {
+                    const option = document.createElement('option');
+                    option.value = fraction.toString();
+                    tickMarks.append(option);
+                }
+            }
+            
+            setupKeyboardNavigation() {
+                document.addEventListener('keydown', this.handleKeyboardNavigation.bind(this));
+            }
+            
+            handleKeyboardNavigation(event) {
+                if (!this.view) return;
+                
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'h':
+                        this.view.goLeft();
+                        break;
+                    case 'ArrowRight':
+                    case 'l':
+                        this.view.goRight();
+                        break;
+                }
+            }
+            
+            async loadBookMetadata() {
+                if (!this.view?.book) return;
+                
+                const { book } = this.view;
+                const metadata = book.metadata;
+                
+                this.updateBookTitle(metadata);
+                this.updateAuthorInfo(metadata);
+                await this.loadCoverImage(book);
+                await this.loadTableOfContents(book);
+            }
+            
+            formatLanguageMap(text) {
+                if (!text) return '';
+                if (typeof text === 'string') return text;
+                const [firstKey] = Object.keys(text);
+                return text[firstKey];
+            }
+            
+            formatContributor(contributor) {
+                if (!contributor) return '';
+                
+                const formatSingleContributor = (cont) => {
+                    if (typeof cont === 'string') return cont;
+                    return this.formatLanguageMap(cont?.name);
+                };
+                
+                if (Array.isArray(contributor)) {
+                    return contributor.map(formatSingleContributor).join(', ');
+                }
+                return formatSingleContributor(contributor);
+            }
+            
+            updateBookTitle(metadata) {
+                const title = this.formatLanguageMap(metadata?.title) || 'Untitled Book';
+                document.title = title;
+                
+                const sidebarTitle = this.getElement('sidebar.title');
+                if (sidebarTitle) {
+                    sidebarTitle.textContent = title;
+                }
+            }
+            
+            updateAuthorInfo(metadata) {
+                const authorElement = this.getElement('sidebar.author');
+                if (authorElement) {
+                    authorElement.textContent = this.formatContributor(metadata?.author);
+                }
+            }
+            
+            async loadCoverImage(book) {
+                const coverBlob = await book.getCover?.();
+                if (coverBlob) {
+                    const coverImage = this.getElement('sidebar.cover');
+                    if (coverImage) {
+                        coverImage.src = URL.createObjectURL(coverBlob);
+                    }
+                }
+            }
+            
+            async loadTableOfContents(book) {
+                const toc = book.toc;
+                if (!toc) return;
+                
+                // Use the global createTOCView function from tree.js
+                this.tocView = createTOCView(toc, (href) => {
+                    this.view.goTo(href).catch(console.error);
+                    this.hideSidebar();
+                });
+                
+                const tocViewContainer = this.getElement('sidebar.tocView');
+                if (tocViewContainer && this.tocView) {
+                    tocViewContainer.append(this.tocView.element);
+                }
+            }
+            
+            handleBookLoad(event) {
+                const { doc } = event.detail;
+                if (doc) {
+                    doc.addEventListener('keydown', this.handleKeyboardNavigation.bind(this));
+                }
+            }
+            
+            handleBookRelocate(event) {
+                if (!event.detail) return;
+                
+                const { fraction, location, tocItem, pageItem } = event.detail;
+                
+                // Format the percent as a string
+                const percent = (fraction * 100).toFixed(1) + '%';
+                const locationText = pageItem ? `Page ${pageItem.label}` : `Loc ${location.current}`;
+                
+                this.updateProgressSlider(fraction, percent, locationText);
+                
+                if (tocItem?.href && this.tocView?.setCurrentHref) {
+                    this.tocView.setCurrentHref(tocItem.href);
+                }
+                
+                // Send progress to parent frame
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'progress',
+                        fraction: fraction,
+                        location: locationText
+                    }, '*');
+                }
+            }
+            
+            updateProgressSlider(fraction, percent, locationText) {
+                const slider = this.getElement('navigation.progressSlider');
+                if (!slider) return;
+                
+                slider.style.visibility = 'visible';
+                slider.value = fraction.toString();
+                slider.title = `${percent} · ${locationText}`;
+            }
+        }
+
+        // Initialize the reader
+        window.reader = new EbookReader();
+        window.reader.initialize();
+        
+        // Notify parent frame that the reader is ready
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'readerReady' }, '*');
+        }
+    </script>
+</body>
+</html>

@@ -41,3 +41,6 @@ export const createMenu = (arr) => {
 	});
 	return { element, groups };
 };
+
+// Add to global window object for direct access
+window.createMenu = createMenu;

@@ -178,3 +178,6 @@ export class Overlayer {
 		return image;
 	}
 }
+
+// Add to global window object for direct access
+window.Overlayer = Overlayer;

@@ -166,3 +166,6 @@ export const createTOCView = (toc, onclick) => {
 
 	return { element: $toc, setCurrentHref };
 };
+
+// Add to global window object for direct access
+window.createTOCView = createTOCView;

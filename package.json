@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && node scripts/copy-foliate.js",
 		"preview": "npm run build && wrangler dev",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -15,7 +15,9 @@
 		"test": "npm run test:unit -- --run && npm run test:e2e",
 		"test:e2e": "playwright test",
 		"deploy": "npm run build && wrangler deploy",
-		"cf-typegen": "wrangler types && mv worker-configuration.d.ts src/"
+		"cf-typegen": "wrangler types && mv worker-configuration.d.ts src/",
+		"build:static": "bash scripts/build-static.sh",
+		"preview:static": "bash scripts/build-static.sh --preview"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250129.0",
@@ -23,6 +25,7 @@
 		"@neoconfetti/svelte": "^2.0.0",
 		"@playwright/test": "^1.49.1",
 		"@sveltejs/adapter-cloudflare": "^5.0.1",
+		"@sveltejs/adapter-static": "^3.0.8",
 		"@sveltejs/kit": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^4.0.0",
 		"@tailwindcss/forms": "^0.5.10",
@@ -45,6 +48,7 @@
 		"@uppy/core": "^4.4.2",
 		"@uppy/dashboard": "^4.3.2",
 		"@uppy/drop-target": "^3.1.1",
-		"@uppy/google-drive": "^4.3.1"
+		"@uppy/google-drive": "^4.3.1",
+		"fs-extra": "^11.3.0"
 	}
 }

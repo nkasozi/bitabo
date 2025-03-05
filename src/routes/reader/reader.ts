@@ -1,7 +1,17 @@
-import '/foliate-js/view.js?url';
-import * as treeJs from '/foliate-js/ui/tree.js?url';
-import * as menujs from '/foliate-js/ui/menu.js?url';
-import * as overlayerJs from '/foliate-js/overlayer.js?url';
+// Using dynamic imports with absolute URLs to avoid Vite processing
+// We'll define types for the imported modules to maintain type safety
+
+// Define the type declarations for the dynamically imported modules
+declare global {
+    interface Window {
+        createTOCView: any;
+        createMenu: any;
+        Overlayer: any;
+    }
+}
+
+// The dynamic imports will be resolved during initialization
+// This allows us to reference the types later in the code
 
 // types.ts
 type StyleConfig = {
@@ -412,13 +422,32 @@ class EbookReader {
 		sidebarContainer.classList.remove('show');
 	}
 
-	private setupLayoutMenu(): void {
+	private async setupLayoutMenu(): Promise<void> {
 		const menuButton = this.getElement('menu.container');
 		if (!menuButton) {
 			//console.warn('setupLayoutMenu: Menu button container not found');
 			return;
 		}
-		const menu = menujs.createMenu([
+
+		// Dynamically import the createMenu function if it's not already available
+		let createMenuFn;
+		if (typeof window.createMenu === 'function') {
+			createMenuFn = window.createMenu;
+		} else {
+			try {
+				// Load the menu.js module that contains createMenu
+				await import('/foliate-js/ui/menu.js');
+				createMenuFn = window.createMenu;
+				if (!createMenuFn) {
+					throw new Error('createMenu function not found after loading module');
+				}
+			} catch (error) {
+				console.error('Error loading menu module:', error);
+				return;
+			}
+		}
+
+		const menu = createMenuFn([
 			{
 				name: 'layout',
 				label: 'Layout',
@@ -462,6 +491,15 @@ class EbookReader {
 	}
 
 	async openBook(file: File | string): Promise<void> {
+		// Make sure view.js is loaded first
+		try {
+			await import('/foliate-js/view.js');
+		} catch (error) {
+			console.error('Error loading view module:', error);
+			throw new Error('Failed to load core view module');
+		}
+
+		// Now we can create the foliate-view element
 		this.view = document.createElement('foliate-view');
 		const container = document.querySelector(this.config.containerSelector);
 
@@ -641,7 +679,25 @@ class EbookReader {
 		const toc = book.toc;
 		if (!toc) return;
 
-		this.tocView = treeJs.createTOCView(toc, (href: string) => {
+		// Dynamically import the createTOCView function if it's not already available
+		let createTOCViewFn;
+		if (typeof window.createTOCView === 'function') {
+			createTOCViewFn = window.createTOCView;
+		} else {
+			try {
+				// Load the tree.js module that contains createTOCView
+				await import('/foliate-js/ui/tree.js');
+				createTOCViewFn = window.createTOCView;
+				if (!createTOCViewFn) {
+					throw new Error('createTOCView function not found after loading module');
+				}
+			} catch (error) {
+				console.error('Error loading TOC view module:', error);
+				return;
+			}
+		}
+
+		this.tocView = createTOCViewFn(toc, (href: string) => {
 			this.view.goTo(href).catch(console.error);
 			this.hideSidebar();
 		});
@@ -662,7 +718,31 @@ class EbookReader {
 		const bookmarks = await this.view.book.getCalibreBookmarks?.();
 		if (!bookmarks) return;
 
-		const { fromCalibreHighlight } = await import('/static/foliate-js/epubcfi.js?url');
+		// Dynamically import the Overlayer module if needed
+		if (typeof window.Overlayer !== 'object') {
+			try {
+				await import('/foliate-js/overlayer.js');
+				if (!window.Overlayer) {
+					throw new Error('Overlayer not found after loading module');
+				}
+			} catch (error) {
+				console.error('Error loading Overlayer module:', error);
+				return;
+			}
+		}
+
+		// Load the epubcfi.js module for the fromCalibreHighlight function
+		let fromCalibreHighlight;
+		try {
+			const epubcfiModule = await import('/foliate-js/epubcfi.js');
+			fromCalibreHighlight = epubcfiModule.fromCalibreHighlight;
+			if (!fromCalibreHighlight) {
+				throw new Error('fromCalibreHighlight function not found after loading module');
+			}
+		} catch (error) {
+			console.error('Error loading epubcfi module:', error);
+			return;
+		}
 
 		this.processBookmarks(bookmarks, fromCalibreHighlight);
 		this.setupAnnotationEventListeners();
@@ -709,7 +789,12 @@ class EbookReader {
 
 	private handleDrawAnnotation(event: CustomEvent): void {
 		const { draw, annotation } = event.detail;
-		draw(overlayerJs.Overlayer.highlight, { color: annotation.color });
+		// Use the globally available Overlayer that was dynamically imported
+		if (window.Overlayer && window.Overlayer.highlight) {
+			draw(window.Overlayer.highlight, { color: annotation.color });
+		} else {
+			console.error('Overlayer not available for drawing annotations');
+		}
 	}
 
 	private handleShowAnnotation(event: CustomEvent): void {
@@ -768,8 +853,22 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 			if (options.extractCoverOnly) {
 				if (file instanceof File && file.name.toLowerCase().endsWith('.epub')) {
 					try {
-						// Temporary open the book to extract cover
+						// First ensure that the view.js is loaded
+						try {
+							await import('/foliate-js/view.js');
+						} catch (importError) {
+							console.error('Error importing view.js:', importError);
+							throw new Error('Could not load foliate-view module');
+						}
+						
+						// Now create the view element
 						const view = document.createElement('foliate-view');
+						
+						if (!view || typeof view.open !== 'function') {
+							throw new Error('foliate-view element not properly initialized');
+						}
+						
+						// Open the book file
 						await view.open(file);
 						const book = view.book;
 						
@@ -798,6 +897,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 						}
 					} catch (error) {
 						console.error('Failed to extract cover:', error);
+						throw error; // Re-throw to allow proper error handling in the library page
 					}
 				}
 				return { cover: '/placeholder-cover.png' };
