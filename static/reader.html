@@ -1,390 +1,827 @@
-<html lang="en" class="dark-mode">
+ th<!DOCTYPE html>
+<html lang="en">
 <head>
-	<meta charset="utf-8">
-	<link rel="icon" href="http://localhost:3000/icons/icon-128x128.png">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitabo Reader</title>
+    <style>
+        :root {
+            --active-bg: rgba(0, 0, 0, 0.05);
+        }
 
-	<!-- PWA Support -->
-	<link rel="manifest" href="/manifest.json">
-	<meta name="theme-color" content="#2275d7">
-	<meta name="mobile-web-app-capable" content="yes">
-	<meta name="apple-mobile-web-app-capable" content="yes">
-	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-	<meta name="apple-mobile-web-app-title" content="Bitabo">
-	<meta name="application-name" content="Bitabo E-book Reader">
-	<meta name="description" content="A beautiful client-side e-book reader and library manager">
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --active-bg: rgba(255, 255, 255, 0.1);
+            }
+        }
 
-	<!-- iOS icons -->
-	<link rel="apple-touch-icon" href="http://localhost:3000/icons/icon-128x128.png">
+        html {
+            height: 100%;
+        }
 
+        body {
+            margin: 0 auto;
+            height: 100%;
+            font: menu;
+            font-family: system-ui, sans-serif;
+        }
 
-	<link rel="modulepreload" href="/_app/immutable/entry/start.BzHRfzXj.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/CVUwkTQm.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/BNZhtxyz.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/DFIn1r04.js">
-	<link rel="modulepreload" href="/_app/immutable/entry/app.CdCwx9Vx.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/CmsKOCeN.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/DCVedIQ-.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/BOSRoXm2.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/DPJL1ohW.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/D0m4VGlQ.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/BgHAO_E6.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/DeHyPPE0.js">
-	<link rel="modulepreload" href="/_app/immutable/chunks/ChoPQkiC.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/nodes/0.Dc0J6JJr.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/chunks/6-DBZVUW.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/chunks/C0QKsATJ.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/chunks/BvPAvFd4.js">
-	<link rel="stylesheet" crossorigin="" href="http://localhost:3000/_app/immutable/assets/0.4zKHR1lO.css">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/nodes/1.QRhuUn15.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/nodes/4.CEcMWA6F.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/chunks/Bt-Xh7oU.js">
-	<link rel="modulepreload" as="script" crossorigin="" href="http://localhost:3000/_app/immutable/chunks/BUfVKHjz.js">
-	<link rel="stylesheet" crossorigin="" href="http://localhost:3000/_app/immutable/assets/4.DE_p4T_m.css">
-	<title>The Lord of the Rings, Book 1 - The Fellowship of The Ring (J.R.R. Tolkien, Christopher Tolkien) (Z-Library) |
-		Bitabo Reader</title></head>
-<body data-sveltekit-preload-data="hover">
-<div style="display: contents">
-	<script>
-		{
-			__sveltekit_v1sg2g = {
-				base: ''
-			};
+        .book-loaded {
+            display: block;
+            position: absolute;
+            top: 48px;
+            bottom: 48px;
+            left: 0;
+            right: 0;
+            overflow: hidden;
+            z-index: 0;
+            height: calc(100vh - 96px);
+            width: 100%;
+        }
 
-			const element = document.currentScript.parentElement;
+        .icon {
+            display: block;
+            fill: currentcolor;
+            stroke: none;
+        }
 
-			Promise.all([
-				import('/_app/immutable/entry/start.BzHRfzXj.js'),
-				import('/_app/immutable/entry/app.CdCwx9Vx.js')
-			]).then(([kit, app]) => {
-				kit.start(app, element);
-			});
-		}
-	</script>
-	<!----><!---->
-	<div class="app svelte-9s8hhm">
-		<header class="svelte-1uv1p7r">
-			<div class="corner svelte-1uv1p7r"><a href="/library" class="svelte-1uv1p7r"><h1 class="logo svelte-1uv1p7r">
-				Bitabo</h1></a></div>
-			<nav class="svelte-1uv1p7r">
-				<ul class="svelte-1uv1p7r">
-					<li class="svelte-1uv1p7r"><a href="/library" class="svelte-1uv1p7r">Library</a></li>
-				</ul>
-			</nav>
-			<div class="corner svelte-1uv1p7r">
-				<button class="theme-toggle svelte-1uv1p7r" aria-label="Toggle dark mode">
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-							 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-							 class="feather feather-sun">
-						<circle cx="12" cy="12" r="5"></circle>
-						<line x1="12" y1="1" x2="12" y2="3"></line>
-						<line x1="12" y1="21" x2="12" y2="23"></line>
-						<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-						<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-						<line x1="1" y1="12" x2="3" y2="12"></line>
-						<line x1="21" y1="12" x2="23" y2="12"></line>
-						<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-						<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-					</svg><!----></button>
-			</div>
-		</header><!---->
-		<main class="svelte-9s8hhm"><!----><!----><!---->
-			<div id="ebook-container" class="reader-container svelte-kyhnsv book-loaded">
-				<foliate-view></foliate-view>
-			</div>
-			<div id="dimming-overlay" aria-hidden="true" class="svelte-kyhnsv"></div>
-			<div id="side-bar" class="sidebar svelte-kyhnsv">
-				<div id="side-bar-header" class="sidebar-header svelte-kyhnsv"><img id="side-bar-cover" alt=""
-																																						src="blob:http://localhost:3000/d842caa7-1578-4484-9e8d-f1854e833e1e">
-					<div><h1 id="side-bar-title" class="svelte-kyhnsv">The Lord of the Rings, Book 1 - The Fellowship of The Ring
-						(J.R.R. Tolkien, Christopher Tolkien) (Z-Library)</h1>
-						<p id="side-bar-author" class="svelte-kyhnsv">Unknown Author</p></div>
-				</div>
-				<div id="toc-view">
-					<ol role="tree">
-						<li role="none"><a role="treeitem" tabindex="0" href="filepos:0000000109" aria-current="page"
-															 style="padding-inline-start: 24px;">COVER PAGE</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000000369"
-															 style="padding-inline-start: 24px;">TITLE PAGE</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000002202"
-															 style="padding-inline-start: 24px;">TABLE OF CONTENTS</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000005840"
-															 style="padding-inline-start: 24px;">NOTE ON THE TEXT</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000025353"
-															 style="padding-inline-start: 24px;">NOTE ON THE 50TH ANNIVERSARY EDITION</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000036758"
-															 style="padding-inline-start: 24px;">FOREWORD TO THE SECOND EDITION</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000047417"
-															 style="padding-inline-start: 24px;">PROLOGUE</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000091764" aria-expanded="false"
-															 aria-owns="toc-element-0" style="padding-inline-start: 24px;">
-							<svg viewBox="0 0 13 10" width="13" height="13">
-								<polygon points="2 1, 12 1, 7 9"></polygon>
-							</svg>
-							BOOK ONE</a>
-							<ol id="toc-element-0" role="group">
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000091883"
-																	 style="padding-inline-start: 48px;">CHAPTER 1: A LONG-EXPECTED PARTY</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000157411"
-																	 style="padding-inline-start: 48px;">CHAPTER 2: THE SHADOW OF THE PAST</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000228302"
-																	 style="padding-inline-start: 48px;">CHAPTER 3: THREE IS COMPANY</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000296039"
-																	 style="padding-inline-start: 48px;">CHAPTER 4: A SHORT CUT TO MUSHROOMS</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000334252"
-																	 style="padding-inline-start: 48px;">CHAPTER 5: A CONSPIRACY UNMASKED</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000370755"
-																	 style="padding-inline-start: 48px;">CHAPTER 6: THE OLD FOREST</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000415350"
-																	 style="padding-inline-start: 48px;">CHAPTER 7: IN THE HOUSE OF TOM BOMBADIL</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000451796"
-																	 style="padding-inline-start: 48px;">CHAPTER 8: FOG ON THE BARROW-DOWNS</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000495796"
-																	 style="padding-inline-start: 48px;">CHAPTER 9: AT THE SIGN OF THE PRANCING PONY</a>
-								</li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000543035"
-																	 style="padding-inline-start: 48px;">CHAPTER 10: STRIDER</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000582725"
-																	 style="padding-inline-start: 48px;">CHAPTER 11: A KNIFE IN THE DARK</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000652443"
-																	 style="padding-inline-start: 48px;">CHAPTER 12: FLIGHT TO THE FORD</a></li>
-							</ol>
-						</li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000714276" aria-expanded="false"
-															 aria-owns="toc-element-1" style="padding-inline-start: 24px;">
-							<svg viewBox="0 0 13 10" width="13" height="13">
-								<polygon points="2 1, 12 1, 7 9"></polygon>
-							</svg>
-							BOOK TWO</a>
-							<ol id="toc-element-1" role="group">
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000714395"
-																	 style="padding-inline-start: 48px;">CHAPTER 1: MANY MEETINGS</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000787439"
-																	 style="padding-inline-start: 48px;">CHAPTER 2: THE COUNCIL OF ELROND</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000888549"
-																	 style="padding-inline-start: 48px;">CHAPTER 3: THE RING GOES SOUTH</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0000959891"
-																	 style="padding-inline-start: 48px;">CHAPTER 4: A JOURNEY IN THE DARK</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001037933"
-																	 style="padding-inline-start: 48px;">CHAPTER 5: THE BRIDGE OF KHAZAD-DÛM</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001072394"
-																	 style="padding-inline-start: 48px;">CHAPTER 6: LOTHLÓRIEN</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001137573"
-																	 style="padding-inline-start: 48px;">CHAPTER 7: THE MIRROR OF GALADRIEL</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001182694"
-																	 style="padding-inline-start: 48px;">CHAPTER 8: FAREWELL TO LÓRIEN</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001223825"
-																	 style="padding-inline-start: 48px;">CHAPTER 9: THE GREAT RIVER</a></li>
-								<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001267880"
-																	 style="padding-inline-start: 48px;">CHAPTER 10: THE BREAKING OF THE FELLOWSHIP</a>
-								</li>
-							</ol>
-						</li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001306577"
-															 style="padding-inline-start: 24px;">MAPS</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001307269"
-															 style="padding-inline-start: 24px;">WORKS BY J.R.R. TOLKIEN</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001309958"
-															 style="padding-inline-start: 24px;">COPYRIGHT</a></li>
-						<li role="none"><a role="treeitem" tabindex="-1" href="filepos:0001311919"
-															 style="padding-inline-start: 24px;">ABOUT THE PUBLISHER</a></li>
-					</ol>
-				</div>
-			</div>
-			<div id="header-bar" class="toolbar header-bar svelte-kyhnsv" style="visibility: visible;">
-				<button id="back-to-library-button" aria-label="Return to Library" class="svelte-kyhnsv">
-					<svg class="icon svelte-kyhnsv" width="24" height="24" aria-hidden="true">
-						<path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z"></path>
-					</svg>
-				</button>
-				<button id="side-bar-button" aria-label="Show sidebar" class="svelte-kyhnsv">
-					<svg class="icon svelte-kyhnsv" width="24" height="24" aria-hidden="true">
-						<path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16"></path>
-					</svg>
-				</button>
-				<div id="menu-button" class="menu-container svelte-kyhnsv">
-					<button aria-label="Show settings" aria-haspopup="true" class="svelte-kyhnsv">
-						<svg class="icon svelte-kyhnsv" width="24" height="24" aria-hidden="true">
-							<path
-								d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z"></path>
-							<circle cx="12" cy="12" r="3"></circle>
-						</svg>
-					</button>
-					<ul role="menu" class="menu">
-						<ul role="group" aria-label="Layout">
-							<li role="menuitemradio" aria-checked="true">Paginated</li>
-							<li role="menuitemradio" aria-checked="false">Scrolled</li>
-						</ul>
-					</ul>
-				</div>
-			</div>
-			<div id="nav-bar" class="toolbar nav-bar svelte-kyhnsv" style="visibility: visible;">
-				<button id="left-button" aria-label="Go left" class="svelte-kyhnsv">
-					<svg class="icon svelte-kyhnsv" width="24" height="24" aria-hidden="true">
-						<path d="M 15 6 L 9 12 L 15 18"></path>
-					</svg>
-				</button>
-				<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" class="svelte-kyhnsv"
-							 dir="undefined" title="0% · Loc 0" style="visibility: visible;">
-				<datalist id="tick-marks">
-					<option value="2.220446049250313e-16"></option>
-					<option value="0.00016882863212490387"></option>
-					<option value="0.00026724891094198296"></option>
-					<option value="0.0009804173928318945"></option>
-					<option value="0.0016549748422627982"></option>
-					<option value="0.004409228491005366"></option>
-					<option value="0.01918211234144894"></option>
-					<option value="0.02781659910997807"></option>
-					<option value="0.03588630489391073"></option>
-					<option value="0.06935828464053151"></option>
-					<option value="0.0694604903146877"></option>
-					<option value="0.06955058272375872"></option>
-					<option value="0.11916045988010918"></option>
-					<option value="0.17283055207719805"></option>
-					<option value="0.22411281689437104"></option>
-					<option value="0.25304307931311754"></option>
-					<option value="0.2806787365258855"></option>
-					<option value="0.3144406775554828"></option>
-					<option value="0.3420331812613848"></option>
-					<option value="0.37534466024562696"></option>
-					<option value="0.41110831833055"></option>
-					<option value="0.4411567865324721"></option>
-					<option value="0.4939388249830038"></option>
-					<option value="0.5407512949837457"></option>
-					<option value="0.5408413873928167"></option>
-					<option value="0.59614147082293"></option>
-					<option value="0.6726897353705829"></option>
-					<option value="0.7267012702272602"></option>
-					<option value="0.7857852348383563"></option>
-					<option value="0.8118749365946283"></option>
-					<option value="0.8612205931563083"></option>
-					<option value="0.8953807577755808"></option>
-					<option value="0.9265201769142368"></option>
-					<option value="0.9598732952472092"></option>
-					<option value="0.9891699839347824"></option>
-					<option value="0.9896938826497164"></option>
-					<option value="0.9917296682630943"></option>
-					<option value="0.9932143003150965"></option>
-					<option value="0.9948124942272724"></option>
-					<option value="0.9949987356779569"></option>
-					<option value="0.995178920496099"></option>
-					<option value="0.9953061097794934"></option>
-					<option value="0.9954416269326338"></option>
-					<option value="0.9955332334998405"></option>
-					<option value="0.9956452812018783"></option>
-					<option value="0.9957558147457807"></option>
-					<option value="0.9958451500757839"></option>
-					<option value="0.9959518982243469"></option>
-					<option value="0.9999772876279656"></option>
-					<option value="1.0000000000000002"></option>
-				</datalist>
-				<button id="right-button" aria-label="Go right" class="svelte-kyhnsv">
-					<svg class="icon svelte-kyhnsv" width="24" height="24" aria-hidden="true">
-						<path d="M 9 6 L 15 12 L 9 18"></path>
-					</svg>
-				</button>
-			</div><!----></main>
-		<footer class="svelte-9s8hhm"><p>Bitabo E-book Reader</p></footer>
-	</div><!---->
-	<div id="svelte-announcer" aria-live="assertive" aria-atomic="true"
-			 style="position: absolute; left: 0; top: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; width: 1px; height: 1px">
-		<!----></div><!----></div>
+        .toolbar {
+            box-sizing: border-box;
+            position: absolute;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 48px;
+            padding: 6px 12px;
+            transition: opacity 250ms ease;
+        }
 
-<!-- PWA installation notification -->
-<script>
-	// Check if the app can be installed
-	window.addEventListener('load', () => {
-		let deferredPrompt;
-		const pwaInstallButton = document.createElement('div');
-		pwaInstallButton.style.display = 'none';
+        .toolbar button {
+            padding: 3px;
+            border-radius: 6px;
+            background: none;
+            border: 0;
+            color: GrayText;
+            flex-shrink: 0;
+        }
 
-		window.addEventListener('beforeinstallprompt', (e) => {
-			// Prevent the mini-infobar from appearing on mobile
-			e.preventDefault();
-			// Stash the event so it can be triggered later
-			deferredPrompt = e;
-			// Show the install button
-			setTimeout(() => {
-				if (deferredPrompt && !localStorage.getItem('pwaInstallDismissed')) {
-					const banner = document.createElement('div');
-					banner.className = 'pwa-install-banner';
-					banner.innerHTML = `
-								<div class="pwa-install-content">
-									<p><strong>Install Bitabo</strong> for offline use</p>
-									<div class="pwa-install-buttons">
-										<button class="pwa-install-button">Install</button>
-										<button class="pwa-dismiss-button">Not now</button>
-									</div>
-								</div>
-							`;
-					document.body.appendChild(banner);
+        .toolbar button:hover {
+            background: var(--active-bg);
+            color: currentcolor;
+        }
 
-					banner.querySelector('.pwa-install-button').addEventListener('click', async () => {
-						deferredPrompt.prompt();
-						const { outcome } = await deferredPrompt.userChoice;
-						deferredPrompt = null;
-						banner.remove();
-					});
+        #header-bar {
+            top: 0;
+        }
 
-					banner.querySelector('.pwa-dismiss-button').addEventListener('click', () => {
-						localStorage.setItem('pwaInstallDismissed', 'true');
-						banner.remove();
-					});
+        #nav-bar {
+            bottom: 0;
+            display: flex;
+            gap: 12px;
+            visibility: hidden;
+        }
 
-					// Add styles
-					const style = document.createElement('style');
-					style.textContent = `
-								.pwa-install-banner {
-									position: fixed;
-									bottom: 20px;
-									left: 50%;
-									transform: translateX(-50%);
-									background-color: white;
-									box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-									border-radius: 8px;
-									z-index: 10000;
-									width: 320px;
-									max-width: 90%;
-								}
-								.pwa-install-content {
-									padding: 16px;
-								}
-								.pwa-install-buttons {
-									display: flex;
-									justify-content: flex-end;
-									gap: 10px;
-									margin-top: 12px;
-								}
-								.pwa-install-button, .pwa-dismiss-button {
-									padding: 8px 12px;
-									border-radius: 4px;
-									border: none;
-									cursor: pointer;
-								}
-								.pwa-install-button {
-									background-color: #2275d7;
-									color: white;
-								}
-								.pwa-dismiss-button {
-									background-color: transparent;
-									color: #333;
-								}
-							`;
-					document.head.appendChild(style);
-				}
-			}, 5000); // Show after 5 seconds
-		});
+        #nav-bar.visible {
+            visibility: visible;
+        }
 
-		// Handle PWA life cycle
-		window.addEventListener('appinstalled', () => {
-			// App was installed
-			console.log('PWA installed');
-			// Hide the install button
-			const banner = document.querySelector('.pwa-install-banner');
-			if (banner) banner.remove();
-		});
-	});
-</script>
+        #progress-slider {
+            flex: 1;
+            min-width: 0;
+            margin: 0;
+        }
 
+        #side-bar {
+            box-sizing: border-box;
+            position: absolute;
+            z-index: 2;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 320px;
+            transform: translateX(-320px);
+            display: flex;
+            flex-direction: column;
+            background: Canvas;
+            border-right: 1px solid ThreeDShadow;
+            transition: transform 250ms ease;
+        }
+
+        #side-bar.show {
+            transform: none;
+        }
+
+        #dimming-overlay {
+            position: fixed;
+            z-index: 1;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 250ms ease;
+        }
+
+        #dimming-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #side-bar-header {
+            padding: 1em;
+            border-bottom: 1px solid ThreeDShadow;
+        }
+
+        #side-bar-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 0.5em;
+        }
+
+        #side-bar-author {
+            color: GrayText;
+        }
+
+        #reader-drop-target {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: Canvas;
+            border: 3px dashed ThreeDShadow;
+            border-radius: 10px;
+            margin: 2em;
+            z-index: 0;
+            visibility: hidden;
+        }
+
+        #back-to-library-button {
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="ebook-container"></div>
+    <div id="reader-drop-target">
+        <h2>Drop an EPUB file here</h2>
+        <p>Or <button id="file-button">choose a file</button> to read</p>
+        <input type="file" id="file-input" hidden accept=".epub,.cbz,.fb2,.mobi,.azw3,.pdf" />
+    </div>
+
+    <div id="dimming-overlay" aria-hidden="true"></div>
+
+    <div id="side-bar">
+        <div id="side-bar-header">
+            <img id="side-bar-cover" alt="" src="" />
+            <div>
+                <h1 id="side-bar-title"></h1>
+                <p id="side-bar-author"></p>
+            </div>
+        </div>
+        <div id="toc-view"></div>
+    </div>
+
+    <div id="header-bar" class="toolbar">
+        <button id="back-to-library-button" aria-label="Return to Library">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
+            </svg>
+        </button>
+        <button id="side-bar-button" aria-label="Show sidebar">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
+            </svg>
+        </button>
+        <div id="menu-button" class="menu-container">
+            <button aria-label="Show settings" aria-haspopup="true">
+                <svg class="icon" width="24" height="24" aria-hidden="true">
+                    <path d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="nav-bar" class="toolbar">
+        <button id="left-button" aria-label="Go left">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 15 6 L 9 12 L 15 18" />
+            </svg>
+        </button>
+        <input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
+        <datalist id="tick-marks"></datalist>
+        <button id="right-button" aria-label="Go right">
+            <svg class="icon" width="24" height="24" aria-hidden="true">
+                <path d="M 9 6 L 15 12 L 9 18" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Load libraries directly with script tags as ES modules -->
+    <script type="module" src="/foliate-js/view.js"></script>
+    <script type="module" src="/foliate-js/ui/menu.js"></script>
+    <script type="module" src="/foliate-js/ui/tree.js"></script>
+    <script type="module" src="/foliate-js/overlayer.js"></script>
+
+    <script type="module">
+        // Simple event-driven communication with parent frame
+        window.addEventListener('message', function(event) {
+            // Handle messages from the parent frame
+            if (event.data && event.data.type === 'openBook') {
+                // We need to fetch the file from the parent frame
+                fetch(event.data.fileUrl)
+                    .then(response => response.blob())
+                    .then(fileBlob => {
+                        const file = new File([fileBlob], event.data.filename, { type: event.data.mimeType });
+                        window.reader.openBook(file)
+                            .then(() => {
+                                // Set progress if provided
+                                if (event.data.progress) {
+                                    const progress = parseFloat(event.data.progress);
+                                    if (!isNaN(progress)) {
+                                        setTimeout(() => {
+                                            const slider = document.getElementById('progress-slider');
+                                            if (slider) {
+                                                slider.value = progress;
+                                                slider.dispatchEvent(new Event('input', { bubbles: true }));
+                                            }
+                                        }, 1000);
+                                    }
+                                }
+
+                                // Send success message to parent
+                                window.parent.postMessage({ type: 'bookOpened', success: true }, '*');
+                            })
+                            .catch(error => {
+                                console.error('Error opening book:', error);
+                                window.parent.postMessage({
+                                    type: 'error',
+                                    message: 'Failed to open book',
+                                    details: error.message
+                                }, '*');
+                            });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching file:', error);
+                        window.parent.postMessage({
+                            type: 'error',
+                            message: 'Failed to fetch book file',
+                            details: error.message
+                        }, '*');
+                    });
+            }
+        });
+
+        // Handle "back to library" button clicks
+        document.getElementById('back-to-library-button').addEventListener('click', function() {
+            // Get the progress value before navigating away
+            const progressSlider = document.getElementById('progress-slider');
+            const progress = progressSlider ? progressSlider.value : 0;
+
+            // Send message to parent frame with the current progress
+            window.parent.postMessage({
+                type: 'backToLibrary',
+                progress: progress
+            }, '*');
+        });
+
+        // Reader configuration
+        const readerConfiguration = {
+            containerSelector: '#ebook-container',
+            elements: {
+                dropTarget: '#reader-drop-target',
+                sidebar: {
+                    container: '#side-bar',
+                    button: '#side-bar-button',
+                    title: '#side-bar-title',
+                    author: '#side-bar-author',
+                    cover: '#side-bar-cover',
+                    tocView: '#toc-view'
+                },
+                navigation: {
+                    headerBar: '#header-bar',
+                    navBar: '#nav-bar',
+                    leftButton: '#left-button',
+                    rightButton: '#right-button',
+                    progressSlider: '#progress-slider',
+                    tickMarks: '#tick-marks'
+                },
+                menu: {
+                    container: '#menu-button',
+                    button: 'button'
+                },
+                overlay: '#dimming-overlay',
+                fileInput: '#file-input',
+                fileButton: '#file-button'
+            },
+            defaultStyle: {
+                spacing: 1.4,
+                justify: true,
+                hyphenate: true
+            }
+        };
+
+        class EbookReader {
+            constructor(config = {}) {
+                this.config = this.mergeConfig(readerConfiguration, config);
+                this.elements = new Map();
+                this.view = null;
+                this.tocView = null;
+
+                this.initializeElements();
+                this.initializeUserInterface();
+            }
+
+            mergeConfig(defaultConfig, userConfig) {
+                return {
+                    ...defaultConfig,
+                    ...userConfig,
+                    elements: {
+                        ...defaultConfig.elements,
+                        ...userConfig.elements,
+                        sidebar: {
+                            ...defaultConfig.elements.sidebar,
+                            ...userConfig.elements?.sidebar
+                        },
+                        navigation: {
+                            ...defaultConfig.elements.navigation,
+                            ...userConfig.elements?.navigation
+                        },
+                        menu: {
+                            ...defaultConfig.elements.menu,
+                            ...userConfig.elements?.menu
+                        }
+                    }
+                };
+            }
+
+            initializeElements() {
+                // Helper to store element references
+                const storeElement = (key, selector, parent) => {
+                    let element = parent ? parent.querySelector(selector) : document.querySelector(selector);
+                    if (!element) return;
+                    this.elements.set(key, element);
+                };
+
+                // Store main container
+                storeElement('container', this.config.containerSelector);
+
+                // Store sidebar elements
+                Object.entries(this.config.elements.sidebar).forEach(([key, selector]) => {
+                    storeElement(`sidebar.${key}`, selector);
+                });
+
+                // Store navigation elements
+                Object.entries(this.config.elements.navigation).forEach(([key, selector]) => {
+                    storeElement(`navigation.${key}`, selector);
+                });
+
+                // Store menu elements
+                const menuContainer = document.querySelector(this.config.elements.menu.container);
+                if (menuContainer) {
+                    this.elements.set('menu.container', menuContainer);
+                    storeElement('menu.button', this.config.elements.menu.button, menuContainer);
+                }
+
+                // Store other elements
+                storeElement('overlay', this.config.elements.overlay);
+                storeElement('fileInput', this.config.elements.fileInput);
+                storeElement('fileButton', this.config.elements.fileButton);
+                storeElement('dropTarget', this.config.elements.dropTarget);
+            }
+
+            getElement(key) {
+                return this.elements.get(key) || null;
+            }
+
+            initialize() {
+                const dropTarget = this.getElement('dropTarget');
+                if (dropTarget) {
+                    dropTarget.style.visibility = 'visible';
+                }
+
+                this.setupFileHandlers();
+            }
+
+            setupFileHandlers() {
+                const fileInput = this.getElement('fileInput');
+                const fileButton = this.getElement('fileButton');
+                const dropTarget = this.getElement('dropTarget');
+
+                if (fileInput && fileButton) {
+                    fileInput.addEventListener('change', (event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                            this.openBook(file).catch(console.error);
+                        }
+                    });
+
+                    fileButton.addEventListener('click', () => fileInput.click());
+                }
+
+                if (dropTarget) {
+                    dropTarget.addEventListener('drop', this.handleFileDrop.bind(this));
+                    dropTarget.addEventListener('dragover', (e) => e.preventDefault());
+                }
+            }
+
+            handleFileDrop(event) {
+                event.preventDefault();
+
+                const items = Array.from(event.dataTransfer?.items || []);
+                const fileItem = items.find((item) => item.kind === 'file');
+
+                if (!fileItem) return;
+
+                const file = fileItem.getAsFile();
+                if (file) {
+                    this.openBook(file).catch(console.error);
+                }
+            }
+
+            initializeUserInterface() {
+                this.setupSidebarControls();
+                this.setupLayoutMenu();
+            }
+
+            setupSidebarControls() {
+                const sidebarButton = this.getElement('sidebar.button');
+                const dimmingOverlay = this.getElement('overlay');
+
+                if (sidebarButton && dimmingOverlay) {
+                    sidebarButton.addEventListener('click', () => this.showSidebar());
+                    dimmingOverlay.addEventListener('click', () => this.hideSidebar());
+                }
+            }
+
+            showSidebar() {
+                const overlay = this.getElement('overlay');
+                const sidebar = this.getElement('sidebar.container');
+
+                if (overlay && sidebar) {
+                    overlay.classList.add('show');
+                    sidebar.classList.add('show');
+                }
+            }
+
+            hideSidebar() {
+                const overlay = this.getElement('overlay');
+                const sidebarContainer = this.getElement('sidebar.container');
+
+                if (overlay && sidebarContainer) {
+                    overlay.classList.remove('show');
+                    sidebarContainer.classList.remove('show');
+                }
+            }
+
+            setupLayoutMenu() {
+                const menuButton = this.getElement('menu.container');
+                if (!menuButton) return;
+
+                // Use the global createMenu function from menu.js
+                const menu = createMenu([
+                    {
+                        name: 'layout',
+                        label: 'Layout',
+                        type: 'radio',
+                        items: [
+                            ['Paginated', 'paginated'],
+                            ['Scrolled', 'scrolled']
+                        ],
+                        onclick: (value) => this.updateLayoutFlow(value)
+                    }
+                ]);
+
+                this.appendMenuToInterface(menu);
+            }
+
+            updateLayoutFlow(value) {
+                if (!this.view?.renderer) return;
+                this.view.renderer.setAttribute('flow', value);
+            }
+
+            appendMenuToInterface(menu) {
+                const menuButton = this.getElement('menu.container');
+                if (!menuButton) return;
+
+                menu.element.classList.add('menu');
+                menuButton.append(menu.element);
+
+                const button = menuButton.querySelector(this.config.elements.menu.button);
+                if (button) {
+                    button.addEventListener('click', () => menu.element.classList.toggle('show'));
+                }
+
+                menu.groups.layout.select('paginated');
+            }
+
+            async openBook(file) {
+                this.view = document.createElement('foliate-view');
+                const container = document.querySelector(this.config.containerSelector);
+
+                if (!container) {
+                    throw new Error('Ebook container not found');
+                }
+
+                container.appendChild(this.view);
+                container.classList.add('book-loaded');
+
+                const dropTarget = document.querySelector(this.config.elements.dropTarget);
+                if (dropTarget) {
+                    dropTarget.style.display = 'none';
+                }
+
+                await this.initializeBookView(file);
+                this.setupBookInterface();
+                await this.loadBookMetadata();
+
+                // Send book info to parent frame
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'bookInfo',
+                        title: document.title,
+                        author: this.getElement('sidebar.author')?.textContent || 'Unknown Author'
+                    }, '*');
+                }
+
+                return this.view;
+            }
+
+            async initializeBookView(file) {
+                if (!this.view) return;
+
+                await this.view.open(file);
+                this.view.addEventListener('load', this.handleBookLoad.bind(this));
+                this.view.addEventListener('relocate', this.handleBookRelocate.bind(this));
+
+                // Apply default styles
+                const styles = this.generateStyles(this.config.defaultStyle);
+                this.view.renderer.setStyles?.(styles);
+                this.view.renderer.next();
+            }
+
+            generateStyles(config) {
+                return `
+                    @namespace epub "http://www.idpf.org/2007/ops";
+                    html {
+                        color-scheme: light dark;
+                    }
+                    @media (prefers-color-scheme: dark) {
+                        a:link {
+                            color: lightblue;
+                        }
+                    }
+                    p, li, blockquote, dd {
+                        line-height: ${config.spacing};
+                        text-align: ${config.justify ? 'justify' : 'start'};
+                        -webkit-hyphens: ${config.hyphenate ? 'auto' : 'manual'};
+                        hyphens: ${config.hyphenate ? 'auto' : 'manual'};
+                        -webkit-hyphenate-limit-before: 3;
+                        -webkit-hyphenate-limit-after: 2;
+                        -webkit-hyphenate-limit-lines: 2;
+                        hanging-punctuation: allow-end last;
+                        widows: 2;
+                    }
+                    [align="left"] { text-align: left; }
+                    [align="right"] { text-align: right; }
+                    [align="center"] { text-align: center; }
+                    [align="justify"] { text-align: justify; }
+
+                    pre {
+                        white-space: pre-wrap !important;
+                    }
+                    aside[epub|type~="endnote"],
+                    aside[epub|type~="footnote"],
+                    aside[epub|type~="note"],
+                    aside[epub|type~="rearnote"] {
+                        display: none;
+                    }
+                `;
+            }
+
+            setupBookInterface() {
+                this.showNavigationControls();
+                this.setupProgressSlider();
+                this.setupKeyboardNavigation();
+
+                // Periodic progress update to parent frame
+                setInterval(() => {
+                    if (this.view && window.parent && window.parent !== window) {
+                        const slider = document.getElementById('progress-slider');
+                        if (slider) {
+                            window.parent.postMessage({
+                                type: 'progressUpdate',
+                                progress: parseFloat(slider.value)
+                            }, '*');
+                        }
+                    }
+                }, 10000); // Every 10 seconds
+            }
+
+            showNavigationControls() {
+                const headerBar = this.getElement('navigation.headerBar');
+                const navBar = this.getElement('navigation.navBar');
+
+                if (headerBar) {
+                    headerBar.style.visibility = 'visible';
+                }
+
+                if (navBar) {
+                    navBar.style.visibility = 'visible';
+                }
+
+                this.setupNavigationButtons();
+            }
+
+            setupNavigationButtons() {
+                const leftButton = this.getElement('navigation.leftButton');
+                const rightButton = this.getElement('navigation.rightButton');
+
+                if (leftButton) {
+                    leftButton.addEventListener('click', () => this.view.goLeft());
+                }
+
+                if (rightButton) {
+                    rightButton.addEventListener('click', () => this.view.goRight());
+                }
+            }
+
+            setupProgressSlider() {
+                const slider = this.getElement('navigation.progressSlider');
+                if (!slider || !this.view?.book) return;
+
+                slider.dir = this.view.book.dir;
+                slider.addEventListener('input', (e) => {
+                    this.view.goToFraction(parseFloat(e.target.value));
+                });
+
+                this.addTickMarksToSlider();
+            }
+
+            addTickMarksToSlider() {
+                const tickMarks = this.getElement('navigation.tickMarks');
+                if (!tickMarks || !this.view) return;
+
+                for (const fraction of this.view.getSectionFractions()) {
+                    const option = document.createElement('option');
+                    option.value = fraction.toString();
+                    tickMarks.append(option);
+                }
+            }
+
+            setupKeyboardNavigation() {
+                document.addEventListener('keydown', this.handleKeyboardNavigation.bind(this));
+            }
+
+            handleKeyboardNavigation(event) {
+                if (!this.view) return;
+
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'h':
+                        this.view.goLeft();
+                        break;
+                    case 'ArrowRight':
+                    case 'l':
+                        this.view.goRight();
+                        break;
+                }
+            }
+
+            async loadBookMetadata() {
+                if (!this.view?.book) return;
+
+                const { book } = this.view;
+                const metadata = book.metadata;
+
+                this.updateBookTitle(metadata);
+                this.updateAuthorInfo(metadata);
+                await this.loadCoverImage(book);
+                await this.loadTableOfContents(book);
+            }
+
+            formatLanguageMap(text) {
+                if (!text) return '';
+                if (typeof text === 'string') return text;
+                const [firstKey] = Object.keys(text);
+                return text[firstKey];
+            }
+
+            formatContributor(contributor) {
+                if (!contributor) return '';
+
+                const formatSingleContributor = (cont) => {
+                    if (typeof cont === 'string') return cont;
+                    return this.formatLanguageMap(cont?.name);
+                };
+
+                if (Array.isArray(contributor)) {
+                    return contributor.map(formatSingleContributor).join(', ');
+                }
+                return formatSingleContributor(contributor);
+            }
+
+            updateBookTitle(metadata) {
+                const title = this.formatLanguageMap(metadata?.title) || 'Untitled Book';
+                document.title = title;
+
+                const sidebarTitle = this.getElement('sidebar.title');
+                if (sidebarTitle) {
+                    sidebarTitle.textContent = title;
+                }
+            }
+
+            updateAuthorInfo(metadata) {
+                const authorElement = this.getElement('sidebar.author');
+                if (authorElement) {
+                    authorElement.textContent = this.formatContributor(metadata?.author);
+                }
+            }
+
+            async loadCoverImage(book) {
+                const coverBlob = await book.getCover?.();
+                if (coverBlob) {
+                    const coverImage = this.getElement('sidebar.cover');
+                    if (coverImage) {
+                        coverImage.src = URL.createObjectURL(coverBlob);
+                    }
+                }
+            }
+
+            async loadTableOfContents(book) {
+                const toc = book.toc;
+                if (!toc) return;
+
+                // Use the global createTOCView function from tree.js
+                this.tocView = createTOCView(toc, (href) => {
+                    this.view.goTo(href).catch(console.error);
+                    this.hideSidebar();
+                });
+
+                const tocViewContainer = this.getElement('sidebar.tocView');
+                if (tocViewContainer && this.tocView) {
+                    tocViewContainer.append(this.tocView.element);
+                }
+            }
+
+            handleBookLoad(event) {
+                const { doc } = event.detail;
+                if (doc) {
+                    doc.addEventListener('keydown', this.handleKeyboardNavigation.bind(this));
+                }
+            }
+
+            handleBookRelocate(event) {
+                if (!event.detail) return;
+
+                const { fraction, location, tocItem, pageItem } = event.detail;
+
+                // Format the percent as a string
+                const percent = (fraction * 100).toFixed(1) + '%';
+                const locationText = pageItem ? `Page ${pageItem.label}` : `Loc ${location.current}`;
+
+                this.updateProgressSlider(fraction, percent, locationText);
+
+                if (tocItem?.href && this.tocView?.setCurrentHref) {
+                    this.tocView.setCurrentHref(tocItem.href);
+                }
+
+                // Send progress to parent frame
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'progress',
+                        fraction: fraction,
+                        location: locationText
+                    }, '*');
+                }
+            }
+
+            updateProgressSlider(fraction, percent, locationText) {
+                const slider = this.getElement('navigation.progressSlider');
+                if (!slider) return;
+
+                slider.style.visibility = 'visible';
+                slider.value = fraction.toString();
+                slider.title = `${percent} · ${locationText}`;
+            }
+        }
+
+        // Initialize the reader
+        window.reader = new EbookReader();
+        window.reader.initialize();
+
+        // Notify parent frame that the reader is ready
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'readerReady' }, '*');
+        }
+    </script>
 </body>
 </html>

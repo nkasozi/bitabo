@@ -66,6 +66,20 @@ echo -e "\n📂 Copying build files to output directory..."
 cp -R "$BUILD_DIR"/* "$FULL_OUTPUT_PATH"
 echo "  ✅ Files copied to: $FULL_OUTPUT_PATH"
 
+# Ensure reader.html is properly updated with type="module" attributes
+echo -e "\n🔄 Updating reader.html for ES modules compatibility..."
+READER_HTML_PATH="$FULL_OUTPUT_PATH/reader.html"
+if [ -f "$READER_HTML_PATH" ]; then
+  # Use sed to replace script tags with type="module" attribute
+  sed -i.bak 's/<script src="\/foliate-js\//<script type="module" src="\/foliate-js\//g' "$READER_HTML_PATH"
+  sed -i.bak 's/<script>\s*\/\/ Simple event-driven communication/<script type="module">\n        \/\/ Simple event-driven communication/g' "$READER_HTML_PATH"
+  # Remove backup files
+  rm -f "$READER_HTML_PATH.bak"
+  echo "  ✅ Updated reader.html with type=\"module\" attributes"
+else
+  echo "  ⚠️ Warning: reader.html not found in the build directory"
+fi
+
 echo -e "\n🎉 Build completed successfully\!"
 echo -e "\nYour static app is ready for deployment:"
 echo "  • Individual files: $FULL_OUTPUT_PATH"
