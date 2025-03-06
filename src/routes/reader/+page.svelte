@@ -457,7 +457,7 @@
 					isReaderReady = true;
 					
 					// Once the reader is ready, load the book
-					loadBookIntoReader();
+					await loadBookIntoReader();
 				} catch (error) {
 					console.error('[DEBUG] Error creating reader instance:', error);
 					let errorMsg = 'Failed to initialize the reader component';
@@ -503,26 +503,6 @@
 
 <!-- Direct e-book container element -->
 <div id="ebook-container" class="reader-container"></div>
-
-<!-- Reader UI components -->
-<div id="reader-drop-target" class="reader-drop-target">
-    <h2>Drop an EPUB file here</h2>
-    <p>Or <button id="file-button">choose a file</button> to read</p>
-    <input type="file" id="file-input" hidden accept=".epub,.cbz,.fb2,.mobi,.azw3,.pdf" />
-</div>
-
-<div id="dimming-overlay" aria-hidden="true"></div>
-
-<div id="side-bar" class="sidebar">
-    <div id="side-bar-header" class="sidebar-header">
-        <img id="side-bar-cover" alt="" src="" />
-        <div>
-            <h1 id="side-bar-title"></h1>
-            <p id="side-bar-author"></p>
-        </div>
-    </div>
-    <div id="toc-view"></div>
-</div>
 
 <div id="header-bar" class="toolbar header-bar">
     <button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>

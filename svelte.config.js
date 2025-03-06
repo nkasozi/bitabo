@@ -16,7 +16,7 @@ const config = {
 			assets: 'build',
 			fallback: 'index.html', // For SPA-style routing
 			precompress: false,
-			strict:true
+			strict: false // Allow prerendering to work with dynamic routes
 		}),
 		// Enable SPA mode
 		paths: {
