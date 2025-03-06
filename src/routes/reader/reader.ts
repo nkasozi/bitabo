@@ -436,7 +436,7 @@ class EbookReader {
 		} else {
 			try {
 				// Load the menu.js module that contains createMenu
-				await import('/foliate-js/ui/menu.js?url');
+				await import('./foliate-js/ui/menu.js?url');
 				createMenuFn = window.createMenu;
 				if (!createMenuFn) {
 					throw new Error('createMenu function not found after loading module');
@@ -493,7 +493,7 @@ class EbookReader {
 	async openBook(file: File | string): Promise<void> {
 		// Make sure view.js is loaded first
 		try {
-			await import('/foliate-js/view.js?url');
+			await import('./foliate-js/view.js?url');
 		} catch (error) {
 			console.error('Error loading view module:', error);
 			throw new Error('Failed to load core view module');
@@ -686,7 +686,7 @@ class EbookReader {
 		} else {
 			try {
 				// Load the tree.js module that contains createTOCView
-				await import('/foliate-js/ui/tree.js?url');
+				await import('./foliate-js/ui/tree.js?url');
 				createTOCViewFn = window.createTOCView;
 				if (!createTOCViewFn) {
 					throw new Error('createTOCView function not found after loading module');
@@ -721,7 +721,7 @@ class EbookReader {
 		// Dynamically import the Overlayer module if needed
 		if (typeof window.Overlayer !== 'object') {
 			try {
-				await import('/foliate-js/overlayer.js?url');
+				await import('./foliate-js/overlayer.js?url');
 				if (!window.Overlayer) {
 					throw new Error('Overlayer not found after loading module');
 				}
@@ -734,7 +734,7 @@ class EbookReader {
 		// Load the epubcfi.js module for the fromCalibreHighlight function
 		let fromCalibreHighlight;
 		try {
-			const epubcfiModule = await import('/foliate-js/epubcfi.js?url');
+			const epubcfiModule = await import('./foliate-js/epubcfi.js?url');
 			fromCalibreHighlight = epubcfiModule.fromCalibreHighlight;
 			if (!fromCalibreHighlight) {
 				throw new Error('fromCalibreHighlight function not found after loading module');
@@ -855,7 +855,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 					try {
 						// First ensure that the view.js is loaded
 						try {
-							await import('/foliate-js/view.js?url');
+							await import('./foliate-js/view.js?url');
 						} catch (importError) {
 							console.error('Error importing view.js:', importError);
 							throw new Error('Could not load foliate-view module');

@@ -225,11 +225,11 @@
         </button>
     </div>
 
-    <!-- Load libraries directly with script tags as ES modules -->
-    <script type="module" src="/foliate-js/view.js"></script>
-    <script type="module" src="/foliate-js/ui/menu.js"></script>
-    <script type="module" src="/foliate-js/ui/tree.js"></script>
-    <script type="module" src="/foliate-js/overlayer.js"></script>
+    <!-- Load libraries directly with script tags as ES modules with relative paths -->
+    <script type="module" src="foliate-js/view.js"></script>
+    <script type="module" src="foliate-js/ui/menu.js"></script>
+    <script type="module" src="foliate-js/ui/tree.js"></script>
+    <script type="module" src="foliate-js/overlayer.js"></script>
 
     <script type="module">
         // Simple event-driven communication with parent frame
@@ -337,7 +337,10 @@
                 this.tocView = null;
 
                 this.initializeElements();
-                this.initializeUserInterface();
+                // Call initializeUserInterface in an async context
+                setTimeout(async () => {
+                    await this.initializeUserInterface();
+                }, 0);
             }
 
             mergeConfig(defaultConfig, userConfig) {
@@ -447,9 +450,9 @@
                 }
             }
 
-            initializeUserInterface() {
+            async initializeUserInterface() {
                 this.setupSidebarControls();
-                this.setupLayoutMenu();
+                await this.setupLayoutMenu();
             }
 
             setupSidebarControls() {
@@ -482,12 +485,33 @@
                 }
             }
 
-            setupLayoutMenu() {
+            async setupLayoutMenu() {
                 const menuButton = this.getElement('menu.container');
                 if (!menuButton) return;
-
-                // Use the global createMenu function from menu.js
-                const menu = createMenu([
+                
+                // Get createMenu function
+                let createMenuFn;
+                try {
+                    // First check if it's already defined globally
+                    if (typeof window.createMenu === 'function') {
+                        createMenuFn = window.createMenu;
+                    } else {
+                        // Try importing it
+                        const menuModule = await import('./foliate-js/ui/menu.js');
+                        createMenuFn = menuModule.createMenu || window.createMenu;
+                    }
+                    
+                    if (!createMenuFn) {
+                        console.error('createMenu function not available');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error loading menu module:', error);
+                    return;
+                }
+                
+                // Use the createMenu function
+                const menu = createMenuFn([
                     {
                         name: 'layout',
                         label: 'Layout',
@@ -760,8 +784,29 @@
                 const toc = book.toc;
                 if (!toc) return;
 
-                // Use the global createTOCView function from tree.js
-                this.tocView = createTOCView(toc, (href) => {
+                // Get createTOCView function
+                let createTOCViewFn;
+                try {
+                    // First check if it's already defined globally
+                    if (typeof window.createTOCView === 'function') {
+                        createTOCViewFn = window.createTOCView;
+                    } else {
+                        // Try importing it
+                        const treeModule = await import('./foliate-js/ui/tree.js');
+                        createTOCViewFn = treeModule.createTOCView || window.createTOCView;
+                    }
+                    
+                    if (!createTOCViewFn) {
+                        console.error('createTOCView function not available');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error loading TOC view module:', error);
+                    return;
+                }
+                
+                // Use the createTOCView function
+                this.tocView = createTOCViewFn(toc, (href) => {
                     this.view.goTo(href).catch(console.error);
                     this.hideSidebar();
                 });

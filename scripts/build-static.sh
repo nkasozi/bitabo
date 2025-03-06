@@ -71,7 +71,7 @@ echo -e "\n🔄 Updating reader.html for ES modules compatibility..."
 READER_HTML_PATH="$FULL_OUTPUT_PATH/reader.html"
 if [ -f "$READER_HTML_PATH" ]; then
   # Use sed to replace script tags with type="module" attribute
-  sed -i.bak 's/<script src="\/foliate-js\//<script type="module" src="\/foliate-js\//g' "$READER_HTML_PATH"
+  sed -i.bak 's/<script src="\/foliate-js\//<script type="module" src="foliate-js\//g' "$READER_HTML_PATH"
   sed -i.bak 's/<script>\s*\/\/ Simple event-driven communication/<script type="module">\n        \/\/ Simple event-driven communication/g' "$READER_HTML_PATH"
   # Remove backup files
   rm -f "$READER_HTML_PATH.bak"
