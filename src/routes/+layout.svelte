@@ -20,6 +20,10 @@
 	});
 </script>
 
+<svelte:head>
+	<meta name="google-site-verification" content="RygAY8A4JWo4RgLpPXbpOJnfQnlnvW0_CzmbttSNrws" />
+</svelte:head>
+
 <div class="app">
 	<Header />
 
