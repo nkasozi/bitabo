@@ -28,7 +28,12 @@
 	</main>
 
 	<footer>
-		<p>Bitabo E-book Reader</p>
+		<p>© {new Date().getFullYear()} Bitabo E-book Reader</p>
+		<div class="footer-links">
+			<a href="/privacy">Privacy Policy</a>
+			<span class="separator">|</span>
+			<a href="/tos">Terms of Service</a>
+		</div>
 	</footer>
 </div>
 
@@ -56,10 +61,29 @@
 		padding: 12px;
 		font-size: 0.8rem;
 		color: #666;
+		border-top: 1px solid #eee;
+		margin-top: 2rem;
 	}
 
 	footer a {
 		font-weight: bold;
+		color: #3182ce;
+		text-decoration: none;
+	}
+
+	footer a:hover {
+		text-decoration: underline;
+	}
+
+	.footer-links {
+		margin-top: 0.5rem;
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.separator {
+		color: #ccc;
 	}
 
 	@media (min-width: 480px) {
