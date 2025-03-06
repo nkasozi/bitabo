@@ -1,7 +1,7 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   
-  let currentYear = new Date().getFullYear();
+  let currentYear: number = new Date().getFullYear();
   
   onMount(() => {
     // Get the current year for copyright notice

@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import fs from 'fs';
 import path from 'path';
+import type { ViteDevServer } from 'vite';
 
 /**
  * External resources that should not be processed by Vite
@@ -45,7 +46,7 @@ export default defineConfig({
 			
 			// Ensure these paths are treated as external
 			resolveId(id) {
-				if (id.includes('foliate-js/') || id.includes('reader.html') || id.endsWith('.js') && id.includes('/ui/')) {
+				if (id.includes('foliate-js/') || id.includes('reader.html') || (id.endsWith('.js') && id.includes('/ui/'))) {
 					return { id, external: true };
 				}
 				return null;
@@ -54,6 +55,22 @@ export default defineConfig({
 			// Copy essential files to build directory
 			closeBundle() {
 				console.log('Ensuring foliate-js files are properly preserved');
+			}
+		},
+		
+		// Handle index.html redirects
+		{
+			name: 'custom-middleware',
+			configureServer(server: ViteDevServer) {
+				server.middlewares.use((req: any, res: any, next: () => void) => {
+					if (req.url === '/index.html') {
+						console.log('Redirecting /index.html request to /');
+						res.writeHead(301, { Location: '/' });
+						res.end();
+						return;
+					}
+					next();
+				});
 			}
 		}
 	],
@@ -66,22 +83,7 @@ export default defineConfig({
 		fs: {
 			allow: ['static']       // Allow serving files from static directory
 		},
-		// Add custom middleware to handle direct index.html requests
 		middlewareMode: false     // Disable middleware mode for compatibility
-	},
-	
-	// Add custom Vite plugin for handling requests
-	configureServer(server) {
-		// Add a middleware to redirect /index.html to /
-		server.middlewares.use((req, res, next) => {
-			if (req.url === '/index.html') {
-				console.log('Redirecting /index.html request to /');
-				res.writeHead(301, { Location: '/' });
-				res.end();
-				return;
-			}
-			next();
-		});
 	},
 
 	// Build configuration

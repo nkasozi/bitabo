@@ -348,7 +348,7 @@
 												console.log(`[DEBUG] Will retry in ${delay}ms (attempt ${attempt + 1})`);
 												setTimeout(() => setProgressValue(attempt + 1), delay);
 											} else {
-												console.error('[DEBUG] Could not find pro gress slider after multiple attempts');
+												console.error('[DEBUG] Could not find progress slider after multiple attempts');
 											}
 										}
 									};

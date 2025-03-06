@@ -61,6 +61,13 @@ export async function registerServiceWorker(): Promise<boolean> {
       
       // Wait for the service worker to be installed and activated
       await new Promise<void>((resolve) => {
+        // Registration might be null in some edge cases, so check first
+        if (!registration) {
+          console.warn('Registration is null, cannot wait for installation');
+          resolve();
+          return;
+        }
+        
         const installingWorker = registration.installing;
         
         installingWorker?.addEventListener('statechange', (event) => {
@@ -167,11 +174,13 @@ export function sendMessageToSW(message: any): Promise<any> {
     // Send the message
     try {
       sw.postMessage(msgWithId);
-    } catch (err) {
+    } catch (err: unknown) {
       // Handle potential errors when posting messages
       console.warn('Error posting message to service worker:', err);
       navigator.serviceWorker.removeEventListener('message', messageHandler);
-      resolve({ type: 'message-error', error: err.message });
+      
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      resolve({ type: 'message-error', error: errorMessage });
       return;
     }
     

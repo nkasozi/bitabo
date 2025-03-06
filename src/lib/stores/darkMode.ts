@@ -6,8 +6,8 @@ function createDarkModeStore() {
   // Default to dark mode unless explicitly set to light mode in localStorage
   
   // Check localStorage for saved preference
-  const storedDarkMode = browser && localStorage.getItem('darkMode');
-  const initialValue = storedDarkMode !== null ? JSON.parse(storedDarkMode) : true; // Default to true (dark mode)
+  const storedDarkMode = browser ? localStorage.getItem('darkMode') : null;
+  const initialValue: boolean = storedDarkMode !== null ? JSON.parse(storedDarkMode) : true; // Default to true (dark mode)
   
   const { subscribe, set, update } = writable(initialValue);
   

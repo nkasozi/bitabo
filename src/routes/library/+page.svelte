@@ -7,7 +7,7 @@
 		sendMessageToSW } from '$lib/serviceWorker';
 
 	// Supported e-book formats
-	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3'];
+	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
 
 	let coverflow: any;
 	let bookshelf: HTMLElement;
@@ -107,9 +107,9 @@
 		console.log('Extracting cover for file:', file.name);
 
 		try {
-			// For EPUB files, we can extract the cover
-			if (file.name.toLowerCase().endsWith('.epub')) {
-				console.log('File is EPUB, attempting to extract cover');
+			// For EPUB and CBZ files, we can extract the cover
+			if (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.cbz')) {
+				console.log(`File is ${file.name.toLowerCase().endsWith('.cbz') ? 'CBZ' : 'EPUB'}, attempting to extract cover`);
 
 				// Use the reader module to extract the cover
 				try {
@@ -136,7 +136,7 @@
 					console.error('Error importing or using reader module:', importError);
 				}
 			} else {
-				console.log('File is not EPUB, using placeholder');
+				console.log('File is not EPUB or CBZ, using placeholder');
 			}
 
 			// For other formats or if cover extraction failed, use placeholder
@@ -1438,7 +1438,7 @@
 						const docsView = new window.google.picker.DocsView()
 							.setIncludeFolders(true)
 							.setSelectFolderEnabled(true) // Allow folder selection
-							.setMimeTypes('application/epub+zip,application/pdf,application/x-mobipocket-ebook');
+							.setMimeTypes('application/epub+zip,application/pdf,application/x-mobipocket-ebook,application/vnd.comicbook+zip');
 
 						// Create a folders view to browse and select folders
 						const foldersView = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
@@ -1508,7 +1508,7 @@
 							updateProgressNotification(`Scanning folder ${folderCounter}/${folderIds.length}...`, folderCounter, folderIds.length, notificationId);
 
 							// List files in the folder
-							const query = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/epub+zip' or mimeType='application/pdf' or mimeType='application/x-mobipocket-ebook')`);
+							const query = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/epub+zip' or mimeType='application/pdf' or mimeType='application/x-mobipocket-ebook' or mimeType='application/vnd.comicbook+zip')`);
 							const folderResponse = await fetch(
 								`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType)`,
 								{
@@ -1873,7 +1873,7 @@
 						</div>
 
 						<p class="supported-formats">
-							Supported formats: EPUB, PDF, MOBI, AZW3
+							Supported formats: EPUB, PDF, MOBI, AZW3, CBZ
 						</p>
 					</div>
 				</div>
@@ -1887,7 +1887,7 @@
 		id="file-input"
 		style="display: none;"
 		multiple
-		accept=".epub,.pdf,.mobi,.azw3"
+		accept=".epub,.pdf,.mobi,.azw3,.cbz"
 	/>
 
 	<!-- Main container for coverflow or empty library image -->

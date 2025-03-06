@@ -3,11 +3,11 @@
 
 // Define the type declarations for the dynamically imported modules
 declare global {
-    interface Window {
-        createTOCView: any;
-        createMenu: any;
-        Overlayer: any;
-    }
+	interface Window {
+		createTOCView: any;
+		createMenu: any;
+		Overlayer: any;
+	}
 }
 
 // The dynamic imports will be resolved during initialization
@@ -86,7 +86,7 @@ export interface ReaderConfig {
 const DEFAULT_READER_CONFIG: ReaderConfig = {
 	containerSelector: '#ebook-container',
 	elements: {
-		dropTarget: '#drop-target',
+		dropTarget: '#reader-drop-target',
 		sidebar: {
 			container: '#side-bar',
 			button: '#side-bar-button',
@@ -205,7 +205,7 @@ class BookMetadataFormatter {
 		if (Array.isArray(contributor)) {
 			return formatters.formatList(contributor.map(formatSingleContributor));
 		}
-		return formatSingleContributor(contributor);
+		return contributor ? formatSingleContributor(contributor) : '';
 	}
 }
 
@@ -253,8 +253,15 @@ class EbookReader {
 		});
 
 		fileButton.addEventListener('click', () => fileInput.click());
-		dropTarget.addEventListener('drop', this.handleFileDrop.bind(this));
-		dropTarget.addEventListener('dragover', (e) => e.preventDefault());
+		
+		// Use type assertion for drag and drop events for better type safety
+		dropTarget.addEventListener('drop', (e: Event) => {
+			this.handleFileDrop(e as DragEvent);
+		});
+		
+		dropTarget.addEventListener('dragover', (e: Event) => {
+			e.preventDefault();
+		});
 	}
 
 	private handleFileDrop(event: DragEvent): void {
@@ -266,7 +273,7 @@ class EbookReader {
 		if (!fileItem) return;
 
 		const entry = fileItem.webkitGetAsEntry();
-		const file = entry?.isFile ? fileItem.getAsFile() : entry;
+		const file = entry?.isFile ? fileItem.getAsFile() : null;
 
 		if (file) {
 			this.openBook(file).catch(console.error);
@@ -282,7 +289,9 @@ class EbookReader {
 			this.openBook(urlFile).catch(console.error);
 		} else if (dropTarget) {
 			// Show the drop target only when there's no bookId
-			dropTarget['style'].display = 'flex';
+			if (dropTarget instanceof HTMLElement) {
+				dropTarget.style.display = 'flex';
+			}
 		}
 
 		this.setupFileHandlers();
@@ -384,9 +393,9 @@ class EbookReader {
 		sidebar.classList.add('show');
 	}
 
-	private initializeUserInterface(): void {
+	private async initializeUserInterface(): Promise<void> {
 		this.setupSidebarControls();
-		this.setupLayoutMenu();
+		await this.setupLayoutMenu();
 	}
 
 	private setupSidebarControls(): void {
@@ -438,10 +447,10 @@ class EbookReader {
 			try {
 				// Try different path formats to handle both development and production environments
 				try {
-					// Relative path (for production/static builds)
+					// Relative path for production
 					await import('./foliate-js/ui/menu.js?url');
 				} catch (e) {
-					// Fallback to absolute path (for development)
+					// Absolute path for development
 					await import('/foliate-js/ui/menu.js?url');
 				}
 				createMenuFn = window.createMenu;
@@ -501,10 +510,10 @@ class EbookReader {
 		// Make sure view.js is loaded first
 		try {
 			try {
-				// Try relative path first (for production/static builds)
+				// Relative path for production
 				await import('./foliate-js/view.js?url');
 			} catch (e) {
-				// Fallback to absolute path (for development)
+				// Absolute path for development
 				await import('/foliate-js/view.js?url');
 			}
 		} catch (error) {
@@ -561,14 +570,14 @@ class EbookReader {
 
 		if (!headerBar) {
 			console.warn('showNavigationControls: headerBar element not found.');
-		} else {
-			headerBar['style'].visibility = 'visible';
+		} else if (headerBar instanceof HTMLElement) {
+			headerBar.style.visibility = 'visible';
 		}
 
 		if (!navBar) {
 			console.warn('showNavigationControls: navBar element not found.');
-		} else {
-			navBar['style'].visibility = 'visible';
+		} else if (navBar instanceof HTMLElement) {
+			navBar.style.visibility = 'visible';
 		}
 
 		this.setupNavigationButtons();
@@ -617,7 +626,8 @@ class EbookReader {
 		for (const fraction of this.view.getSectionFractions()) {
 			const option = document.createElement('option');
 			option.value = fraction.toString();
-			tickMarks.append(option);
+			// Use Node.appendChild instead of Element.append for better type safety
+			tickMarks.appendChild(option);
 		}
 	}
 
@@ -700,10 +710,10 @@ class EbookReader {
 			try {
 				// Try different path formats to handle both development and production environments
 				try {
-					// Relative path (for production/static builds)
+					// Relative path for production
 					await import('./foliate-js/ui/tree.js?url');
 				} catch (e) {
-					// Fallback to absolute path (for development)
+					// Absolute path for development
 					await import('/foliate-js/ui/tree.js?url');
 				}
 				createTOCViewFn = window.createTOCView;
@@ -763,11 +773,13 @@ class EbookReader {
 			try {
 				// Relative path for production
 				const epubcfiModule = await import('./foliate-js/epubcfi.js?url');
-				fromCalibreHighlight = epubcfiModule.fromCalibreHighlight;
+				// Use dynamic access to avoid TypeScript errors with dynamic imports
+				fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
 			} catch (e) {
 				// Absolute path for development
 				const epubcfiModule = await import('/foliate-js/epubcfi.js?url');
-				fromCalibreHighlight = epubcfiModule.fromCalibreHighlight;
+				// Use dynamic access to avoid TypeScript errors with dynamic imports
+				fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
 			}
 			
 			if (!fromCalibreHighlight) {
@@ -874,7 +886,7 @@ class EbookReader {
 }
 
 // initialization.ts
-export const createReader = async (config?: Partial<ReaderConfig>): Promise<EbookReader & { openBook: any }> => {
+export const createReader = async (config?: Partial<ReaderConfig>): Promise<any> => {
 	const reader = new EbookReader(config);
 	reader.initialize();
 	console.log('Finished creating new ebook reader!!');
@@ -882,10 +894,11 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 	// Enhanced reader with additional method for cover extraction
 	const enhancedReader = {
 		...reader,
-		openBook: async (file: File | string, options: any = {}) => {
+		openBook: async (file: File | string, options: Record<string, any> = {}) => {
 			// If extractCoverOnly is true, just extract the cover
 			if (options.extractCoverOnly) {
-				if (file instanceof File && file.name.toLowerCase().endsWith('.epub')) {
+				// Support for EPUB and CBZ files
+				if (file instanceof File && (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.cbz'))) {
 					try {
 						// First ensure that the view.js is loaded
 						try {
@@ -904,13 +917,16 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 						// Now create the view element
 						const view = document.createElement('foliate-view');
 						
-						if (!view || typeof view.open !== 'function') {
+						// Use type assertion to handle special element with custom properties
+						const foliateView = view as any;
+						
+						if (!foliateView || typeof foliateView.open !== 'function') {
 							throw new Error('foliate-view element not properly initialized');
 						}
 						
 						// Open the book file
-						await view.open(file);
-						const book = view.book;
+						await foliateView.open(file);
+						const book = foliateView.book;
 						
 						if (book) {
 							// Extract cover image
@@ -929,7 +945,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<Eboo
 								
 							const author = metadata.author ? 
 								(Array.isArray(metadata.author) ? 
-									metadata.author.map(a => typeof a === 'string' ? a : a.name).join(', ') : 
+									metadata.author.map((a: any) => typeof a === 'string' ? a : a.name).join(', ') : 
 									typeof metadata.author === 'string' ? metadata.author : '') : 
 								'Unknown Author';
 							
