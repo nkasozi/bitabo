@@ -488,6 +488,12 @@
 
 <svelte:head>
 	<title>Bitabo Reader</title>
+	<!-- Load Foliate Reader scripts -->
+	<script src="/foliate-js/view.js" defer></script>
+	<script src="/foliate-js/ui/menu.js" defer></script>
+	<script src="/foliate-js/ui/tree.js" defer></script>
+	<script src="/foliate-js/overlayer.js" defer></script>
+	<script src="/foliate-js/epubcfi.js" defer></script>
 </svelte:head>
 
 {#if hasError}

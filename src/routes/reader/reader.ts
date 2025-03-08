@@ -445,15 +445,47 @@ class EbookReader {
 			createMenuFn = window.createMenu;
 		} else {
 			try {
-				// Try different path formats to handle both development and production environments
+				// Enhanced module loading with multiple fallbacks and checks
 				try {
-					// Relative path for production
-					await import('./foliate-js/ui/menu.js?url');
+					// First try the absolute path with base URL
+					console.log('Trying to load menu.js from absolute path');
+					const baseUrl = window.location.origin;
+					const script = document.createElement('script');
+					script.type = 'module';
+					script.src = `${baseUrl}/foliate-js/ui/menu.js`;
+					
+					// Wait for script to load
+					await new Promise((resolve, reject) => {
+						script.onload = resolve;
+						script.onerror = reject;
+						document.head.appendChild(script);
+					});
+					
+					// Check if global function is available after short delay
+					await new Promise(resolve => setTimeout(resolve, 100));
 				} catch (e) {
-					// Absolute path for development
-					await import('/foliate-js/ui/menu.js?url');
+					console.warn('Failed to load menu.js with script tag, trying import', e);
+					// Try with dynamic import as fallback
+					try {
+						// Relative path for production
+						await import('./foliate-js/ui/menu.js?url');
+					} catch (e2) {
+						console.warn('Failed with relative path, trying absolute', e2);
+						// Absolute path for development
+						await import('/foliate-js/ui/menu.js?url');
+					}
 				}
-				createMenuFn = window.createMenu;
+				
+				// Multiple checks for the global function with retries
+				for (let attempt = 0; attempt < 3; attempt++) {
+					if (typeof window.createMenu === 'function') {
+						createMenuFn = window.createMenu;
+						break;
+					}
+					// Wait a bit longer between attempts
+					await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+				}
+				
 				if (!createMenuFn) {
 					throw new Error('createMenu function not found after loading module');
 				}
@@ -507,14 +539,35 @@ class EbookReader {
 	}
 
 	async openBook(file: File | string): Promise<void> {
-		// Make sure view.js is loaded first
+		// Enhanced view.js loading with multiple methods and retries
 		try {
+			// First try to load with a script tag
 			try {
-				// Relative path for production
-				await import('./foliate-js/view.js?url');
-			} catch (e) {
-				// Absolute path for development
-				await import('/foliate-js/view.js?url');
+				console.log('Loading view.js with script tag');
+				const baseUrl = window.location.origin;
+				const script = document.createElement('script');
+				script.type = 'module';
+				script.src = `${baseUrl}/foliate-js/view.js`;
+				
+				// Wait for script to load
+				await new Promise((resolve, reject) => {
+					script.onload = resolve;
+					script.onerror = reject;
+					document.head.appendChild(script);
+				});
+				
+				// Give a small delay to ensure script is processed
+				await new Promise(resolve => setTimeout(resolve, 200));
+			} catch (scriptError) {
+				console.warn('Script tag loading failed, trying dynamic import', scriptError);
+				// Fall back to dynamic import if script tag fails
+				try {
+					// Relative path for production
+					await import('./foliate-js/view.js?url');
+				} catch (e) {
+					// Absolute path for development
+					await import('/foliate-js/view.js?url');
+				}
 			}
 		} catch (error) {
 			console.error('Error loading view module:', error);
@@ -540,6 +593,31 @@ class EbookReader {
 			//console.log('openBook: Drop target has been found and removed');
 		}
 
+		// Check if view has been properly initialized with open method
+		if (!this.view.open) {
+			console.error('view.open method not found - view element not properly initialized');
+			
+			// Try to manually register the element if it's not being registered automatically
+			try {
+				// Add a small delay to let any pending scripts complete
+				await new Promise(resolve => setTimeout(resolve, 300));
+				
+				if (typeof customElements !== 'undefined' && !customElements.get('foliate-view')) {
+					console.log('Attempting to manually register foliate-view custom element');
+					// Try to import the module again
+					await import('/foliate-js/view.js?url');
+					
+					// Check again after import
+					if (!this.view.open) {
+						throw new Error('view.open method still not available after retry');
+					}
+				}
+			} catch (registrationError) {
+				console.error('Failed to register custom element:', registrationError);
+				throw new Error('Failed to initialize e-book viewer component');
+			}
+		}
+
 		await this.initializeBookView(file);
 		await this.setupBookInterface();
 		await this.loadBookMetadata();
@@ -551,11 +629,44 @@ class EbookReader {
 			console.warn('initializeBookView: view is not initialized.');
 			return;
 		}
-		await this.view.open(file);
-		this.view.addEventListener('load', this.handleBookLoad.bind(this));
-		this.view.addEventListener('relocate', this.handleBookRelocate.bind(this));
-		this.view.renderer.setStyles?.(ReaderStyleGenerator.generateStyles(this.config.defaultStyle));
-		this.view.renderer.next();
+		
+		// Add additional checks and error handling
+		if (typeof this.view.open !== 'function') {
+			console.error('initializeBookView: view.open is not a function');
+			throw new Error('E-book viewer component not properly initialized');
+		}
+		
+		try {
+			// Open the book file
+			await this.view.open(file);
+			
+			// Add event listeners
+			this.view.addEventListener('load', this.handleBookLoad.bind(this));
+			this.view.addEventListener('relocate', this.handleBookRelocate.bind(this));
+			
+			// Check if renderer is available
+			if (!this.view.renderer) {
+				console.warn('initializeBookView: view.renderer is not available yet');
+				// Wait a moment for renderer to initialize
+				await new Promise(resolve => setTimeout(resolve, 200));
+			}
+			
+			// Apply styles if renderer is available
+			if (this.view.renderer) {
+				if (typeof this.view.renderer.setStyles === 'function') {
+					this.view.renderer.setStyles(ReaderStyleGenerator.generateStyles(this.config.defaultStyle));
+				}
+				
+				if (typeof this.view.renderer.next === 'function') {
+					this.view.renderer.next();
+				}
+			} else {
+				console.warn('initializeBookView: view.renderer still not available after waiting');
+			}
+		} catch (error) {
+			console.error('initializeBookView: Error initializing book view', error);
+			throw error; // Re-throw to be handled by caller
+		}
 	}
 
 	private setupBookInterface(): void {
@@ -708,15 +819,46 @@ class EbookReader {
 			createTOCViewFn = window.createTOCView;
 		} else {
 			try {
-				// Try different path formats to handle both development and production environments
+				// Enhanced module loading with multiple fallbacks
 				try {
-					// Relative path for production
-					await import('./foliate-js/ui/tree.js?url');
-				} catch (e) {
-					// Absolute path for development
-					await import('/foliate-js/ui/tree.js?url');
+					// First try with script tag approach
+					console.log('Loading tree.js with script tag');
+					const baseUrl = window.location.origin;
+					const script = document.createElement('script');
+					script.type = 'module';
+					script.src = `${baseUrl}/foliate-js/ui/tree.js`;
+					
+					// Wait for script to load
+					await new Promise((resolve, reject) => {
+						script.onload = resolve;
+						script.onerror = reject;
+						document.head.appendChild(script);
+					});
+					
+					// Short delay to process script
+					await new Promise(resolve => setTimeout(resolve, 100));
+				} catch (scriptError) {
+					console.warn('Failed to load tree.js with script tag, trying import', scriptError);
+					// Fall back to dynamic import
+					try {
+						// Relative path for production
+						await import('./foliate-js/ui/tree.js?url');
+					} catch (e) {
+						// Absolute path for development
+						await import('/foliate-js/ui/tree.js?url');
+					}
 				}
-				createTOCViewFn = window.createTOCView;
+				
+				// Multiple checks for the global function with retries
+				for (let attempt = 0; attempt < 3; attempt++) {
+					if (typeof window.createTOCView === 'function') {
+						createTOCViewFn = window.createTOCView;
+						break;
+					}
+					// Wait a bit longer between attempts
+					await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+				}
+				
 				if (!createTOCViewFn) {
 					throw new Error('createTOCView function not found after loading module');
 				}
@@ -747,15 +889,45 @@ class EbookReader {
 		const bookmarks = await this.view.book.getCalibreBookmarks?.();
 		if (!bookmarks) return;
 
-		// Dynamically import the Overlayer module if needed
+		// Dynamically import the Overlayer module with enhanced loading
 		if (typeof window.Overlayer !== 'object') {
 			try {
+				// Try with script tag first
 				try {
-					// Relative path for production
-					await import('./foliate-js/overlayer.js?url');
-				} catch (e) {
-					// Absolute path for development
-					await import('/foliate-js/overlayer.js?url');
+					console.log('Loading overlayer.js with script tag');
+					const baseUrl = window.location.origin;
+					const script = document.createElement('script');
+					script.type = 'module';
+					script.src = `${baseUrl}/foliate-js/overlayer.js`;
+					
+					// Wait for script to load
+					await new Promise((resolve, reject) => {
+						script.onload = resolve;
+						script.onerror = reject;
+						document.head.appendChild(script);
+					});
+					
+					// Give time for script to process
+					await new Promise(resolve => setTimeout(resolve, 100));
+				} catch (scriptError) {
+					console.warn('Failed to load overlayer.js with script tag, trying import', scriptError);
+					// Fall back to dynamic import
+					try {
+						// Relative path for production
+						await import('./foliate-js/overlayer.js?url');
+					} catch (e) {
+						// Absolute path for development
+						await import('/foliate-js/overlayer.js?url');
+					}
+				}
+				
+				// Multiple checks with retries
+				for (let attempt = 0; attempt < 3; attempt++) {
+					if (window.Overlayer) {
+						break;
+					}
+					// Wait a bit longer between attempts
+					await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
 				}
 				
 				if (!window.Overlayer) {
@@ -767,19 +939,49 @@ class EbookReader {
 			}
 		}
 
-		// Load the epubcfi.js module for the fromCalibreHighlight function
+		// Load the epubcfi.js module for the fromCalibreHighlight function with enhanced loading
 		let fromCalibreHighlight;
 		try {
+			// Try with script tag first
 			try {
-				// Relative path for production
-				const epubcfiModule = await import('./foliate-js/epubcfi.js?url');
-				// Use dynamic access to avoid TypeScript errors with dynamic imports
-				fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
-			} catch (e) {
-				// Absolute path for development
-				const epubcfiModule = await import('/foliate-js/epubcfi.js?url');
-				// Use dynamic access to avoid TypeScript errors with dynamic imports
-				fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
+				console.log('Loading epubcfi.js with script tag');
+				const baseUrl = window.location.origin;
+				const script = document.createElement('script');
+				script.type = 'module';
+				script.src = `${baseUrl}/foliate-js/epubcfi.js`;
+				
+				// Wait for script to load
+				await new Promise((resolve, reject) => {
+					script.onload = resolve;
+					script.onerror = reject;
+					document.head.appendChild(script);
+				});
+				
+				// Give time for script to initialize
+				await new Promise(resolve => setTimeout(resolve, 100));
+				
+				// Try to get the function from window after script loads
+				// Some modules might expose their exports on the window object
+				if (window['fromCalibreHighlight']) {
+					fromCalibreHighlight = window['fromCalibreHighlight'];
+				}
+			} catch (scriptError) {
+				console.warn('Failed to load epubcfi.js with script tag, trying import', scriptError);
+			}
+			
+			// If the script tag approach didn't work, try dynamic import
+			if (!fromCalibreHighlight) {
+				try {
+					// Relative path for production
+					const epubcfiModule = await import('./foliate-js/epubcfi.js?url');
+					// Use dynamic access to avoid TypeScript errors with dynamic imports
+					fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
+				} catch (e) {
+					// Absolute path for development
+					const epubcfiModule = await import('/foliate-js/epubcfi.js?url');
+					// Use dynamic access to avoid TypeScript errors with dynamic imports
+					fromCalibreHighlight = (epubcfiModule as any).fromCalibreHighlight;
+				}
 			}
 			
 			if (!fromCalibreHighlight) {
@@ -931,7 +1133,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 						if (book) {
 							// Extract cover image
 							const coverBlob = await book.getCover?.();
-							let coverUrl = '/placeholder-cover.png';
+							let coverUrl = '/empty-library-image.png';
 							
 							if (coverBlob) {
 								coverUrl = URL.createObjectURL(coverBlob);
@@ -956,7 +1158,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 						throw error; // Re-throw to allow proper error handling in the library page
 					}
 				}
-				return { cover: '/placeholder-cover.png' };
+				return { cover: '/empty-library-image.png' };
 			}
 			
 			// Normal book opening

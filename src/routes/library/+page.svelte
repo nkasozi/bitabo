@@ -9,18 +9,17 @@
 	// Supported e-book formats
 	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
 
-	let coverflow: any;
 	let bookshelf: HTMLElement;
 	let isLibraryLoaded = false;
 	let libraryBooks: any[] = [];
 	let selectedBookIndex = 0;
 	let fileInputElement: HTMLInputElement;
 	let isUploadModalOpen = false;
+	let coverflow: Coverflow; // Reference to the coverflow instance
 
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
 	const BOOKS_STORE = 'books';
-	// LIBRARY_STORE has been eliminated in favor of storing books individually
 
 	// Hash function for generating unique IDs - at module scope
 	function hashString(str) {
@@ -657,100 +656,432 @@
 		isLibraryLoaded = libraryBooks.length > 0;
 		console.log('[DEBUG] Library loaded:', isLibraryLoaded, 'with', libraryBooks.length, 'books');
 
-		// Make sure coverflow script is loaded (only in browser)
-		if (browser) {
-			if (typeof window.Coverflow === 'undefined') {
-				console.log('[DEBUG] Coverflow not loaded yet, loading script before initializing');
-				try {
-					await loadCoverflowScript();
-				} catch (err) {
-					console.error('[DEBUG] Failed to load Coverflow script:', err);
-					return;
-				}
-			}
+		// Initialize coverflow
+		if (isLibraryLoaded) {
+			// Initialize with increased timeout for better positioning
+			setTimeout(initCoverflow, 300);
+		}
+	}
 
-			// Initialize coverflow after script is loaded and DOM is updated
-			if (isLibraryLoaded) {
-				// Initialize with increased timeout for better positioning
-				setTimeout(initCoverflow, 300);
+	/**
+	 * Coverflow class for managing 3D book display and interaction
+	 */
+	class Coverflow {
+		/**
+		 * Creates a new Coverflow instance
+		 * @param {Array} bookData - Array of book information objects
+		 * @param {Object} params - Configuration parameters
+		 */
+		constructor(containerEl, bookData) {
+			this.container = containerEl;
+			this.bookData = bookData;
+			this.books = [];
+			this.currentIndex = Math.min(1, this.bookData.length - 1);
+			this.visibleBooks = this.getVisibleBooksCount();
+
+			// Configuration parameters
+			this.params = {
+				xOffset: 165,      // Horizontal distance between books
+				zDepth: 55,        // Z-axis depth for perspective
+				rotation: 55,      // Rotation angle in degrees
+				scale: {
+					active: 1.05,  // Active book scale
+					inactive: 0.9  // Inactive book scale
+				}
+			};
+		}
+
+		/**
+		 * Get number of visible books based on screen width
+		 */
+		getVisibleBooksCount() {
+			const width = window.innerWidth;
+			if (width <= 480) {
+				return 3; // Mobile: center + 1 on each side
+			} else if (width <= 768) {
+				return 5; // Tablet: center + 2 on each side
+			} else {
+				return this.bookData.length; // Desktop: show all books
 			}
+		}
+
+		/**
+		 * Handle window resize
+		 */
+		handleResize = () => {
+			const newVisibleCount = this.getVisibleBooksCount();
+			if (newVisibleCount !== this.visibleBooks) {
+				this.visibleBooks = newVisibleCount;
+				this.updateVisibleBooks();
+			}
+		}
+
+		/**
+		 * Initialize the coverflow
+		 */
+		initialize() {
+			this.createAllBooks();
+			this.setupEventListeners();
+			this.updateVisibleBooks();
+			this.positionBooks(this.currentIndex);
+
+			// Add resize event listener
+			window.addEventListener('resize', this.handleResize);
+
+			// Return the current index
+			return this.currentIndex;
+		}
+
+		/**
+		 * Create all book elements
+		 */
+		createAllBooks() {
+			// Clear container
+			this.container.innerHTML = '';
+			this.books = [];
+
+			// Create all books but set some as hidden initially
+			this.bookData.forEach((data, index) => {
+				const bookElement = this.createBookElement(index);
+				this.container.appendChild(bookElement);
+				this.books.push(bookElement);
+			});
+		}
+
+		/**
+		 * Update which books are visible based on current index
+		 */
+		updateVisibleBooks() {
+			const halfVisible = Math.floor(this.visibleBooks / 2);
+			const startIndex = Math.max(0, this.currentIndex - halfVisible);
+			const endIndex = Math.min(this.bookData.length - 1, startIndex + this.visibleBooks - 1);
+
+			// Update all books' visibility
+			this.books.forEach((book, index) => {
+				if (index >= startIndex && index <= endIndex) {
+					book.style.display = '';
+				} else {
+					book.style.display = 'none';
+				}
+			});
+		}
+
+		/**
+		 * Create a single book element
+		 * @param {number} index - Index of book in the data array
+		 * @returns {HTMLElement} - The created book element
+		 */
+		createBookElement(index) {
+			const bookData = this.bookData[index];
+			const bookElement = document.createElement('li');
+			bookElement.setAttribute('tabindex', '0');
+
+			// Determine color based on index (cycle through available colors)
+			const colors = ['yellow', 'blue', 'grey'];
+			const color = colors[index % colors.length];
+
+			const bookHTML = `
+				<figure class="book">
+					<ul class="hardcover_front">
+						<li>
+							<div class="coverDesign ${color}">
+								<span class="ribbon">v 1.2</span>
+								<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
+								<div class="cover-text">
+									<h1></h1>
+									<p></p>
+								</div>
+							</div>
+						</li>
+						<li></li>
+					</ul>
+					<ul class="page">
+						<li></li>
+						<li></li>
+						<li></li>
+						<li></li>
+						<li></li>
+					</ul>
+					<ul class="hardcover_back">
+						<li></li>
+						<li></li>
+					</ul>
+					<ul class="book_spine">
+						<li></li>
+						<li></li>
+					</ul>
+				</figure>
+			`;
+
+			bookElement.innerHTML = bookHTML;
+			bookElement.dataset.index = index;
+
+			return bookElement;
+		}
+
+		/**
+		 * Set up event listeners for navigation
+		 */
+		setupEventListeners() {
+			// Keyboard navigation is handled at the component level
+
+			// Click navigation
+			this.books.forEach(book => {
+				book.addEventListener('click', () => {
+					const index = parseInt(book.dataset.index, 10);
+					if (index !== this.currentIndex) {
+						this.currentIndex = index;
+						this.updateVisibleBooks(); // Update which books are visible
+						this.positionBooks(this.currentIndex);
+
+						// Dispatch a custom event for selection
+						const event = new CustomEvent('coverselect', {
+							detail: {
+								index: this.currentIndex
+							}
+						});
+						this.container.dispatchEvent(event);
+					}
+				});
+
+				book.addEventListener('focus', () => {
+					const index = parseInt(book.dataset.index, 10);
+					if (index !== this.currentIndex) {
+						this.currentIndex = index;
+						this.updateVisibleBooks(); // Update which books are visible
+						this.positionBooks(this.currentIndex);
+
+						// Dispatch a custom event for selection
+						const event = new CustomEvent('coverselect', {
+							detail: {
+								index: this.currentIndex
+							}
+						});
+						this.container.dispatchEvent(event);
+					}
+				});
+			});
+
+			// Touch swipe support
+			let touchStartX = 0;
+			let touchEndX = 0;
+
+			this.container.addEventListener('touchstart', (e) => {
+				touchStartX = e.changedTouches[0].screenX;
+			});
+
+			this.container.addEventListener('touchend', (e) => {
+				touchEndX = e.changedTouches[0].screenX;
+				this.handleSwipe();
+			});
+
+			// Helper function to handle swipe
+			this.handleSwipe = () => {
+				const swipeThreshold = 50;
+				if (touchEndX < touchStartX - swipeThreshold && this.currentIndex < this.bookData.length - 1) {
+					// Swipe left
+					this.select(this.currentIndex + 1);
+				} else if (touchEndX > touchStartX + swipeThreshold && this.currentIndex > 0) {
+					// Swipe right
+					this.select(this.currentIndex - 1);
+				}
+			};
+		}
+
+		/**
+		 * Position all books based on the active index
+		 * @param {number} activeIndex - Index of the active book
+		 */
+		positionBooks(activeIndex) {
+			// First pass: Set global stacking order
+			this.books.forEach(book => {
+				const index = parseInt(book.dataset.index, 10);
+				const offset = index - activeIndex;
+				const distance = Math.abs(offset);
+
+				// Base z-index calculation with exponential falloff
+				if (offset === 0) {
+					book.style.zIndex = 1000; // Active book gets highest z-index
+				} else {
+					book.style.zIndex = Math.max(1, 800 - (distance * distance * 20));
+				}
+			});
+
+			// Second pass: Set transforms and component z-indexes
+			this.books.forEach(book => {
+				const index = parseInt(book.dataset.index, 10);
+				const offset = index - activeIndex;
+
+				book.classList.remove('active-book');
+
+				if (offset === 0) {
+					// Center book - keep as is
+					book.style.transform = `translateX(0) translateZ(60px) rotateY(0deg) scale(${this.params.scale.active})`;
+					book.classList.add('active-book');
+
+					this.setComponentZIndexes(book, {
+						frontCover: 30,
+						spine: 20,
+						backCover: 10,
+						pages: 15
+					});
+				} else {
+					const distance = Math.abs(offset * 1.1);
+					const direction = offset < 0 ? -1 : 1;
+
+					// Calculate positions
+					const xPosition = direction * (distance * this.params.xOffset);
+					const zPosition = -55 - (distance * 20);
+
+					// KEY CHANGE: Dynamic rotation based on quadratic curve
+					// For books on right (direction > 0), use diminishing rotation
+					let rotationAngle;
+					if (direction < 0) {
+					// Books to the left - increasing negative rotation (showing more spine)
+					    rotationAngle = direction * (this.params.rotation + (distance * 5));
+					} else {
+					// Books to the right - diminishing positive rotation (showing less spine)
+					// The further away, the closer to 0 degrees (showing front cover)
+					rotationAngle = Math.max(0, this.params.rotation - (distance * 60));
+					}
+
+					const scaleValue = this.params.scale.inactive - (distance * 0.05);
+
+					// Apply transform
+					book.style.transform = `translateX(${xPosition}px) translateZ(${zPosition}px) rotateY(${rotationAngle}deg) scale(${scaleValue})`;
+
+					// Adjust z-indexes based on new rotation approach
+					if (direction < 0) {
+						// Left side books (showing spine more)
+						this.setComponentZIndexes(book, {
+							frontCover: 20,
+							spine: 30,
+							backCover: 10,
+							pages: 15
+						});
+					} else {
+						// Right side books (showing front cover)
+						this.setComponentZIndexes(book, {
+							frontCover: 30,
+							spine: 10,
+							backCover: 5,
+							pages: 15
+						});
+					}
+				}
+			});
+		}
+
+		/**
+		 * Set z-index values for individual book components
+		 * @param {HTMLElement} book - The book element
+		 * @param {Object} zIndexes - Object with z-index values for components
+		 */
+		setComponentZIndexes(book, zIndexes) {
+			const frontCover = book.querySelector('.hardcover_front');
+			const backCover = book.querySelector('.hardcover_back');
+			const spine = book.querySelector('.book_spine');
+			const pages = book.querySelector('.page');
+
+			if (frontCover) frontCover.style.zIndex = zIndexes.frontCover;
+			if (backCover) backCover.style.zIndex = zIndexes.backCover;
+			if (spine) spine.style.zIndex = zIndexes.spine;
+			if (pages) pages.style.zIndex = zIndexes.pages;
+		}
+
+		/**
+		 * Select a specific book
+		 * @param {number} index - Index of the book to select
+		 */
+		select(index) {
+			if (index < 0 || index >= this.bookData.length) return;
+
+			this.currentIndex = index;
+			this.updateVisibleBooks();
+			this.positionBooks(index);
+
+			// Dispatch a custom event for selection
+			const event = new CustomEvent('coverselect', {
+				detail: {
+					index: this.currentIndex
+				}
+			});
+			this.container.dispatchEvent(event);
 		}
 	}
 
 	// Initialize coverflow
 	function initCoverflow() {
-		if (!browser) return;
+		if (!browser || !bookshelf) return;
 
-		// Make sure the coverflow script is loaded
-		if (typeof window.Coverflow !== 'undefined' && bookshelf) {
-			// Clear existing content
-			bookshelf.innerHTML = '';
+		console.log('[DEBUG] Initializing 3D Coverflow with', libraryBooks.length, 'books');
 
-			// Determine which books to display
-			const booksToDisplay = isSearching && searchResults.length > 0
-				? searchResults
-				: libraryBooks;
+		// Clear existing content
+		bookshelf.innerHTML = '';
 
-			// Create img elements for each book directly
-			booksToDisplay.forEach((book, index) => {
-				const img = document.createElement('img');
-				img.src = book.coverUrl;
-				img.alt = book.title;
-				img.setAttribute('data-info', book.title);
+		// Determine which books to display
+		const booksToDisplay = isSearching && searchResults.length > 0
+			? searchResults
+			: libraryBooks;
 
-				// Add custom attribute to help track original book index
-				if (isSearching) {
-					// Find index in original array
-					const originalIndex = libraryBooks.findIndex(b => b.id === book.id);
-					if (originalIndex >= 0) {
-						img.setAttribute('data-original-index', originalIndex.toString());
+		if (booksToDisplay.length === 0) {
+			console.log('[DEBUG] No books to display');
+			return;
+		}
+
+		try {
+			// Create a container for the 3D books
+			const alignContainer = document.createElement('ul');
+			alignContainer.className = 'align';
+			alignContainer.id = 'book-container';
+			bookshelf.appendChild(alignContainer);
+
+			// Create coverflow instance
+			coverflow = new Coverflow(alignContainer, booksToDisplay);
+			const currentIndex = coverflow.initialize();
+
+			// Set selected book index
+			if (isSearching && searchResults.length > 0) {
+				// Find the corresponding index in the original library
+				const resultBook = searchResults[currentIndex];
+				const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
+				if (libraryIndex >= 0) {
+					selectedBookIndex = libraryIndex;
+				}
+			} else {
+				selectedBookIndex = currentIndex;
+			}
+
+			// Add custom event listener for book selection
+			alignContainer.addEventListener('coverselect', (e) => {
+				if (e && e.detail && typeof e.detail.index === 'number') {
+					if (isSearching && searchResults.length > 0) {
+						// When searching, get the correct book from search results
+						const coverflowIndex = e.detail.index;
+
+						// Make sure the index is valid
+						if (coverflowIndex >= 0 && coverflowIndex < searchResults.length) {
+							// Find the corresponding book in the full library
+							const resultBook = searchResults[coverflowIndex];
+							const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
+
+							if (libraryIndex >= 0) {
+								selectedBookIndex = libraryIndex;
+							}
+						}
+					} else {
+						// Normal selection - direct mapping
+						selectedBookIndex = e.detail.index;
 					}
 				}
-
-				// Add to the bookshelf
-				bookshelf.appendChild(img);
 			});
 
-			try {
-				// Initialize coverflow with custom options to make it taller
-				coverflow = new window.Coverflow(bookshelf, {
-					size: '300',      // Larger cover images (was 180)
-					spacing: '80',    // More space between covers (was 20)
-					shadow: 'true',   // Enable shadow effect for depth
-					responsive: 'true', // Enable responsive resizing
-				});
+			// Select the current book
+			coverflow.select(selectedBookIndex);
 
-				// Set up cover selection event
-				bookshelf.addEventListener('coverselect', (e: any) => {
-					if (e && e.detail && typeof e.detail.index === 'number') {
-						if (isSearching && searchResults.length > 0) {
-							// When searching, get the correct book from search results
-							const coverflowIndex = e.detail.index;
-
-							// Make sure the index is valid
-							if (coverflowIndex >= 0 && coverflowIndex < searchResults.length) {
-								// Find the corresponding book in the full library
-								const resultBook = searchResults[coverflowIndex];
-								const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
-
-								if (libraryIndex >= 0) {
-									selectedBookIndex = libraryIndex;
-								}
-							}
-						} else {
-							// Normal selection - direct mapping
-							selectedBookIndex = e.detail.index;
-						}
-					}
-				});
-
-				// Add keyboard navigation for coverflow
-				window.addEventListener('keydown', handleKeyNavigation);
-			} catch (error) {
-				console.error('Error initializing Coverflow:', error);
-			}
-		} else {
-			console.error('Coverflow script not loaded or bookshelf element not found');
+			console.log('[DEBUG] Coverflow initialized with selected index', selectedBookIndex);
+		} catch (error) {
+			console.error('[DEBUG] Error initializing Coverflow:', error);
 		}
 	}
 
@@ -847,6 +1178,9 @@
 		// Exit editing mode
 		isEditingTitle = false;
 
+		// Re-initialize coverflow to update book display
+		initCoverflow();
+
 		// Show notification
 		showNotification('Book title updated');
 	}
@@ -872,6 +1206,9 @@
 
 		// Exit editing mode
 		isEditingAuthor = false;
+
+		// Re-initialize coverflow to update book display
+		initCoverflow();
 
 		// Show notification
 		showNotification('Book author updated');
@@ -904,9 +1241,7 @@
 			// Select the first book if there are any books
 			if (libraryBooks.length > 0) {
 				selectedBookIndex = 0;
-				if (coverflow) {
-					coverflow.select(selectedBookIndex);
-				}
+				initCoverflow();
 			}
 			return;
 		}
@@ -934,6 +1269,9 @@
 				author.includes(debouncedSearchQuery);
 		});
 
+		// Reinitialize coverflow with search results
+		initCoverflow();
+
 		// Select the first matching book if there are results
 		if (searchResults.length > 0) {
 			// Find the index of the first matching book in the original array
@@ -943,9 +1281,9 @@
 			if (firstMatchIndex >= 0) {
 				selectedBookIndex = firstMatchIndex;
 
-				// Update coverflow selection
+				// Select this book in the coverflow
 				if (coverflow) {
-					coverflow.select(selectedBookIndex);
+					coverflow.select(0); // Select first book in search results
 				}
 			}
 		}
@@ -961,9 +1299,7 @@
 		// Select the first book again
 		if (libraryBooks.length > 0) {
 			selectedBookIndex = 0;
-			if (coverflow) {
-				coverflow.select(selectedBookIndex);
-			}
+			initCoverflow();
 		}
 	}
 
@@ -981,6 +1317,111 @@
 			// Cancel on Escape
 			event.preventDefault();
 			cancelEditing();
+		}
+	}
+
+	// Handle keyboard navigation
+	function handleKeyNavigation(event) {
+		if (!browser || !coverflow || !isLibraryLoaded) return;
+
+		// Skip navigation if we're in editing mode or if focus is in search field
+		if (isEditingTitle || isEditingAuthor ||
+			(document.activeElement && document.activeElement.classList.contains('search-input'))) {
+			return;
+		}
+
+		// Clear search on Escape key
+		if (event.key === 'Escape' && isSearching) {
+			clearSearch();
+			event.preventDefault();
+			return;
+		}
+
+		if (event.key === 'ArrowLeft') {
+			// Select previous book
+			if (isSearching && searchResults.length > 0) {
+				// When searching, navigate only through search results
+				const currentIndex = searchResults.findIndex(book => {
+					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
+				});
+
+				if (currentIndex > 0) {
+					// Move to previous search result - get library index first
+					const prevResultIndex = libraryBooks.findIndex(book =>
+						book.id === searchResults[currentIndex - 1].id);
+
+					if (prevResultIndex >= 0) {
+						// Update selected book index (in original array)
+						selectedBookIndex = prevResultIndex;
+						// But select visual index in coverflow (which is filtered)
+						coverflow.select(currentIndex - 1);
+					}
+				}
+			} else {
+				// Normal navigation
+				if (selectedBookIndex > 0) {
+					selectedBookIndex--;
+					coverflow.select(selectedBookIndex);
+				}
+			}
+			event.preventDefault();
+		} else if (event.key === 'ArrowRight') {
+			// Select next book
+			if (isSearching && searchResults.length > 0) {
+				// When searching, navigate only through search results
+				const currentIndex = searchResults.findIndex(book => {
+					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
+				});
+
+				if (currentIndex >= 0 && currentIndex < searchResults.length - 1) {
+					// Move to next search result - get library index first
+					const nextResultIndex = libraryBooks.findIndex(book =>
+						book.id === searchResults[currentIndex + 1].id);
+
+					if (nextResultIndex >= 0) {
+						// Update selected book index (in original array)
+						selectedBookIndex = nextResultIndex;
+						// But select visual index in coverflow (which is filtered)
+						coverflow.select(currentIndex + 1);
+					}
+				}
+			} else {
+				// Normal navigation
+				if (selectedBookIndex < libraryBooks.length - 1) {
+					selectedBookIndex++;
+					coverflow.select(selectedBookIndex);
+				}
+			}
+			event.preventDefault();
+		} else if (event.key === 'Enter') {
+			// Open selected book (async function)
+			openSelectedBook().catch(err => {
+				console.error('Error opening book:', err);
+			});
+			event.preventDefault();
+		} else if (event.key === 'Delete') {
+			// Remove selected book (only on Delete key, not Backspace)
+			removeSelectedBook();
+			event.preventDefault();
+		} else if (event.key === 'e' || event.key === 'E') {
+			// Edit title with E key
+			startEditingTitle();
+			event.preventDefault();
+		} else if (event.key === 'a' || event.key === 'A') {
+			// Edit author with A key
+			startEditingAuthor();
+			event.preventDefault();
+		} else if (event.key === 'f' || event.key === 'F' || event.key === '/') {
+			// Focus search box with F or /
+			const searchInput = document.querySelector('.search-input') as HTMLInputElement;
+			if (searchInput) {
+				searchInput.focus();
+				// If there's existing search text, select it for easy replacement
+				if (searchQuery) {
+					searchInput.select();
+				}
+				event.preventDefault();
+			}
 		}
 	}
 
@@ -1159,112 +1600,6 @@
 		}
 	}
 
-	// Handle keyboard navigation
-	function handleKeyNavigation(event: KeyboardEvent) {
-		if (!browser || !coverflow || !isLibraryLoaded) return;
-
-		// Skip navigation if we're in editing mode or if focus is in search field
-		if (isEditingTitle || isEditingAuthor ||
-			(document.activeElement && document.activeElement.classList.contains('search-input'))) {
-			return;
-		}
-
-		// Clear search on Escape key
-		if (event.key === 'Escape' && isSearching) {
-			clearSearch();
-			event.preventDefault();
-			return;
-		}
-
-		if (event.key === 'ArrowLeft') {
-			// Select previous book
-			if (isSearching && searchResults.length > 0) {
-				// When searching, navigate only through search results
-				const currentIndex = searchResults.findIndex(book => {
-					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
-				});
-
-				if (currentIndex > 0) {
-					// Move to previous search result - get library index first
-					const prevResultIndex = libraryBooks.findIndex(book =>
-						book.id === searchResults[currentIndex - 1].id);
-
-					if (prevResultIndex >= 0) {
-						// Update selected book index (in original array)
-						selectedBookIndex = prevResultIndex;
-						// But select visual index in coverflow (which is filtered)
-						coverflow.select(currentIndex - 1);
-					}
-				}
-			} else {
-				// Normal navigation
-				if (selectedBookIndex > 0) {
-					selectedBookIndex--;
-					coverflow.select(selectedBookIndex);
-				}
-			}
-			event.preventDefault();
-		} else if (event.key === 'ArrowRight') {
-			// Select next book
-			if (isSearching && searchResults.length > 0) {
-				// When searching, navigate only through search results
-				const currentIndex = searchResults.findIndex(book => {
-					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
-				});
-
-				if (currentIndex >= 0 && currentIndex < searchResults.length - 1) {
-					// Move to next search result - get library index first
-					const nextResultIndex = libraryBooks.findIndex(book =>
-						book.id === searchResults[currentIndex + 1].id);
-
-					if (nextResultIndex >= 0) {
-						// Update selected book index (in original array)
-						selectedBookIndex = nextResultIndex;
-						// But select visual index in coverflow (which is filtered)
-						coverflow.select(currentIndex + 1);
-					}
-				}
-			} else {
-				// Normal navigation
-				if (selectedBookIndex < libraryBooks.length - 1) {
-					selectedBookIndex++;
-					coverflow.select(selectedBookIndex);
-				}
-			}
-			event.preventDefault();
-		} else if (event.key === 'Enter') {
-			// Open selected book (async function)
-			openSelectedBook().catch(err => {
-				console.error('Error opening book:', err);
-			});
-			event.preventDefault();
-		} else if (event.key === 'Delete') {
-			// Remove selected book (only on Delete key, not Backspace)
-			removeSelectedBook();
-			event.preventDefault();
-		} else if (event.key === 'e' || event.key === 'E') {
-			// Edit title with E key
-			startEditingTitle();
-			event.preventDefault();
-		} else if (event.key === 'a' || event.key === 'A') {
-			// Edit author with A key
-			startEditingAuthor();
-			event.preventDefault();
-		} else if (event.key === 'f' || event.key === 'F' || event.key === '/') {
-			// Focus search box with F or /
-			const searchInput = document.querySelector('.search-input') as HTMLInputElement;
-			if (searchInput) {
-				searchInput.focus();
-				// If there's existing search text, select it for easy replacement
-				if (searchQuery) {
-					searchInput.select();
-				}
-				event.preventDefault();
-			}
-		}
-	}
-
-
 	// Open selected book - using filename and array index approach
 	async function openSelectedBook() {
 		if (!browser) return;
@@ -1372,7 +1707,7 @@
 		dropZone.classList.remove('drag-active');
 	}
 
-	// Google Drive API credentials
+	// Google Drive API integration
 	const CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com';
 	const APP_ID = '765754879203';
 
@@ -1611,49 +1946,6 @@
 		}
 	}
 
-	// This function was previously used for adding sample books
-	// It has been removed as it's no longer needed
-
-	// Load coverflow script as a promise
-	function loadCoverflowScript(): Promise<void> {
-		if (!browser) return Promise.resolve();
-
-		return new Promise((resolve, reject) => {
-			if (typeof window.Coverflow !== 'undefined') {
-				console.log('Coverflow already loaded, resolving immediately');
-				resolve();
-				return;
-			}
-
-			console.log('Loading coverflow script...');
-			const script = document.createElement('script');
-			script.src = '/coverflow/coverflow-modified.js';
-
-			script.onload = () => {
-				console.log('Coverflow script loaded, window.Coverflow =', window.Coverflow);
-				// Wait a moment to ensure script is initialized
-				setTimeout(() => {
-					// Check if object exists
-					if (typeof window.Coverflow !== 'undefined') {
-						console.log('Coverflow object exists now');
-						resolve();
-					} else {
-						console.error('Script loaded but Coverflow object still not available');
-						reject(new Error('Script loaded but Coverflow object not available'));
-					}
-				}, 100);
-			};
-
-			script.onerror = (err) => {
-				console.error('Error loading Coverflow script:', err);
-				reject(err);
-			};
-
-			document.head.appendChild(script);
-		});
-	}
-
-
 	// Setup event tracking for UI updates from search
 	$: {
 		// When search query or results change, update UI
@@ -1678,7 +1970,7 @@
 			if (firstMatchIndex >= 0) {
 				selectedBookIndex = firstMatchIndex;
 				if (coverflow) {
-					coverflow.select(selectedBookIndex);
+					coverflow.select(0); // Select first item in search results
 				}
 			}
 		}
@@ -1692,20 +1984,6 @@
 
 		// First load the library
 		const loaded = await loadLibraryState();
-
-		// Declare the Coverflow type
-		declare global {
-			interface Window {
-				Coverflow: any;
-			}
-		}
-
-		// Try to preload coverflow script
-		try {
-			await loadCoverflowScript();
-		} catch (err) {
-			console.error('Failed to preload Coverflow script:', err);
-		}
 
 		// Try to load saved library state
 		const libraryLoaded = await loadLibraryState();
@@ -1727,6 +2005,9 @@
 				handleClickOutside(e);
 			}
 		});
+
+		// Add keyboard event listener for navigation
+		window.addEventListener('keydown', handleKeyNavigation);
 
 		// Add keyboard event listener to close modal on Escape key
 		document.addEventListener('keydown', (e) => {
@@ -1767,17 +2048,12 @@
 <svelte:head>
 	<title>Bitabo E-book Reader</title>
 	<meta name="description" content="A client-side e-book reader and library manager" />
-	<!-- Use the modified version that exports a global constructor -->
-	{#if browser}
-		<script defer src="/coverflow/coverflow-modified.js"></script>
-	{/if}
 </svelte:head>
 
 <div class="library-container">
-
 	<!-- Unified header for both empty and populated library -->
 	<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
-	
+
 	<div class="epic-quote text-center mb-4">
 		<p>One place to house them, One shelf to hold them,</p>
 		<p>One search to find them, And in knowledge bind them</p>
@@ -1795,21 +2071,21 @@
 						bind:value={searchQuery}
 						on:input={handleSearch}
 						on:keydown={(e) => {
-						if (e.key === 'Escape') {
-							clearSearch();
-							e.target.blur();
-							e.preventDefault();
-						}
-					}}
+                if (e.key === 'Escape') {
+                    clearSearch();
+                    e.target.blur();
+                    e.preventDefault();
+                }
+            }}
 					/>
 					{#if searchQuery}
 						<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
 							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 						</button>
 					{:else}
-					<span class="search-icon">
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-					</span>
+            <span class="search-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
 					{/if}
 				</div>
 
@@ -1865,9 +2141,9 @@
 								Browse Files
 							</button>
 							<button class="btn btn-secondary" on:click={() => {
-							closeUploadModal();
-							initGoogleDrivePicker();
-						}}>
+                        closeUploadModal();
+                        initGoogleDrivePicker();
+                    }}>
 								Import from Google Drive
 							</button>
 						</div>
@@ -1894,19 +2170,19 @@
 	<div>
 		{#if isLibraryLoaded}
 			<!-- Main coverflow container when books are loaded -->
-			<div
-				bind:this={bookshelf}
-				class="coverflow fade-in"
-			>
-				<!-- Books will be added here dynamically as img tags -->
+			<div bind:this={bookshelf} class="coverflow-container fade-in">
+				<!-- Books will be added here dynamically by the Coverflow class -->
+			</div>
+			<div class="keyboard-instructions">
+				Use left and right arrow keys ← → to navigate through books
 			</div>
 		{:else}
-			<!-- Empty library placeholder - specially styled to prevent coverflow interference -->
+			<!-- Empty library placeholder -->
 			<div class="coverflow-empty-container">
 				<img src="/empty-library-image.png" alt="Empty Library" class="empty-library-image" />
 			</div>
 		{/if}
-		
+
 		<!-- Show selected book info - only visible when books are loaded -->
 		<div class="book-info" class:hidden={!isLibraryLoaded} class:fade-in={isLibraryLoaded}>
 			{#if libraryBooks[selectedBookIndex]}
@@ -1976,57 +2252,589 @@
 				</div>
 			{/if}
 		</div>
-
-		<!-- Keyboard navigation hints -->
-		<div class="navigation-hints" class:hidden={!isLibraryLoaded} class:fade-in={isLibraryLoaded}>
-			<p>Use the arrow keys ← → to browse through your books</p>
-		</div>
 	</div>
 </div>
 
 <style>
-	    /* Animation for UI elements appearing when books are added */
-	    .fade-in {
-	        animation: fadeIn 0.8s ease-in-out;
-	    }
-	    
-	    @keyframes fadeIn {
-	        from { opacity: 0; transform: translateY(10px); }
-	        to { opacity: 1; transform: translateY(0); }
-	    }
-	    
-	    /* Empty library placeholder styling - isolated container to prevent coverflow inheritance */
-	    .coverflow-empty-container {
-	        height: 550px;
-	        width: 100%;
-	        display: flex;
-	        justify-content: center;
-	        align-items: center;
-	        position: relative;
-	        background-color: transparent;
-	    }
-	    
-	    /* Media query for responsive height */
-	    @media (max-width: 768px) {
-	        .coverflow-empty-container {
-	            height: 400px;
-	        }
-	    }
-	    
-	    .empty-library-image {
-	        max-width: 70%;
-	        max-height: 70%;
-	        object-fit: contain;
-	        border-radius: 8px;
-	        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
-	        transition: transform 0.3s ease;
-	        position: static;  /* Prevent position:absolute from coverflow */
-	        transform: none;   /* Prevent transform from coverflow */
-	    }
-	    
-	    .empty-library-image:hover {
-	        transform: scale(1.03);
-	    }
+    /* Reset and Base Styles for 3D Books */
+    *,
+    *:after,
+    *:before {
+        -webkit-box-sizing: border-box;
+        -moz-box-sizing: border-box;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* Coverflow Container */
+    .coverflow-container {
+        width: 100%;
+        height: 350px;
+        position: relative;
+        perspective: 1500px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    /* Book Component Styles */
+    :global(.align) {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        transform-style: preserve-3d;
+    }
+
+    :global(.align > li) {
+        position: absolute;
+        width: 160px;
+        height: 300px;
+        transition: all 0.5s ease;
+        transform-style: preserve-3d;
+    }
+
+    /* Book */
+    :global(.book) {
+        position: relative;
+        width: 160px;
+        height: 220px;
+        -webkit-perspective: 1000px;
+        -moz-perspective: 1000px;
+        perspective: 1000px;
+        -webkit-transform-style: preserve-3d;
+        -moz-transform-style: preserve-3d;
+        transform-style: preserve-3d;
+        perspective-origin: center;
+    }
+
+    /* Book Hardcover Front */
+    :global(.hardcover_front li:first-child) {
+        background-color: #eee;
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
+        backface-visibility: hidden;
+    }
+
+    :global(.hardcover_front li:last-child) {
+        background: #fffbec;
+    }
+
+    /* Book Hardcover Back */
+    :global(.hardcover_back li:first-child) {
+        background: #fffbec;
+    }
+
+    :global(.hardcover_back li:last-child) {
+        background: #fffbec;
+    }
+
+    /* Book Spine */
+
+    :global(.book_spine li:last-child) {
+        background: #333;
+    }
+
+    /* Keyboard instructions */
+    .keyboard-instructions {
+        text-align: center;
+        margin-top: 20px;
+        color: white;
+        font-size: 0.9em;
+    }
+
+    /* Thickness of cover */
+    :global(.hardcover_front li:first-child:after),
+    :global(.hardcover_front li:first-child:before),
+    :global(.hardcover_front li:last-child:after),
+    :global(.hardcover_front li:last-child:before),
+    :global(.hardcover_back li:first-child:after),
+    :global(.hardcover_back li:first-child:before),
+    :global(.hardcover_back li:last-child:after),
+    :global(.hardcover_back li:last-child:before),
+    :global(.book_spine li:first-child:after),
+    :global(.book_spine li:first-child:before),
+    :global(.book_spine li:last-child:after),
+    :global(.book_spine li:last-child:before) {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        background: #999;
+    }
+
+    /* Page Styling */
+    :global(.page > li) {
+        background: -webkit-linear-gradient(to right, #e1ddd8 0%, #fffbf6 100%);
+        background: -moz-linear-gradient(to right, #e1ddd8 0%, #fffbf6 100%);
+        background: linear-gradient(to right, #e1ddd8 0%, #fffbf6 100%);
+        box-shadow: inset 0px -1px 2px rgba(50, 50, 50, 0.1), inset -1px 0px 1px rgba(150, 150, 150, 0.2);
+        border-radius: 0px 5px 5px 0px;
+    }
+
+    /* 3D positioning */
+    :global(.hardcover_front) {
+        -webkit-transform: rotateY(-34deg) translateZ(8px);
+        -moz-transform: rotateY(-34deg) translateZ(8px);
+        transform: rotateY(-34deg) translateZ(8px);
+    }
+
+    :global(.hardcover_back) {
+        -webkit-transform: rotateY(-15deg) translateZ(-8px);
+        -moz-transform: rotateY(-15deg) translateZ(-8px);
+        transform: rotateY(-30deg) translateZ(-8px) translateX(10px);
+    }
+
+    :global(.page li:nth-child(1)) {
+        -webkit-transform: rotateY(-28deg);
+        -moz-transform: rotateY(-28deg);
+        transform: rotateY(-28deg);
+    }
+
+    :global(.page li:nth-child(2)) {
+        -webkit-transform: rotateY(-30deg);
+        -moz-transform: rotateY(-30deg);
+        transform: rotateY(-30deg);
+    }
+
+    :global(.page li:nth-child(3)) {
+        -webkit-transform: rotateY(-32deg);
+        -moz-transform: rotateY(-32deg);
+        transform: rotateY(-32deg);
+    }
+
+    :global(.page li:nth-child(4)) {
+        -webkit-transform: rotateY(-34deg);
+        -moz-transform: rotateY(-34deg);
+        transform: rotateY(-34deg);
+    }
+
+    :global(.page li:nth-child(5)) {
+        -webkit-transform: rotateY(-36deg);
+        -moz-transform: rotateY(-36deg);
+        transform: rotateY(-36deg);
+    }
+
+    /* Common positioning for book elements */
+    :global(.hardcover_front),
+    :global(.hardcover_back),
+    :global(.book_spine),
+    :global(.hardcover_front li),
+    :global(.hardcover_back li),
+    :global(.book_spine li) {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        -webkit-transform-style: preserve-3d;
+        -moz-transform-style: preserve-3d;
+        transform-style: preserve-3d;
+        border-top: grey solid thin;
+    }
+
+    :global(.hardcover_front),
+    :global(.hardcover_back) {
+        -webkit-transform-origin: 0% 100%;
+        -moz-transform-origin: 0% 100%;
+        transform-origin: 0% 100%;
+    }
+
+    :global(.hardcover_front) {
+        -webkit-transition: all 0.8s ease;
+        -moz-transition: all 0.8s ease;
+        transition: all 0.8s ease;
+    }
+
+    /* Hardcover positioning refinements */
+    :global(.hardcover_front li:first-child) {
+        cursor: default;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        user-select: none;
+        -webkit-transform: translateZ(2px);
+        -moz-transform: translateZ(2px);
+        transform: translateZ(2px);
+    }
+
+    :global(.hardcover_front li:last-child) {
+        -webkit-transform: rotateY(180deg) translateZ(2px);
+        -moz-transform: rotateY(180deg) translateZ(2px);
+        transform: rotateY(180deg) translateZ(2px);
+    }
+
+    :global(.hardcover_back li:first-child) {
+        -webkit-transform: translateZ(2px);
+        -moz-transform: translateZ(2px);
+        transform: translateZ(2px);
+    }
+
+    :global(.hardcover_back li:last-child) {
+        -webkit-transform: translateZ(-2px);
+        -moz-transform: translateZ(-2px);
+        transform: translateZ(-2px);
+        background: #666;
+    }
+
+    /* Thickness details */
+    :global(.hardcover_front li:first-child:after),
+    :global(.hardcover_front li:first-child:before),
+    :global(.hardcover_front li:last-child:after),
+    :global(.hardcover_front li:last-child:before),
+    :global(.hardcover_back li:first-child:after),
+    :global(.hardcover_back li:first-child:before),
+    :global(.hardcover_back li:last-child:after),
+    :global(.hardcover_back li:last-child:before),
+    :global(.book_spine li:first-child:after),
+    :global(.book_spine li:first-child:before),
+    :global(.book_spine li:last-child:after),
+    :global(.book_spine li:last-child:before) {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    /* Front Cover Thickness */
+    :global(.hardcover_front li:first-child:after),
+    :global(.hardcover_front li:first-child:before) {
+        width: 4px;
+        height: 100%;
+    }
+
+    :global(.hardcover_front li:first-child:after) {
+        -webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        -moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+    }
+
+    :global(.hardcover_front li:first-child:before) {
+        -webkit-transform: rotateY(90deg) translateZ(158px) translateX(2px);
+        -moz-transform: rotateY(90deg) translateZ(158px) translateX(2px);
+        transform: rotateY(90deg) translateZ(158px) translateX(2px);
+    }
+
+    :global(.hardcover_front li:last-child:after),
+    :global(.hardcover_front li:last-child:before) {
+        width: 4px;
+        height: 160px;
+    }
+
+    :global(.hardcover_front li:last-child:after) {
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
+    }
+
+    :global(.hardcover_front li:last-child:before) {
+        box-shadow: 0px 0px 30px 5px #333;
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
+    }
+
+    /* Back Cover Thickness */
+    :global(.hardcover_back li:first-child:after),
+    :global(.hardcover_back li:first-child:before) {
+        width: 4px;
+        height: 100%;
+    }
+
+    :global(.hardcover_back li:first-child:after) {
+        -webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        -moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+    }
+
+    :global(.hardcover_back li:first-child:before) {
+        -webkit-transform: rotateY(90deg) translateZ(158px) translateX(2px);
+        -moz-transform: rotateY(90deg) translateZ(158px) translateX(2px);
+        transform: rotateY(90deg) translateZ(158px) translateX(2px);
+    }
+
+    :global(.hardcover_back li:last-child:after),
+    :global(.hardcover_back li:last-child:before) {
+        width: 4px;
+        height: 160px;
+    }
+
+    :global(.hardcover_back li:last-child:after) {
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px) translateY(-78px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px) translateY(-78px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px) translateY(-78px);
+    }
+
+    :global(.hardcover_back li:last-child:before) {
+        box-shadow: 10px -1px 80px 20px #666;
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
+    }
+
+    /* Book Spine Styling */
+    :global(.book_spine) {
+        -webkit-transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
+        -moz-transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
+        transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
+        width: 26px;
+    }
+
+    :global(.book_spine li:first-child) {
+        -webkit-transform: translateZ(2px);
+        -moz-transform: translateZ(2px);
+        transform: translateZ(2px);
+    }
+
+    :global(.book_spine li:last-child) {
+        -webkit-transform: translateZ(-2px);
+        -moz-transform: translateZ(-2px);
+        transform: translateZ(-2px);
+    }
+
+    /* Book Spine Thickness */
+    :global(.book_spine li:first-child:after),
+    :global(.book_spine li:first-child:before) {
+        width: 4px;
+        height: 100%;
+    }
+
+    :global(.book_spine li:first-child:after) {
+        -webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        -moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+        transform: rotateY(90deg) translateZ(-2px) translateX(2px);
+    }
+
+    :global(.book_spine li:first-child:before) {
+        -webkit-transform: rotateY(-90deg) translateZ(-12px);
+        -moz-transform: rotateY(-90deg) translateZ(-12px);
+        transform: rotateY(-90deg) translateZ(-12px);
+    }
+
+    :global(.book_spine li:last-child:after),
+    :global(.book_spine li:last-child:before) {
+        width: 4px;
+        height: 16px;
+    }
+
+    :global(.book_spine li:last-child:after) {
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px) translateY(-6px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px) translateY(-6px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px) translateY(-6px);
+    }
+
+    :global(.book_spine li:last-child:before) {
+        box-shadow: 5px -1px 100px 40px rgba(0, 0, 0, 0.2);
+        -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px) translateY(-6px);
+        -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px) translateY(-6px);
+        transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px) translateY(-6px);
+    }
+
+    /* Page Positioning */
+    :global(.page),
+    :global(.page > li) {
+        position: absolute;
+        top: 0;
+        left: 0;
+        -webkit-transform-style: preserve-3d;
+        -moz-transform-style: preserve-3d;
+        transform-style: preserve-3d;
+    }
+
+    :global(.page) {
+        width: 100%;
+        height: 98%;
+        top: 1%;
+        left: 3%;
+    }
+
+    :global(.page > li) {
+        width: 100%;
+        height: 100%;
+        -webkit-transform-origin: left center;
+        -moz-transform-origin: left center;
+        transform-origin: left center;
+        -webkit-transition-property: transform;
+        -moz-transition-property: transform;
+        transition-property: transform;
+        -webkit-transition-timing-function: ease;
+        -moz-transition-timing-function: ease;
+        transition-timing-function: ease;
+    }
+
+    /* Cover Design */
+    :global(.coverDesign) {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        overflow: hidden;
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
+        backface-visibility: hidden;
+    }
+
+    :global(.coverDesign::after) {
+        background-image: -webkit-linear-gradient(-135deg, rgba(255, 255, 255, 0.45) 0%, transparent 100%);
+        background-image: -moz-linear-gradient(-135deg, rgba(255, 255, 255, 0.45) 0%, transparent 100%);
+        background-image: linear-gradient(-135deg, rgba(255, 255, 255, 0.45) 0%, transparent 100%);
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+    }
+
+    :global(.coverDesign h1) {
+        color: #fff;
+        font-size: 1em;
+        letter-spacing: 0.05em;
+        text-align: center;
+        margin: 54% 0 0 0;
+        text-shadow: -1px -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    :global(.coverDesign p) {
+        color: #f8f8f8;
+        font-size: 0.8em;
+        text-align: center;
+        text-shadow: -1px -1px 0 rgba(0, 0, 0, 0.1);
+    }
+
+    /* Cover Color Variations */
+    :global(.yellow) {
+        background-color: #f1c40f;
+        background-image: -webkit-linear-gradient(top, #f1c40f 58%, #e7ba07 0%);
+        background-image: -moz-linear-gradient(top, #f1c40f 58%, #e7ba07 0%);
+        background-image: linear-gradient(to bottom, #f1c40f 58%, #e7ba07 0%);
+    }
+
+    :global(.blue) {
+        background-color: #3498db;
+        background-image: -webkit-linear-gradient(top, #3498db 58%, #2a90d4 0%);
+        background-image: -moz-linear-gradient(top, #3498db 58%, #2a90d4 0%);
+        background-image: linear-gradient(to bottom, #3498db 58%, #2a90d4 0%);
+    }
+
+    :global(.grey) {
+        background-color: #f8e9d1;
+        background-image: -webkit-linear-gradient(top, #f8e9d1 58%, #e7d5b7 0%);
+        background-image: -moz-linear-gradient(top, #f8e9d1 58%, #e7d5b7 0%);
+        background-image: linear-gradient(to bottom, #f8e9d1 58%, #e7d5b7 0%);
+    }
+
+    /* Ribbon Design */
+    :global(.ribbon) {
+        background: #c0392b;
+        color: #fff;
+        display: block;
+        font-size: 0.7em;
+        position: absolute;
+        top: 11px;
+        right: 1px;
+        width: 40px;
+        height: 20px;
+        line-height: 20px;
+        letter-spacing: 0.15em;
+        text-align: center;
+        -webkit-transform: rotateZ(45deg) translateZ(1px);
+        -moz-transform: rotateZ(45deg) translateZ(1px);
+        transform: rotateZ(45deg) translateZ(1px);
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
+        backface-visibility: hidden;
+    }
+
+    :global(.ribbon::before),
+    :global(.ribbon::after) {
+        position: absolute;
+        top: -20px;
+        width: 0;
+        height: 0;
+        border-bottom: 20px solid #c0392b;
+        border-top: 20px solid transparent;
+    }
+
+    :global(.ribbon::before) {
+        left: -20px;
+        border-left: 20px solid transparent;
+    }
+
+    :global(.ribbon::after) {
+        right: -20px;
+        border-right: 20px solid transparent;
+    }
+
+    /* Active book styling */
+    :global(.active-book) {
+        transform: scale(1.05) !important;
+        z-index: 10 !important;
+        position: relative;
+    }
+
+    /* Cover Image Support */
+    :global(.cover-image) {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-size: contain;
+        background-position: center;
+    }
+
+    /* Ensure text is visible over images */
+    :global(.cover-text) {
+        position: relative;
+        text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Animation for UI elements appearing when books are added */
+    .fade-in {
+        animation: fadeIn 0.8s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Empty library placeholder styling */
+    .coverflow-empty-container {
+        height: 550px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        background-color: transparent;
+    }
+
+    /* Media query for responsive height */
+    @media (max-width: 768px) {
+        .coverflow-empty-container {
+            height: 400px;
+        }
+    }
+
+    .empty-library-image {
+        max-width: 70%;
+        max-height: 70%;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+        transition: transform 0.3s ease;
+        position: static;  /* Prevent position:absolute from coverflow */
+        transform: none;   /* Prevent transform from coverflow */
+    }
+
+    .empty-library-image:hover {
+        transform: scale(1.03);
+    }
+
     /* Modal dialog styling */
     .upload-modal-overlay {
         position: fixed;
@@ -2138,21 +2946,6 @@
         display: none;
     }
 
-    /* Coverflow container */
-    .coverflow {
-        height: 550px;
-        width: 100%;
-        position: relative;
-        background-color: transparent !important;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .coverflow {
-            height: 400px;
-        }
-    }
-
     /* Book info section */
     .book-info {
         text-align: center;
@@ -2163,15 +2956,12 @@
     .book-title {
         font-weight: bold;
         font-size: 1.5rem;
+        cursor: pointer;
     }
 
     .book-author {
         color: var(--color-text);
         opacity: 0.7;
-        cursor: pointer;
-    }
-
-    .book-title {
         cursor: pointer;
     }
 
@@ -2237,12 +3027,25 @@
         margin-top: 1rem;
     }
 
-    .mt-8 {
-        margin-top: 2rem;
+    .mx-2 {
+        margin-left: 0.5rem;
+        margin-right: 0.5rem;
+    }
+
+    .mb-4 {
+        margin-bottom: 1rem;
+    }
+
+    .mb-8 {
+        margin-bottom: 2rem;
     }
 
     .flex {
         display: flex;
+    }
+
+    .flex-col {
+        flex-direction: column;
     }
 
     .justify-center {
@@ -2482,108 +3285,16 @@
         color: #ef4444;
     }
 
-    /* Feature cards styling */
-    .welcome-section {
+    .text-2xl {
+        font-size: 1.5rem;
+    }
+
+    .font-bold {
+        font-weight: bold;
+    }
+
+    .text-center {
         text-align: center;
-        max-width: 1200px;
-        margin: 0 auto;
-    }
-
-    /* Empty library styling - Book shaped container */
-    .empty-library-container {
-        max-width: 800px;
-        margin: 40px auto;
-        position: relative;
-        perspective: 1000px;
-    }
-
-    .empty-library-container::before,
-    .empty-library-container::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        width: 50%;
-        height: 100%;
-        background-color: var(--color-bg-2);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        z-index: -1;
-        transform-style: preserve-3d;
-        transition: transform 0.6s ease;
-    }
-
-    .empty-library-container::before {
-        left: 0;
-        transform-origin: right center;
-        transform: rotateY(15deg);
-        border-radius: 10px 0 0 10px;
-        border-right: 2px solid rgba(0, 0, 0, 0.1);
-    }
-
-    .empty-library-container::after {
-        right: 0;
-        transform-origin: left center;
-        transform: rotateY(-15deg);
-        border-radius: 0 10px 10px 0;
-        border-left: 2px solid rgba(0, 0, 0, 0.1);
-    }
-
-    .empty-library-container:hover::before {
-        transform: rotateY(20deg);
-    }
-
-    .empty-library-container:hover::after {
-        transform: rotateY(-20deg);
-    }
-
-    .empty-library-content {
-        position: relative;
-        z-index: 1;
-        padding: 50px 40px;
-        background: linear-gradient(to right,
-        var(--color-bg-1) 0%,
-        var(--color-bg-1) 49.9%,
-        var(--color-bg-1) 50.1%,
-        var(--color-bg-1) 100%);
-        background-size: 100% 100%;
-        text-align: center;
-        border-radius: 10px;
-        box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.05);
-    }
-
-    .empty-library-content::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 50%;
-        width: 2px;
-        background-color: rgba(0, 0, 0, 0.1);
-        box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-        z-index: 2;
-    }
-
-    .empty-library-icon {
-        margin-bottom: 20px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        position: relative;
-    }
-
-    .empty-library-icon img {
-        display: block;
-        margin: 0 auto;
-        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
-        transition: transform 0.3s ease;
-    }
-
-    .empty-library-container:hover .empty-library-icon img {
-        transform: scale(1.1);
-    }
-
-    .btn-lg {
-        padding: 12px 24px;
-        font-size: 1.1rem;
     }
 
     .epic-quote {
@@ -2599,36 +3310,5 @@
 
     .epic-quote p {
         margin-bottom: 5px;
-    }
-
-    .features-summary {
-        margin-top: 30px;
-        text-align: left;
-        max-width: 400px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .features-summary p {
-        margin-bottom: 8px;
-        opacity: 0.8;
-    }
-
-    /* Book styling for empty library */
-    .empty-library-container {
-        max-width: 800px;
-        margin: 40px auto;
-        padding: 30px;
-        background-color: var(--color-bg-2);
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    .empty-library-container:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
     }
 </style>
