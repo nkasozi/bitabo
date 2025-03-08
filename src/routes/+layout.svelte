@@ -22,6 +22,14 @@
 
 <svelte:head>
 	<meta name="google-site-verification" content="RygAY8A4JWo4RgLpPXbpOJnfQnlnvW0_CzmbttSNrws" />
+	<!-- Preload critical foliate-js scripts for development environment -->
+	{#if browser && window.location.hostname === 'localhost'}
+		<link rel="modulepreload" href="/foliate-js/view.js">
+		<link rel="modulepreload" href="/foliate-js/ui/menu.js">
+		<link rel="modulepreload" href="/foliate-js/ui/tree.js">
+		<link rel="modulepreload" href="/foliate-js/overlayer.js">
+		<link rel="modulepreload" href="/foliate-js/epubcfi.js">
+	{/if}
 </svelte:head>
 
 <div class="app">

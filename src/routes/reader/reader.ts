@@ -1087,8 +1087,13 @@ class EbookReader {
 	}
 }
 
+// Import preload components
+import { preloadFoliateComponents, isFoliateViewRegistered, createTestFoliateView } from './preload-foliate';
+
 // initialization.ts
 export const createReader = async (config?: Partial<ReaderConfig>): Promise<any> => {
+	// Preload components first to ensure they're available
+	await preloadFoliateComponents();
 	const reader = new EbookReader(config);
 	reader.initialize();
 	console.log('Finished creating new ebook reader!!');
@@ -1102,18 +1107,30 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 				// Support for EPUB and CBZ files
 				if (file instanceof File && (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.cbz'))) {
 					try {
-						// First ensure that the view.js is loaded
-						try {
-							try {
-								// Relative path for production
-								await import('./foliate-js/view.js?url');
-							} catch (e) {
-								// Absolute path for development
-								await import('/foliate-js/view.js?url');
-							}
-						} catch (importError) {
-							console.error('Error importing view.js:', importError);
-							throw new Error('Could not load foliate-view module');
+						// Make sure components are loaded - preload again if needed
+						if (!isFoliateViewRegistered()) {
+							console.log('Foliate components not ready yet, preloading...');
+							await preloadFoliateComponents();
+							// Wait a bit more to ensure registration is complete
+							await new Promise(resolve => setTimeout(resolve, 200));
+						}
+						
+						// Test create a foliate-view element to verify registration worked
+						const testView = createTestFoliateView();
+						if (!testView) {
+							console.error('foliate-view creation test failed, forcing reload');
+							// Try to force a reload of the view.js script directly
+							const script = document.createElement('script');
+							script.type = 'module';
+							script.src = `/foliate-js/view.js?t=${Date.now()}`; // Add cache-busting
+							document.head.appendChild(script);
+							
+							// Wait for script to load
+							await new Promise(resolve => {
+								script.onload = resolve;
+								// Also set a timeout just in case
+								setTimeout(resolve, 1000);
+							});
 						}
 						
 						// Now create the view element
@@ -1123,7 +1140,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 						const foliateView = view as any;
 						
 						if (!foliateView || typeof foliateView.open !== 'function') {
-							throw new Error('foliate-view element not properly initialized');
+							throw new Error('foliate-view element not properly initialized - this may be fixed by refreshing the page');
 						}
 						
 						// Open the book file

@@ -20,6 +20,7 @@
 
 	// Import our reader functionality
 	import { createReader } from './reader';
+	import { preloadFoliateComponents } from './preload-foliate';
 	
 	// Reader instance reference
 	let reader: any;
@@ -411,9 +412,15 @@
 		try {
 			console.log('[DEBUG] Reader component mounting');
 			
+			// Start preloading Foliate components right away
+			const preloadPromise = preloadFoliateComponents();
+			
 			// Initialize service worker first for background operations
 			if (browser) {
 				await initServiceWorker();
+				
+				// Also make sure Foliate components are loaded
+				await preloadPromise;
 				
 				// Initialize the reader with our UI configuration
 				const readerConfig = {

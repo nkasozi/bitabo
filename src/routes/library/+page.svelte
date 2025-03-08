@@ -112,8 +112,16 @@
 
 				// Use the reader module to extract the cover
 				try {
-					const { createReader } = await import('../reader/reader');
+					// Import modules
+					const [{ createReader }, { preloadFoliateComponents }] = await Promise.all([
+						import('../reader/reader'),
+						import('../reader/preload-foliate')
+					]);
 					console.log('Reader module imported');
+					
+					// Preload Foliate components first
+					await preloadFoliateComponents();
+					console.log('Foliate components preloaded');
 
 					const tempReader = await createReader({});
 					console.log('Temp reader created');
@@ -2174,7 +2182,7 @@
 				<!-- Books will be added here dynamically by the Coverflow class -->
 			</div>
 			<div class="keyboard-instructions">
-				Use left and right arrow keys ← → to navigate through books
+				Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to navigate through books
 			</div>
 		{:else}
 			<!-- Empty library placeholder -->
@@ -2343,8 +2351,21 @@
     .keyboard-instructions {
         text-align: center;
         margin-top: 20px;
-        color: white;
+        color: var(--color-text);
+        opacity: 0.8;
         font-size: 0.9em;
+        transition: color 0.3s ease;
+    }
+    
+    .keyboard-arrow {
+        display: inline-block;
+        font-weight: bold;
+        color: var(--color-theme-1);
+    }
+    
+    :global(.dark-mode) .keyboard-arrow {
+        color: var(--color-theme-1);
+        text-shadow: 0 0 5px rgba(97, 218, 251, 0.5);
     }
 
     /* Thickness of cover */
@@ -3063,6 +3084,13 @@
         color: var(--color-text);
         opacity: 0.7;
         font-size: 0.9rem;
+        transition: color 0.3s ease;
+    }
+    
+    /* Make navigation hints keyboard arrows more visible in dark mode */
+    :global(.dark-mode) .navigation-hints {
+        color: var(--color-text);
+        opacity: 0.85;
     }
 
     /* Button styling */
