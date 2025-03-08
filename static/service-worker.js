@@ -717,32 +717,33 @@ self.addEventListener('message', (event) => {
       }
     })());
   } else if (type === 'add-book') {
-    // Add a book to the library
+    // Add a book to the library - note: this is kept for backwards compatibility
+    // but the app now saves books directly to IndexedDB without service worker
     event.waitUntil((async () => {
       try {
         if (!bookData) {
           throw new Error('No book data provided');
         }
         
-        debugLog('Adding book', { 
+        debugLog('Add book request received (for compatibility)', { 
           title: bookData.title,
-          author: bookData.author,
-          fileName: bookData.fileName
+          author: bookData.author
         });
         
-        const result = await addBookToLibrary(bookData);
-        debugLog('Add book result', result);
+        // We don't actually need to add the book via service worker anymore,
+        // as it's done directly in the page code, but we still send a success response
+        // for backwards compatibility
         
         // Respond to the client
         sendResponse({
           type: 'add-book-response',
-          success: result.success,
-          id: result.id,
-          message: result.message,
-          isNew: result.isNew
+          success: true,
+          id: bookData.id,
+          message: 'Book handled successfully',
+          isNew: false
         });
       } catch (error) {
-        debugLog('Error adding book', { error: error.message });
+        debugLog('Error handling add-book request', { error: error.message });
         sendResponse({
           type: 'add-book-response',
           success: false,
@@ -855,7 +856,7 @@ const STATIC_ASSETS = [
   '/index.html',
   '/coverflow/3d-book-coverflow.js',
   '/coverflow/3d-book-coverflow.css',
-  '/placeholder-cover.png',
+  '/empty-library-image.png',
   '/favicon.png',
   '/manifest.json',
   '/service-worker.js'

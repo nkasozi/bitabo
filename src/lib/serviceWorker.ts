@@ -225,20 +225,8 @@ export async function getReadingProgress(bookId: string): Promise<number | null>
   }
 }
 
-// Add a book to the library
-export async function addBookToLibrary(bookData: any): Promise<{success: boolean, id?: string, message?: string, isNew?: boolean}> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'add-book',
-      bookData
-    });
-    
-    return response || { success: false, message: 'No response from service worker' };
-  } catch (error) {
-    console.error('Error adding book via service worker:', error);
-    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
-  }
-}
+// Note: addBookToLibrary function was removed as it was redundant with direct IndexedDB operations
+// Books are now saved directly to IndexedDB in the page code, not through service worker
 
 // Get a book from the library
 export async function getBook(bookId: string): Promise<any> {
