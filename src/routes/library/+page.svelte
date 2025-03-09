@@ -516,7 +516,7 @@
 		}
 	}
 
-	// Process folder of e-books
+	// Process folder of e-books - one book at a time with immediate UI updates
 	async function processFolder(files: File[]) {
 		console.log('[DEBUG] Processing folder with', files.length, 'files');
 
@@ -548,14 +548,24 @@
 			failedBooks: []
 		};
 
-		// Initialize empty array for new books
-		const newBooks: any[] = [];
+		// Create a progress notification for multi-file operations
+		const progressId = 'book-import-progress';
+		if (bookFiles.length > 1) {
+			showProgressNotification('Processing books...', 0, bookFiles.length, progressId);
+		}
 
-		// Using the hashString function defined at module scope
-
-		// Process each book file
-		for (const file of bookFiles) {
-			console.log('[DEBUG] Processing book file:', file.name);
+		// Process each book file one at a time and update UI immediately
+		for (let i = 0; i < bookFiles.length; i++) {
+			const file = bookFiles[i];
+			
+			// Update progress for multi-file operations
+			if (bookFiles.length > 1) {
+				updateProgressNotification(`Processing book ${i+1}/${bookFiles.length}: ${file.name}`, 
+					i, bookFiles.length, progressId);
+			}
+			
+			console.log(`[DEBUG] Processing book file ${i+1}/${bookFiles.length}: ${file.name}`);
+			
 			try {
 				// Get book metadata
 				const { url, title, author } = await extractCover(file);
@@ -580,88 +590,83 @@
 					dateAdded: Date.now()
 				};
 
-				// Add the book directly to our in-memory array
-				newBooks.push(bookData);
+				// Add the book to library immediately 
+				libraryBooks = [...libraryBooks, bookData];
+				
+				// Mark library as loaded
+				isLibraryLoaded = true;
+				
+				// Save to database immediately
+				await saveBook(bookData);
+				
+				// Update tracking
 				summary.succeeded++;
 				summary.new++;
+				
+				// Sort the library
+				libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+				
+				// Find the position of the newly added book after sorting
+				const bookIndex = libraryBooks.findIndex(book => book.id === bookData.id);
+				
+				// Update UI immediately after each book
+				if (bookshelf) {
+					// Update the coverflow - wrap in a Promise to ensure it completes
+					await new Promise(resolve => {
+						setTimeout(() => {
+							initCoverflow();
+							
+							// Always select the newly added book
+							if (bookIndex >= 0) {
+								selectedBookIndex = bookIndex;
+								if (coverflow) {
+									coverflow.select(bookIndex);
+								}
+							}
+							resolve(null);
+						}, 100);
+					});
+				}
+				
+				// Small delay between books to allow UI to render
+				if (i < bookFiles.length - 1) {
+					await new Promise(resolve => setTimeout(resolve, 200));
+				}
+				
 			} catch (error) {
 				console.error('[DEBUG] Error processing book:', file.name, error);
 				summary.failed++;
 				summary.failedBooks.push(file.name);
 			}
 		}
-
-		// Add new books to existing library
-		if (newBooks.length > 0) {
-			libraryBooks = [...libraryBooks, ...newBooks];
-
-			// Sort books by last accessed time
-			libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-
-			// Save each book individually to IndexedDB
-			for (const book of newBooks) {
-				await saveBook(book);
-			}
+		
+		// Remove progress notification
+		if (bookFiles.length > 1) {
+			removeNotification(progressId);
 		}
 
-		// Show summary notification banner
+		// Show summary notification
 		if (summary.total > 0) {
 			const failedList = summary.failed > 0
-				? summary.failedBooks.slice(0, 5).join(', ') +
-				(summary.failedBooks.length > 5 ? `...and ${summary.failedBooks.length - 5} more` : '')
+				? summary.failedBooks.slice(0, 3).join(', ') +
+				(summary.failedBooks.length > 3 ? `... and ${summary.failedBooks.length - 3} more` : '')
 				: '';
 
-			// Create notification banner
-			const notificationBanner = document.createElement('div');
-			notificationBanner.className = 'notification-banner';
-			notificationBanner.innerHTML = `
-				<div class="notification-content">
-					<h3>Book Processing Summary:</h3>
-					<p>Total files: ${summary.total}</p>
-					<p>Successfully added: ${summary.succeeded} (${summary.new} new, ${summary.updated} updated)</p>
-					<p>Failed to process: ${summary.failed}</p>
-					${summary.failed > 0 ? `<p>Failed books include: ${failedList}</p>` : ''}
-					<p><small>Total books in library: ${libraryBooks.length}</small></p>
-				</div>
-				<button class="close-button" aria-label="Close notification">×</button>
-			`;
-
-			// Add to document body
-			document.body.appendChild(notificationBanner);
-
-			// Add event listener to close button
-			const closeButton = notificationBanner.querySelector('.close-button');
-			if (closeButton) {
-				closeButton.addEventListener('click', () => {
-					notificationBanner.classList.add('fade-out');
-					setTimeout(() => {
-						notificationBanner.remove();
-					}, 300);
-				});
+			if (summary.failed > 0) {
+				showNotification(
+					`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`, 
+					summary.failed > 5 ? 'error' : 'warning'
+				);
+			} else {
+				showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
 			}
-
-			// Auto-dismiss after 10 seconds
-			setTimeout(() => {
-				if (document.body.contains(notificationBanner)) {
-					notificationBanner.classList.add('fade-out');
-					setTimeout(() => {
-						if (document.body.contains(notificationBanner)) {
-							notificationBanner.remove();
-						}
-					}, 300);
-				}
-			}, 10000);
 		}
 
-		// Update UI
-		isLibraryLoaded = libraryBooks.length > 0;
-		console.log('[DEBUG] Library loaded:', isLibraryLoaded, 'with', libraryBooks.length, 'books');
-
-		// Initialize coverflow
-		if (isLibraryLoaded) {
-			// Initialize with increased timeout for better positioning
-			setTimeout(initCoverflow, 300);
-		}
+		return {
+			success: summary.succeeded > 0,
+			count: summary.succeeded,
+			summary
+		};
 	}
 
 	/**
@@ -1874,7 +1879,7 @@
 					}
 				}
 
-				// Now process all files
+				// Now process all files one by one
 				const totalFiles = fileItems.length;
 				if (totalFiles === 0) {
 					removeNotification(notificationId);
@@ -1884,10 +1889,11 @@
 
 				updateProgressNotification(`Processing ${totalFiles} file(s) from Google Drive...`, 0, totalFiles, notificationId);
 
-				// Process all file items
-				const files = [];
+				// Track successes and failures for summary
+				let successCount = 0;
 				const failedFiles = [];
 
+				// Process each file item one at a time, downloading and adding to library immediately
 				for (let i = 0; i < fileItems.length; i++) {
 					const doc = fileItems[i];
 					try {
@@ -1915,28 +1921,39 @@
 							type: doc.mimeType || 'application/octet-stream'
 						});
 
-						files.push(file);
+						// Process this file immediately and add to library
+						updateProgressNotification(`Importing ${i+1}/${totalFiles}: ${doc.name}`, i+1, totalFiles, notificationId);
+						
+						// Process this file individually
+						const result = await processFolder([file]);
+						
+						if (result && result.success) {
+							successCount++;
+						} else {
+							// If processFolder failed for some reason, add to failedFiles
+							failedFiles.push(doc.name);
+						}
+						
+						// Small delay to allow UI to update
+						if (i < fileItems.length - 1) {
+							await new Promise(resolve => setTimeout(resolve, 300));
+						}
+						
 					} catch (error) {
-						console.error('Error downloading file:', doc.name, error);
+						console.error('Error downloading/processing file:', doc.name, error);
 						failedFiles.push(doc.name);
 					}
 				}
 
-				// Final progress update
-				updateProgressNotification(`Downloaded ${files.length}/${totalFiles} files. Importing to library...`, totalFiles, totalFiles, notificationId);
-
-				// Import files to library
-				if (files.length > 0) {
-					await processFolder(files);
-
-					// Show summary in notification
+				// Show summary in notification
+				if (successCount > 0) {
 					if (failedFiles.length > 0) {
 						const failedList = failedFiles.length <= 3
 							? failedFiles.join(', ')
 							: `${failedFiles.slice(0, 3).join(', ')}... and ${failedFiles.length - 3} more`;
-						showNotification(`Imported ${files.length} files. Failed to import: ${failedList}`, failedFiles.length > 5 ? 'error' : 'info');
+						showNotification(`Imported ${successCount} files. Failed to import: ${failedList}`, failedFiles.length > 5 ? 'error' : 'info');
 					} else {
-						showNotification(`Successfully imported ${files.length} files from Google Drive`, 'info');
+						showNotification(`Successfully imported ${successCount} files from Google Drive`, 'info');
 					}
 				} else {
 					showNotification('Failed to import any files from Google Drive', 'error');
