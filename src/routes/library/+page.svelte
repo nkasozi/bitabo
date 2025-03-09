@@ -9,6 +9,14 @@
 	// Supported e-book formats
 	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
 
+	// Dummy book interface (for empty libraries)
+	interface DummyBook {
+		id: string;
+		title: string;
+		ribbon: string;
+		color: string;
+	}
+
 	let bookshelf: HTMLElement;
 	let isLibraryLoaded = false;
 	let libraryBooks: any[] = [];
@@ -17,6 +25,11 @@
 	let isUploadModalOpen = false;
 	let coverflow: Coverflow;
 	let isMobile: boolean = false;
+
+	// Define the three dummy books
+	const dummyBooks: DummyBook[] = [
+		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'SAMPLE', color: 'grey' }
+	];
 
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
@@ -788,39 +801,39 @@
 			const color = colors[index % colors.length];
 
 			const bookHTML = `
-				<figure class="book">
-					<ul class="hardcover_front">
-						<li>
-							<div class="coverDesign ${color}">
-								<span class="ribbon">v 1.2</span>
-								<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
-								<div class="cover-text">
-									<h1></h1>
-									<p></p>
-								</div>
-							</div>
-						</li>
-						<li></li>
-					</ul>
-					<ul class="page">
-						<li></li>
-						<li></li>
-						<li></li>
-						<li></li>
-						<li></li>
-						<li></li>
-						<li></li>
-					</ul>
-					<ul class="hardcover_back">
-						<li></li>
-						<li></li>
-					</ul>
-					<ul class="book_spine">
-						<li></li>
-						<li></li>
-					</ul>
-				</figure>
-			`;
+								<figure class="book">
+									<ul class="hardcover_front">
+										<li>
+											<div class="coverDesign ${color}">
+												<span class="ribbon hidden"></span>
+												<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
+												<div class="cover-text">
+													<h1></h1>
+													<p></p>
+												</div>
+											</div>
+										</li>
+										<li></li>
+									</ul>
+									<ul class="page">
+										<li></li>
+										<li></li>
+										<li></li>
+										<li></li>
+										<li></li>
+										<li></li>
+										<li></li>
+									</ul>
+									<ul class="hardcover_back">
+										<li></li>
+										<li></li>
+									</ul>
+									<ul class="book_spine">
+										<li></li>
+										<li></li>
+									</ul>
+								</figure>
+							`;
 
 			bookElement.innerHTML = bookHTML;
 			bookElement.dataset.index = index;
@@ -2211,8 +2224,49 @@
 			</div>
 		{:else}
 			<!-- Empty library placeholder -->
-			<div class="coverflow-empty-container">
-				<img src="/empty-library-image.png" alt="Empty Library" class="empty-library-image" />
+			<div class="coverflow-container fade-in">
+				<ul class="align">
+					{#each dummyBooks as dummy, index}
+						<li tabindex="0" data-index={index}>
+							<figure class="book">
+								<ul class="hardcover_front">
+									<li>
+										<div class="coverDesign {dummy.color}">
+											<span class="ribbon">{dummy.ribbon}</span>
+											<div class="cover-image" style="background-image: url('/placeholder-cover.png')"></div>
+											<div class="cover-text">
+												<h1>EMPTY <br/> LIBRARY</h1>
+												<p></p>
+											</div>
+										</div>
+									</li>
+									<li></li>
+								</ul>
+								<ul class="page">
+									<li></li>
+									<li></li>
+									<li></li>
+									<li></li>
+									<li></li>
+									<li></li>
+									<li></li>
+								</ul>
+								<ul class="hardcover_back">
+									<li></li>
+									<li></li>
+								</ul>
+								<ul class="book_spine">
+									<li></li>
+									<li></li>
+								</ul>
+							</figure>
+						</li>
+					{/each}
+				</ul>
+			</div>
+			<div class="spray-painted-text">
+				Its looking lonely in here...<br/>
+				Add some of your favourite books to get started
 			</div>
 		{/if}
 
@@ -2289,7 +2343,7 @@
 </div>
 
 <style>
-    /* Reset and Base Styles for 3D Books */
+    @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap'); /* Reset and Base Styles for 3D Books */
     *,
     *:after,
     *:before {
@@ -2298,6 +2352,33 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
+    }
+
+
+    /* 2. Add a class to style the text */
+    .spray-painted-text {
+        /* Use the imported font */
+        font-family: 'Permanent Marker', cursive;
+        font-size: 2rem;
+        /* Make it stand out with a bright color */
+        color: #ffffff;
+
+        /* Add a grungy "spray paint" effect via multiple text shadows */
+        text-shadow:
+                0 0 2px #ff00ff,   /* faint magenta outline */
+                0 0 5px #ff00ff,   /* bigger magenta glow */
+                2px 2px 4px #000000; /* a slight black drop shadow */
+
+        /* Extra styling: uppercase, letter spacing, etc. */
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+
+        /* Justify text, but center the last line */
+        text-align: justify;
+        text-align-last: center;  /* makes the final line centered instead of left-justified */
+
+        /* If you want some spacing above/below */
+        margin: 2rem;
     }
 
     /* Coverflow Container */
@@ -2797,44 +2878,25 @@
 
     /* Ribbon Design */
     :global(.ribbon) {
-        background: #c0392b;
-        color: #fff;
-        display: block;
-        font-size: 0.7em;
         position: absolute;
-        top: 11px;
-        right: 1px;
-        width: 40px;
-        height: 20px;
-        line-height: 20px;
-        letter-spacing: 0.15em;
+        top: 10px;
+        left: -45px;
+        /* Make the ribbon wider than the book itself to ensure it spans edge-to-edge */
+        width: 200px;
+        /* Give the ribbon some height/padding for text */
+        height: 30px;
+        line-height: 30px;
         text-align: center;
-        -webkit-transform: rotateZ(45deg) translateZ(1px);
-        -moz-transform: rotateZ(45deg) translateZ(1px);
-        transform: rotateZ(45deg) translateZ(1px);
-        -webkit-backface-visibility: hidden;
-        -moz-backface-visibility: hidden;
-        backface-visibility: hidden;
-    }
 
-    :global(.ribbon::before),
-    :global(.ribbon::after) {
-        position: absolute;
-        top: -20px;
-        width: 0;
-        height: 0;
-        border-bottom: 20px solid #c0392b;
-        border-top: 20px solid transparent;
-    }
+        background-color: #c0392b;
+        color: #fff;
+        font-weight: bold;
 
-    :global(.ribbon::before) {
-        left: -20px;
-        border-left: 20px solid transparent;
-    }
-
-    :global(.ribbon::after) {
-        right: -20px;
-        border-right: 20px solid transparent;
+        /* Rotate the entire span to create the diagonal effect */
+        transform: rotate(45deg) translateY(-100px) translateX(20px);
+        transform-origin: top left;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        z-index: 10; /* Make sure it sits above other elements */
     }
 
     /* Active book styling */
