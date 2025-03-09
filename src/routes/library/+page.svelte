@@ -149,14 +149,14 @@
 			// For other formats or if cover extraction failed, use placeholder
 			console.log('Using placeholder cover for', file.name);
 			return {
-				url: '/empty-library-image.png',
+				url: '/placeholder-cover.png',
 				title: file.name.replace(/\.[^/.]+$/, ''),
 				author: 'Unknown Author'
 			};
 		} catch (error) {
 			console.error('Unexpected error extracting cover:', error);
 			return {
-				url: '/empty-library-image.png',
+				url: '/placeholder-cover.png',
 				title: file.name.replace(/\.[^/.]+$/, ''),
 				author: 'Unknown Author'
 			};
@@ -221,7 +221,7 @@
 					console.error(`Error fetching cover blob for "${book.title}":`, error);
 					// If we can't fetch the blob, we'll use null and a placeholder will be used later
 				}
-			} else if (book.coverUrl === '/empty-library-image.png') {
+			} else if (book.coverUrl === '/placeholder-cover.png') {
 				// Leave coverBlob as null for placeholder images
 				console.log(`Using placeholder for "${book.title}"`);
 			}
@@ -475,12 +475,12 @@
 						} catch (error) {
 							console.error(`[DEBUG] Error regenerating blob URL for "${book.title}":`, error);
 							// Fall back to placeholder if regeneration fails
-							coverUrl = '/empty-library-image.png';
+							coverUrl = '/placeholder-cover.png';
 						}
 					} else if (!coverUrl) {
 						// If no URL and no blob, use placeholder
 						console.log(`[DEBUG] Using placeholder for "${book.title}" as no coverUrl or coverBlob found`);
-						coverUrl = '/empty-library-image.png';
+						coverUrl = '/placeholder-cover.png';
 					}
 
 					// Ensure the book has a file object - might be missing after migration
