@@ -15,7 +15,8 @@
 	let selectedBookIndex = 0;
 	let fileInputElement: HTMLInputElement;
 	let isUploadModalOpen = false;
-	let coverflow: Coverflow; // Reference to the coverflow instance
+	let coverflow: Coverflow;
+	let isMobile: boolean = false;
 
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
@@ -1999,14 +2000,18 @@
 		}
 	}
 
-	onMount(async () => {
+	onMount(async () =>
+	{
 		if (!browser) return;
 
-		// Check URL for progress updates from the reader - simplified approach
-		const params = new URLSearchParams(window.location.search);
+		const checkIsMobile = () => {
+			// Adjust this threshold value if needed
+			isMobile = window.innerWidth <= 768;
+		};
 
-		// First load the library
-		const loaded = await loadLibraryState();
+		checkIsMobile();
+
+		window.addEventListener('resize', checkIsMobile);
 
 		// Try to load saved library state
 		const libraryLoaded = await loadLibraryState();
@@ -2038,7 +2043,8 @@
 				closeUploadModal();
 			}
 		});
-	});
+	}
+);
 
 	onDestroy(() => {
 		if (!browser) return;
@@ -2197,7 +2203,11 @@
 				<!-- Books will be added here dynamically by the Coverflow class -->
 			</div>
 			<div class="keyboard-instructions">
-				Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to navigate through books
+				{#if isMobile}
+					Swipe left and right to navigate through your books
+				{:else}
+					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to navigate through your books
+				{/if}
 			</div>
 		{:else}
 			<!-- Empty library placeholder -->
