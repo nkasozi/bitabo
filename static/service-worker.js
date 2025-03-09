@@ -854,8 +854,6 @@ const CACHE_NAME = 'bitabo-app-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/coverflow/3d-book-coverflow.js',
-  '/coverflow/3d-book-coverflow.css',
   '/empty-library-image.png',
   '/favicon.png',
   '/manifest.json',
