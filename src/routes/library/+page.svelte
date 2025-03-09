@@ -118,7 +118,7 @@
 						import('../reader/preload-foliate')
 					]);
 					console.log('Reader module imported');
-					
+
 					// Preload Foliate components first
 					await preloadFoliateComponents();
 					console.log('Foliate components preloaded');
@@ -802,6 +802,8 @@
 						<li></li>
 						<li></li>
 						<li></li>
+						<li></li>
+						<li></li>
 					</ul>
 					<ul class="hardcover_back">
 						<li></li>
@@ -919,6 +921,7 @@
 					// Center book - keep as is
 					book.style.transform = `translateX(0) translateZ(60px) rotateY(0deg) scale(${this.params.scale.active})`;
 					book.classList.add('active-book');
+					//book.style.filter = 'drop-shadow(0 10px 15px rgba(0,0,0,0.6))';
 
 					this.setComponentZIndexes(book, {
 						frontCover: 30,
@@ -928,6 +931,8 @@
 					});
 				} else {
 					const distance = Math.abs(offset * 1.1);
+					const shadowOpacity = Math.max(0.1, 0.4 - (distance * 0.1));
+					//book.style.filter = `drop-shadow(0 5px 10px rgba(0,0,0,${shadowOpacity}))`;
 					const direction = offset < 0 ? -1 : 1;
 
 					// Calculate positions
@@ -2105,11 +2110,11 @@
 				class="btn btn-primary mx-2"
 				on:click={toggleUploadModal}
 			>
-				Upload Your Books
+				Add Books to Your Library
 			</button>
 			{#if isLibraryLoaded}
 				<button class="btn btn-danger-outline fade-in" on:click={clearLibrary}>
-					Clear Your Library
+					Clear out Your Library
 				</button>
 			{/if}
 		</div>
@@ -2322,12 +2327,12 @@
     }
 
     :global(.hardcover_front li:last-child) {
-        background: #fffbec;
+        background:#666;
     }
 
     /* Book Hardcover Back */
     :global(.hardcover_back li:first-child) {
-        background: #fffbec;
+        background: #666;
     }
 
     :global(.hardcover_back li:last-child) {
@@ -2349,13 +2354,13 @@
         font-size: 0.9em;
         transition: color 0.3s ease;
     }
-    
+
     .keyboard-arrow {
         display: inline-block;
         font-weight: bold;
         color: var(--color-theme-1);
     }
-    
+
     :global(.dark-mode) .keyboard-arrow {
         color: var(--color-theme-1);
         text-shadow: 0 0 5px rgba(97, 218, 251, 0.5);
@@ -2433,6 +2438,37 @@
         transform: rotateY(-36deg);
     }
 
+    :global(.page li:nth-child(6)) {
+        -webkit-transform: rotateY(-37deg);
+        -moz-transform: rotateY(-37deg);
+        transform: rotateY(-37deg);
+    }
+
+    :global(.page li:nth-child(7)) {
+        -webkit-transform: rotateY(-38deg);
+        -moz-transform: rotateY(-38deg);
+        transform: rotateY(-38deg);
+    }
+
+    :global(.page li:nth-child(8)) {
+        -webkit-transform: rotateY(-39deg);
+        -moz-transform: rotateY(-39deg);
+        transform: rotateY(-39deg);
+    }
+
+    :global(.page li:nth-child(9)) {
+        -webkit-transform: rotateY(-40deg);
+        -moz-transform: rotateY(-40deg);
+        transform: rotateY(-40deg);
+    }
+
+    :global(.page li:nth-child(10)) {
+        -webkit-transform: rotateY(-41deg);
+        -moz-transform: rotateY(-41deg);
+        transform: rotateY(-41deg);
+    }
+
+
     /* Common positioning for book elements */
     :global(.hardcover_front),
     :global(.hardcover_back),
@@ -2448,7 +2484,6 @@
         -webkit-transform-style: preserve-3d;
         -moz-transform-style: preserve-3d;
         transform-style: preserve-3d;
-        border-top: grey solid thin;
     }
 
     :global(.hardcover_front),
@@ -2462,6 +2497,7 @@
         -webkit-transition: all 0.8s ease;
         -moz-transition: all 0.8s ease;
         transition: all 0.8s ease;
+        border-top: grey solid thin;
     }
 
     /* Hardcover positioning refinements */
@@ -2473,25 +2509,29 @@
         -webkit-transform: translateZ(2px);
         -moz-transform: translateZ(2px);
         transform: translateZ(2px);
+        border-radius: 5px;
     }
 
     :global(.hardcover_front li:last-child) {
         -webkit-transform: rotateY(180deg) translateZ(2px);
         -moz-transform: rotateY(180deg) translateZ(2px);
         transform: rotateY(180deg) translateZ(2px);
+        border-radius: 5px;
     }
 
     :global(.hardcover_back li:first-child) {
         -webkit-transform: translateZ(2px);
         -moz-transform: translateZ(2px);
-        transform: translateZ(2px);
+        transform: translateZ(-2px) translateX(-2px);
+        border-radius: 5px;
     }
 
     :global(.hardcover_back li:last-child) {
         -webkit-transform: translateZ(-2px);
         -moz-transform: translateZ(-2px);
-        transform: translateZ(-2px);
         background: #666;
+        transform: translateZ(-2px) translateX(-2px);
+        border-radius: 5px;
     }
 
     /* Thickness details */
@@ -2531,12 +2571,6 @@
         transform: rotateY(90deg) translateZ(158px) translateX(2px);
     }
 
-    :global(.hardcover_front li:last-child:after),
-    :global(.hardcover_front li:last-child:before) {
-        width: 4px;
-        height: 160px;
-    }
-
     :global(.hardcover_front li:last-child:after) {
         -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
         -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
@@ -2544,19 +2578,13 @@
     }
 
     :global(.hardcover_front li:last-child:before) {
-        box-shadow: 0px 0px 30px 5px #333;
+        box-shadow: 0px 0px 40px 15px rgba(0, 0, 0, 0.6);
         -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
         -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
         transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
     }
 
     /* Back Cover Thickness */
-    :global(.hardcover_back li:first-child:after),
-    :global(.hardcover_back li:first-child:before) {
-        width: 4px;
-        height: 100%;
-    }
-
     :global(.hardcover_back li:first-child:after) {
         -webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
         -moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
@@ -2582,7 +2610,7 @@
     }
 
     :global(.hardcover_back li:last-child:before) {
-        box-shadow: 10px -1px 80px 20px #666;
+        box-shadow: 10px -1px 100px 30px rgba(0, 0, 0, 0.5);
         -webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
         -moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
         transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
@@ -3079,7 +3107,7 @@
         font-size: 0.9rem;
         transition: color 0.3s ease;
     }
-    
+
     /* Make navigation hints keyboard arrows more visible in dark mode */
     :global(.dark-mode) .navigation-hints {
         color: var(--color-text);
