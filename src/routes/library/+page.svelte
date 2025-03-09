@@ -2130,7 +2130,7 @@
 				Add Books to Your Library
 			</button>
 			{#if isLibraryLoaded}
-				<button class="btn btn-danger-outline fade-in" on:click={clearLibrary}>
+				<button class="btn btn-danger fade-in" on:click={clearLibrary}>
 					Clear out Your Library
 				</button>
 			{/if}
@@ -3143,13 +3143,13 @@
     }
 
     .btn-primary {
-        background-color: var(--color-theme-1);
+        background-color: #551877;
         color: white;
         transition: background-color 0.3s;
     }
 
     .btn-primary:hover {
-        background-color: var(--color-theme-2);
+        background-color: #aa22f5;
     }
 
     .btn-secondary {
