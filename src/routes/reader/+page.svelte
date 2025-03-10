@@ -21,10 +21,10 @@
 	// Import our reader functionality
 	import { createReader } from './reader';
 	import { preloadFoliateComponents } from './preload-foliate';
-	
+
 	// Reader instance reference
 	let reader: any;
-	
+
 	// Navigate back to library
 	function returnToLibrary() {
 		// Save progress before returning if reader is active
@@ -43,10 +43,10 @@
 
 	// Import service worker utilities
 	import { registerServiceWorker, saveReadingProgress as swSaveProgress } from '$lib/serviceWorker';
-	
+
 	// Flag to track service worker registration
 	let isServiceWorkerRegistered = false;
-	
+
 	// Initialize service worker
 	async function initServiceWorker() {
 		if (browser && !isServiceWorkerRegistered) {
@@ -55,22 +55,22 @@
 			console.log('[DEBUG] Service worker registered:', isServiceWorkerRegistered);
 		}
 	}
-	
+
 	// Save reading progress - using service worker for background save
 	async function saveReadingProgress(progress: number, navigateBack: boolean = false) {
 		console.log('[DEBUG] saveReadingProgress called with progress:', progress);
-		
+
 		try {
 			// Get the bookId from URL - must be present
 			const urlParams = new URLSearchParams(window.location.search);
 			const bookId = urlParams.get('bookId');
-			
+
 			if (!bookId) {
 				console.error('[DEBUG] No bookId parameter found in URL, cannot save progress');
 				if (navigateBack) window.location.href = '/library';
 				return;
 			}
-			
+
 			// Save progress via service worker if available
 			if (isServiceWorkerRegistered) {
 				// Save using service worker in background
@@ -78,7 +78,7 @@
 				const savePromise = swSaveProgress(bookId, progress).catch(err => {
 					console.error('[DEBUG] Error saving progress with service worker:', err);
 				});
-				
+
 				// If we need to navigate back, do so after saving
 				if (navigateBack) {
 					// Use URL parameters for both navigation and backup
@@ -109,11 +109,11 @@
 	function showErrorNotification(message: string, bookId: string = '', details: string = '') {
 		hasError = true;
 		errorMessage = message;
-		
+
 		// Create notification banner
 		const notificationBanner = document.createElement('div');
 		notificationBanner.className = 'error-notification';
-		
+
 		// Customize the message based on whether we have book info or not
 		let errorContent = `
 			<div class="notification-content">
@@ -126,12 +126,12 @@
 			</div>
 			<button class="close-button" aria-label="Close notification">×</button>
 		`;
-		
+
 		notificationBanner.innerHTML = errorContent;
-		
+
 		// Add to document body
 		document.body.appendChild(notificationBanner);
-		
+
 		// Add event listener to close button
 		const closeButton = notificationBanner.querySelector('.close-button');
 		if (closeButton) {
@@ -145,7 +145,7 @@
 				returnToLibrary();
 			});
 		}
-		
+
 		// Auto-return to library after 5 seconds
 		setTimeout(() => {
 			returnToLibrary();
@@ -157,7 +157,7 @@
 		// Set up a periodic progress save interval
 		const progressInterval = setInterval(() => {
 			if (!reader || !isBookLoaded) return;
-			
+
 			const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
 			if (progressSlider) {
 				const progress = parseFloat(progressSlider.value);
@@ -166,12 +166,12 @@
 				}
 			}
 		}, 10000); // Every 10 seconds
-		
+
 		// Clean up on page unload
 		window.addEventListener('beforeunload', () => {
 			clearInterval(progressInterval);
 		});
-		
+
 		// Setup progress event listener on the slider itself
 		const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
 		if (progressSlider) {
@@ -182,37 +182,37 @@
 					if (bookInfo.title) {
 						document.title = `${bookInfo.title} | Bitabo Reader`;
 					}
-					
+
 					// Save progress periodically
 					saveReadingProgress(progress, false);
 				}
 			});
 		}
-		
+
 		// Setup sidebar toggle functionality
 		const sidebarButton = document.getElementById('side-bar-button');
 		const sidebar = document.getElementById('side-bar');
 		const overlay = document.getElementById('dimming-overlay');
-		
+
 		if (sidebarButton && sidebar && overlay) {
 			// Show sidebar function
 			const showSidebar = () => {
 				sidebar.classList.add('show');
 				overlay.classList.add('show');
 			};
-			
+
 			// Hide sidebar function
 			const hideSidebar = () => {
 				sidebar.classList.remove('show');
 				overlay.classList.remove('show');
 			};
-			
+
 			// Add event listeners
 			sidebarButton.addEventListener('click', showSidebar);
 			overlay.addEventListener('click', hideSidebar);
 		}
 	}
-	
+
 	// Function to load a book directly into the reader
 	async function loadBookIntoReader() {
 		try {
@@ -220,71 +220,71 @@
 			const urlParams = new URLSearchParams(window.location.search);
 			const bookId = urlParams.get('bookId');
 			const progressParam = urlParams.get('progress');
-			
+
 			if (!bookId) {
 				console.error('[DEBUG] No bookId parameter found in URL');
 				showErrorNotification('No book specified', '', 'No book ID was provided');
 				return;
 			}
-			
+
 			if (!reader) {
 				console.warn('[DEBUG] Reader not initialized yet');
 				return;
 			}
-			
+
 			// Open IndexedDB to get the book data
 			const request = indexedDB.open(DB_NAME);
-			
+
 			request.onerror = function(event) {
 				const error = event.target.error;
 				console.error('[DEBUG] IndexedDB error:', error);
 				showErrorNotification(
-					'Could not access the book database', 
-					bookId, 
+					'Could not access the book database',
+					bookId,
 					`Error: ${error.name}: ${error.message}`
 				);
 			};
-			
+
 			request.onsuccess = async function(event) {
 				const db = event.target.result;
 				console.log(`[DEBUG] Successfully opened database with version ${db.version}`);
-				
+
 				// Check for books store
 				if (!db.objectStoreNames.contains(BOOKS_STORE)) {
 					console.error('[DEBUG] Books store not found in database');
 					showErrorNotification(
-						'Book database is missing', 
-						bookId, 
+						'Book database is missing',
+						bookId,
 						'Books store not found in database'
 					);
 					return;
 				}
-				
+
 				// Start a transaction to get the book directly
 				const transaction = db.transaction([BOOKS_STORE], 'readonly');
 				const store = transaction.objectStore(BOOKS_STORE);
-				
+
 				// Get the book by its unique ID
 				const getRequest = store.get(bookId);
-				
+
 				getRequest.onsuccess = async function(event) {
 					const bookData = event.target.result;
-					
+
 					// If book not found, show error
 					if (!bookData) {
 						console.error('[DEBUG] Book with ID not found:', bookId);
 						showErrorNotification(
-							'Book not found', 
-							bookId, 
+							'Book not found',
+							bookId,
 							`Book with ID ${bookId} not found in database`
 						);
 						return;
 					}
-					
+
 					if (bookData && bookData.file) {
 						try {
 							console.log(`[DEBUG] Found book in database: ${bookData.title} by ${bookData.author}`);
-							
+
 							// Save book info
 							bookInfo = {
 								title: bookData.title || 'Unknown Title',
@@ -292,7 +292,7 @@
 								id: bookId,
 								progress: bookData.progress || 0
 							};
-							
+
 							// Determine which progress value to use
 							let initialProgress = null;
 							if (progressParam) {
@@ -303,46 +303,46 @@
 							} else if (bookData.progress) {
 								initialProgress = bookData.progress;
 							}
-							
+
 							// Open the book with our reader
 							try {
 								await reader.openBook(bookData.file);
 								isBookLoaded = true;
-								
+
 								// Set title in the UI
 								document.title = `${bookInfo.title} | Bitabo Reader`;
-								
+
 								// Update sidebar details
 								const titleEl = document.getElementById('side-bar-title');
 								const authorEl = document.getElementById('side-bar-author');
-								
+
 								if (titleEl) titleEl.textContent = bookInfo.title;
 								if (authorEl) authorEl.textContent = bookInfo.author;
-								
+
 								// Set initial progress if available
 								if (initialProgress !== null) {
 									console.log(`[DEBUG] Attempting to set initial progress to: ${initialProgress}`);
-									
+
 									// Simply set the progress slider value directly
 									const setProgressValue = (attempt = 1) => {
 										console.log(`[DEBUG] Setting progress slider attempt ${attempt}`);
-										
+
 										const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
 										if (progressSlider) {
 											console.log(`[DEBUG] Found progress slider, setting value to ${initialProgress}`);
-											
+
 											// Set the value which will update the UI
 											progressSlider.value = initialProgress.toString();
-											
+
 											// Create and dispatch an input event to trigger the slider's event handlers
 											const event = new Event('input', { bubbles: true });
 											progressSlider.dispatchEvent(event);
-											
+
 											console.log(`[DEBUG] Progress slider value after setting: ${progressSlider.value}`);
 											console.log(`[DEBUG] Progress successfully applied via slider`);
 										} else {
 											console.warn(`[DEBUG] Progress slider not found for attempt ${attempt}`);
-											
+
 											if (attempt < 10) {
 												// Use exponential backoff
 												const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 5000);
@@ -353,14 +353,14 @@
 											}
 										}
 									};
-									
+
 									// Start first attempt after a delay to ensure book and UI are loaded
 									setTimeout(() => setProgressValue(1), 1000);
 								}
-								
+
 								// Setup the progress tracking
 								setupProgressTracking();
-								
+
 							} catch (err) {
 								console.error('[DEBUG] Error opening book:', err);
 								let errorDetails = '';
@@ -369,7 +369,7 @@
 								}
 								showErrorNotification('Failed to open book', bookId, errorDetails);
 							}
-							
+
 						} catch (err) {
 							console.error('[DEBUG] Error preparing book file:', err);
 							let errorDetails = '';
@@ -381,23 +381,23 @@
 					} else {
 						console.warn('[DEBUG] Book record missing file data');
 						showErrorNotification(
-							'Book file missing', 
-							bookId, 
+							'Book file missing',
+							bookId,
 							`Book with ID ${bookId} exists but has no file data`
 						);
 					}
 				};
-				
+
 				getRequest.onerror = function(event) {
 					console.error('[DEBUG] Error retrieving book:', event.target.error);
 					showErrorNotification(
-						'Error retrieving book', 
-						bookId, 
+						'Error retrieving book',
+						bookId,
 						`Error: ${event.target.error.name}: ${event.target.error.message}`
 					);
 				};
 			};
-			
+
 		} catch (error) {
 			console.error('[DEBUG] Error loading book into reader:', error);
 			let errorMsg = 'Unknown error occurred while loading the book';
@@ -411,17 +411,17 @@
 	onMount(async () => {
 		try {
 			console.log('[DEBUG] Reader component mounting');
-			
+
 			// Start preloading Foliate components right away
 			const preloadPromise = preloadFoliateComponents();
-			
+
 			// Initialize service worker first for background operations
 			if (browser) {
 				await initServiceWorker();
-				
+
 				// Also make sure Foliate components are loaded
 				await preloadPromise;
-				
+
 				// Initialize the reader with our UI configuration
 				const readerConfig = {
 					containerSelector: '#ebook-container',
@@ -457,12 +457,12 @@
 						hyphenate: true
 					}
 				};
-				
+
 				// Create the reader instance
 				try {
 					reader = await createReader(readerConfig);
 					isReaderReady = true;
-					
+
 					// Once the reader is ready, load the book
 					await loadBookIntoReader();
 				} catch (error) {
@@ -474,7 +474,7 @@
 					showErrorNotification('Reader initialization failed', '', errorMsg);
 				}
 			}
-			
+
 		} catch (error) {
 			console.error('[DEBUG] Error initializing reader component:', error);
 			let errorMsg = 'Unknown error occurred while initializing the reader';
@@ -488,7 +488,7 @@
 	onDestroy(() => {
 		// Clean up any resources
 		console.log('[DEBUG] Reader component destroyed');
-		
+
 		// No need to remove any reader.view event listeners since we're not using them
 	});
 </script>
@@ -504,53 +504,54 @@
 </svelte:head>
 
 {#if hasError}
-<div class="error-container">
-	<div class="error-message">
-		{errorMessage}
+	<div class="error-container">
+		<div class="error-message">
+			{errorMessage}
+		</div>
+		<button class="return-button" on:click={returnToLibrary}>
+			Return to Library
+		</button>
 	</div>
-	<button class="return-button" on:click={returnToLibrary}>
-		Return to Library
-	</button>
-</div>
 {/if}
 
 <!-- Direct e-book container element -->
 <div id="ebook-container" class="reader-container"></div>
 
 <div id="header-bar" class="toolbar header-bar">
-    <button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>
-        <svg class="icon" width="24" height="24" aria-hidden="true">
-            <path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
-        </svg>
-    </button>
-    <button id="side-bar-button" aria-label="Show sidebar">
-        <svg class="icon" width="24" height="24" aria-hidden="true">
-            <path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
-        </svg>
-    </button>
-    <div id="menu-button" class="menu-container">
-        <button aria-label="Show settings" aria-haspopup="true">
-            <svg class="icon" width="24" height="24" aria-hidden="true">
-                <path d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
-                <circle cx="12" cy="12" r="3" />
-            </svg>
-        </button>
-    </div>
+	<button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
+		</svg>
+	</button>
+	<button id="side-bar-button" aria-label="Show sidebar">
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
+		</svg>
+	</button>
+	<div id="menu-button" class="menu-container">
+		<button aria-label="Show settings" aria-haspopup="true">
+			<svg class="icon" width="24" height="24" aria-hidden="true">
+				<path
+					d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
+				<circle cx="12" cy="12" r="3" />
+			</svg>
+		</button>
+	</div>
 </div>
 
 <div id="nav-bar" class="toolbar nav-bar">
-    <button id="left-button" aria-label="Go left">
-        <svg class="icon" width="24" height="24" aria-hidden="true">
-            <path d="M 15 6 L 9 12 L 15 18" />
-        </svg>
-    </button>
-    <input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
-    <datalist id="tick-marks"></datalist>
-    <button id="right-button" aria-label="Go right">
-        <svg class="icon" width="24" height="24" aria-hidden="true">
-            <path d="M 9 6 L 15 12 L 9 18" />
-        </svg>
-    </button>
+	<button id="left-button" aria-label="Go left">
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 15 6 L 9 12 L 15 18" />
+		</svg>
+	</button>
+	<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
+	<datalist id="tick-marks"></datalist>
+	<button id="right-button" aria-label="Go right">
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 9 6 L 15 12 L 9 18" />
+		</svg>
+	</button>
 </div>
 
 <style>
@@ -569,13 +570,13 @@
         width: 90%;
         z-index: 10000;
     }
-    
+
     .error-message {
         font-size: 16px;
         margin-bottom: 20px;
         color: #cc0000;
     }
-    
+
     .return-button {
         background-color: #2275d7;
         color: white;
@@ -586,11 +587,11 @@
         font-weight: 500;
         transition: background-color 0.3s;
     }
-    
+
     .return-button:hover {
         background-color: #1c5eb3;
     }
-    
+
     /* Error notification styling */
     :global(.error-notification) {
         position: fixed;
@@ -607,15 +608,15 @@
         opacity: 1;
         transition: opacity 0.3s ease;
     }
-    
+
     :global(.error-notification.fade-out) {
         opacity: 0;
     }
-    
+
     :global(.error-notification .notification-content) {
         padding: 15px;
     }
-    
+
     :global(.error-notification h3) {
         margin-top: 0;
         margin-bottom: 10px;
@@ -623,12 +624,12 @@
         font-weight: bold;
         color: #cc0000;
     }
-    
+
     :global(.error-notification p) {
         margin: 5px 0;
         font-size: 14px;
     }
-    
+
     :global(.error-notification .error-details) {
         font-family: monospace;
         background-color: #fff9f9;
@@ -639,7 +640,7 @@
         max-height: 80px;
         overflow-y: auto;
     }
-    
+
     :global(.error-notification .close-button) {
         position: absolute;
         top: 10px;
@@ -650,11 +651,11 @@
         cursor: pointer;
         color: #cc0000;
     }
-    
+
     :global(.error-notification .close-button:hover) {
         color: #ff0000;
     }
-    
+
     /* Reader container styling */
     .reader-container {
         display: block;
@@ -668,7 +669,7 @@
         height: calc(100vh - 96px);
         width: 100%;
     }
-    
+
     /* Reader drop target */
     .reader-drop-target {
         position: absolute;
@@ -686,14 +687,14 @@
         margin: 2em;
         z-index: 0;
     }
-    
+
     /* Icon styles */
     .icon {
         display: block;
         fill: currentcolor;
         stroke: none;
     }
-    
+
     /* Toolbar styles */
     .toolbar {
         box-sizing: border-box;
@@ -706,7 +707,7 @@
         padding: 6px 12px;
         transition: opacity 250ms ease;
     }
-    
+
     .toolbar button {
         padding: 3px;
         border-radius: 6px;
@@ -715,31 +716,31 @@
         color: GrayText;
         flex-shrink: 0;
     }
-    
+
     .toolbar button:hover {
         background: var(--active-bg, rgba(0, 0, 0, 0.05));
         color: currentcolor;
     }
-    
+
     /* Header bar */
     .header-bar {
         top: 0;
     }
-    
+
     /* Navigation bar */
     .nav-bar {
         bottom: 0;
         display: flex;
         gap: 12px;
     }
-    
+
     /* Progress slider */
     #progress-slider {
         flex: 1;
         min-width: 0;
         margin: 0;
     }
-    
+
     /* Sidebar styles */
     .sidebar {
         box-sizing: border-box;
@@ -756,11 +757,11 @@
         border-right: 1px solid ThreeDShadow;
         transition: transform 250ms ease;
     }
-    
+
     .sidebar.show {
         transform: none;
     }
-    
+
     /* Dimming overlay for sidebar */
     #dimming-overlay {
         position: fixed;
@@ -774,28 +775,28 @@
         pointer-events: none;
         transition: opacity 250ms ease;
     }
-    
+
     #dimming-overlay.show {
         opacity: 1;
         pointer-events: auto;
     }
-    
+
     /* Sidebar header styles */
     .sidebar-header {
         padding: 1em;
         border-bottom: 1px solid ThreeDShadow;
     }
-    
+
     #side-bar-title {
         font-size: 1.2em;
         font-weight: bold;
         margin-bottom: 0.5em;
     }
-    
+
     #side-bar-author {
         color: GrayText;
     }
-    
+
     /* Back to library button styling */
     #back-to-library-button {
         margin-right: auto;
