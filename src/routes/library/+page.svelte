@@ -604,14 +604,16 @@
 					dateAdded: Date.now()
 				};
 
+				// Save to database immediately
+				await saveBook(bookData);
+
+				bookData.ribbonData = 'NEW';
+
 				// Add the book to library immediately 
 				libraryBooks = [...libraryBooks, bookData];
 				
 				// Mark library as loaded
 				isLibraryLoaded = true;
-				
-				// Save to database immediately
-				await saveBook(bookData);
 				
 				// Update tracking
 				summary.succeeded++;
@@ -800,12 +802,22 @@
 			const colors = ['yellow', 'blue', 'grey'];
 			const color = colors[index % colors.length];
 
+			const numericProgressAsPercent = Math.round(bookData.progress * 100);
+
+			const displayProgress = `${numericProgressAsPercent}% Read`;
+
 			const bookHTML = `
 								<figure class="book">
 									<ul class="hardcover_front">
 										<li>
 											<div class="coverDesign ${color}">
-												<span class="ribbon hidden"></span>
+												${
+													bookData.ribbonData
+														? `<span class="ribbon">${bookData.ribbonData}</span>`
+														: bookData.progress > 0
+															? `<span class="progress-ribbon">${displayProgress}</span>`
+															: '<span class="ribbon hidden"></span>'
+												}
 												<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
 												<div class="cover-text">
 													<h1></h1>
@@ -2893,7 +2905,30 @@
         font-weight: bold;
 
         /* Rotate the entire span to create the diagonal effect */
-        transform: rotate(45deg) translateY(-100px) translateX(20px);
+        transform: rotate(45deg) translateY(-100px) translateX(30px);
+        transform-origin: top left;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        z-index: 10; /* Make sure it sits above other elements */
+    }
+
+    /* Ribbon Design */
+    :global(.progress-ribbon) {
+        position: absolute;
+        top: 10px;
+        left: -45px;
+        /* Make the ribbon wider than the book itself to ensure it spans edge-to-edge */
+        width: 200px;
+        /* Give the ribbon some height/padding for text */
+        height: 30px;
+        line-height: 30px;
+        text-align: center;
+
+        background-color: limegreen;
+        color: #fff;
+        font-weight: bold;
+
+        /* Rotate the entire span to create the diagonal effect */
+        transform: rotate(45deg) translateY(-100px) translateX(30px);
         transform-origin: top left;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
         z-index: 10; /* Make sure it sits above other elements */
