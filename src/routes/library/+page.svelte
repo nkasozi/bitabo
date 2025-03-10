@@ -3,8 +3,10 @@
 	import { browser } from '$app/environment';
 
 	// Import service worker utilities
-	import { registerServiceWorker, deleteBook, migrateData,
-		sendMessageToSW } from '$lib/serviceWorker';
+	import {
+		registerServiceWorker, deleteBook, migrateData,
+		sendMessageToSW
+	} from '$lib/serviceWorker';
 
 	// Supported e-book formats
 	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
@@ -85,15 +87,13 @@
 							console.log('[DEBUG] Checking for data to migrate...');
 							const migrated = await migrateData();
 							console.log('[DEBUG] Data migration status:', migrated);
-						}
-						else if (response && ['sw-not-supported', 'sw-not-controlling-yet',
+						} else if (response && ['sw-not-supported', 'sw-not-controlling-yet',
 							'sw-registration-failed', 'message-error', 'sw-timeout'].includes(response.type)) {
 							// These are expected conditions when the service worker is not fully ready
 							console.info('[DEBUG] Service worker not fully ready yet:', response.type);
 							// Still consider it registered - it will be available after page refresh
 							isServiceWorkerRegistered = true;
-						}
-						else {
+						} else {
 							console.warn('[DEBUG] Service worker responded with unexpected format:', response);
 							// Still consider it registered but log a warning
 							isServiceWorkerRegistered = true;
@@ -280,7 +280,7 @@
 			}
 
 			// Prepare book data for storage - handle any blob data
-			let preparedBook = {...book};
+			let preparedBook = { ...book };
 
 			// If book has a coverUrl that's a blob and no coverBlob yet, convert it
 			if (book.coverUrl && book.coverUrl.startsWith('blob:') && !book.coverBlob) {
@@ -571,15 +571,15 @@
 		// Process each book file one at a time and update UI immediately
 		for (let i = 0; i < bookFiles.length; i++) {
 			const file = bookFiles[i];
-			
+
 			// Update progress for multi-file operations
 			if (bookFiles.length > 1) {
-				updateProgressNotification(`Processing book ${i+1}/${bookFiles.length}: ${file.name}`, 
+				updateProgressNotification(`Processing book ${i + 1}/${bookFiles.length}: ${file.name}`,
 					i, bookFiles.length, progressId);
 			}
-			
-			console.log(`[DEBUG] Processing book file ${i+1}/${bookFiles.length}: ${file.name}`);
-			
+
+			console.log(`[DEBUG] Processing book file ${i + 1}/${bookFiles.length}: ${file.name}`);
+
 			try {
 				// Get book metadata
 				const { url, title, author } = await extractCover(file);
@@ -611,27 +611,27 @@
 
 				// Add the book to library immediately 
 				libraryBooks = [...libraryBooks, bookData];
-				
+
 				// Mark library as loaded
 				isLibraryLoaded = true;
-				
+
 				// Update tracking
 				summary.succeeded++;
 				summary.new++;
-				
+
 				// Sort the library
 				libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-				
+
 				// Find the position of the newly added book after sorting
 				const bookIndex = libraryBooks.findIndex(book => book.id === bookData.id);
-				
+
 				// Update UI immediately after each book
 				if (bookshelf) {
 					// Update the coverflow - wrap in a Promise to ensure it completes
 					await new Promise(resolve => {
 						setTimeout(() => {
 							initCoverflow();
-							
+
 							// Always select the newly added book
 							if (bookIndex >= 0) {
 								selectedBookIndex = bookIndex;
@@ -643,19 +643,19 @@
 						}, 100);
 					});
 				}
-				
+
 				// Small delay between books to allow UI to render
 				if (i < bookFiles.length - 1) {
 					await new Promise(resolve => setTimeout(resolve, 200));
 				}
-				
+
 			} catch (error) {
 				console.error('[DEBUG] Error processing book:', file.name, error);
 				summary.failed++;
 				summary.failedBooks.push(file.name);
 			}
 		}
-		
+
 		// Remove progress notification
 		if (bookFiles.length > 1) {
 			removeNotification(progressId);
@@ -670,7 +670,7 @@
 
 			if (summary.failed > 0) {
 				showNotification(
-					`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`, 
+					`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`,
 					summary.failed > 5 ? 'error' : 'warning'
 				);
 			} else {
@@ -736,7 +736,7 @@
 				this.visibleBooks = newVisibleCount;
 				this.updateVisibleBooks();
 			}
-		}
+		};
 
 		/**
 		 * Initialize the coverflow
@@ -812,12 +812,12 @@
 										<li>
 											<div class="coverDesign ${color}">
 												${
-													bookData.ribbonData
-														? `<span class="ribbon">${bookData.ribbonData}</span>`
-														: bookData.progress > 0
-															? `<span class="progress-ribbon">${displayProgress}</span>`
-															: '<span class="ribbon hidden"></span>'
-												}
+				bookData.ribbonData
+					? `<span class="ribbon">${bookData.ribbonData}</span>`
+					: bookData.progress > 0
+						? `<span class="progress-ribbon">${displayProgress}</span>`
+						: '<span class="ribbon hidden"></span>'
+			}
 												<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
 												<div class="cover-text">
 													<h1></h1>
@@ -974,12 +974,12 @@
 					// For books on right (direction > 0), use diminishing rotation
 					let rotationAngle;
 					if (direction < 0) {
-					// Books to the left - increasing negative rotation (showing more spine)
-					    rotationAngle = direction * (this.params.rotation + (distance * 5));
+						// Books to the left - increasing negative rotation (showing more spine)
+						rotationAngle = direction * (this.params.rotation + (distance * 5));
 					} else {
-					// Books to the right - diminishing positive rotation (showing less spine)
-					// The further away, the closer to 0 degrees (showing front cover)
-					rotationAngle = Math.max(0, this.params.rotation - (distance * 60));
+						// Books to the right - diminishing positive rotation (showing less spine)
+						// The further away, the closer to 0 degrees (showing front cover)
+						rotationAngle = Math.max(0, this.params.rotation - (distance * 60));
 					}
 
 					const scaleValue = this.params.scale.inactive - (distance * 0.05);
@@ -1924,7 +1924,7 @@
 					const doc = fileItems[i];
 					try {
 						// Update progress notification
-						updateProgressNotification(`Downloading ${i+1}/${totalFiles}: ${doc.name}`, i+1, totalFiles, notificationId);
+						updateProgressNotification(`Downloading ${i + 1}/${totalFiles}: ${doc.name}`, i + 1, totalFiles, notificationId);
 
 						console.log('Processing file:', doc.name, 'ID:', doc.id);
 
@@ -1948,23 +1948,23 @@
 						});
 
 						// Process this file immediately and add to library
-						updateProgressNotification(`Importing ${i+1}/${totalFiles}: ${doc.name}`, i+1, totalFiles, notificationId);
-						
+						updateProgressNotification(`Importing ${i + 1}/${totalFiles}: ${doc.name}`, i + 1, totalFiles, notificationId);
+
 						// Process this file individually
 						const result = await processFolder([file]);
-						
+
 						if (result && result.success) {
 							successCount++;
 						} else {
 							// If processFolder failed for some reason, add to failedFiles
 							failedFiles.push(doc.name);
 						}
-						
+
 						// Small delay to allow UI to update
 						if (i < fileItems.length - 1) {
 							await new Promise(resolve => setTimeout(resolve, 300));
 						}
-						
+
 					} catch (error) {
 						console.error('Error downloading/processing file:', doc.name, error);
 						failedFiles.push(doc.name);
@@ -2025,51 +2025,50 @@
 		}
 	}
 
-	onMount(async () =>
-	{
-		if (!browser) return;
+	onMount(async () => {
+			if (!browser) return;
 
-		const checkIsMobile = () => {
-			// Adjust this threshold value if needed
-			isMobile = window.innerWidth <= 768;
-		};
+			const checkIsMobile = () => {
+				// Adjust this threshold value if needed
+				isMobile = window.innerWidth <= 768;
+			};
 
-		checkIsMobile();
+			checkIsMobile();
 
-		window.addEventListener('resize', checkIsMobile);
+			window.addEventListener('resize', checkIsMobile);
 
-		// Try to load saved library state
-		const libraryLoaded = await loadLibraryState();
+			// Try to load saved library state
+			const libraryLoaded = await loadLibraryState();
 
-		if (libraryLoaded) {
-			// Initialize coverflow with the loaded books (longer timeout for better positioning)
-			setTimeout(initCoverflow, 300);
-		}
-
-		// Setup file input element for file browsing
-		fileInputElement = document.getElementById('file-input') as HTMLInputElement;
-		if (fileInputElement) {
-			fileInputElement.addEventListener('change', handleFileSelection);
-		}
-
-		// Add global event listener for closing the modal when clicking outside
-		document.addEventListener('mousedown', (e) => {
-			if (isUploadModalOpen) {
-				handleClickOutside(e);
+			if (libraryLoaded) {
+				// Initialize coverflow with the loaded books (longer timeout for better positioning)
+				setTimeout(initCoverflow, 300);
 			}
-		});
 
-		// Add keyboard event listener for navigation
-		window.addEventListener('keydown', handleKeyNavigation);
-
-		// Add keyboard event listener to close modal on Escape key
-		document.addEventListener('keydown', (e) => {
-			if (isUploadModalOpen && e.key === 'Escape') {
-				closeUploadModal();
+			// Setup file input element for file browsing
+			fileInputElement = document.getElementById('file-input') as HTMLInputElement;
+			if (fileInputElement) {
+				fileInputElement.addEventListener('change', handleFileSelection);
 			}
-		});
-	}
-);
+
+			// Add global event listener for closing the modal when clicking outside
+			document.addEventListener('mousedown', (e) => {
+				if (isUploadModalOpen) {
+					handleClickOutside(e);
+				}
+			});
+
+			// Add keyboard event listener for navigation
+			window.addEventListener('keydown', handleKeyNavigation);
+
+			// Add keyboard event listener to close modal on Escape key
+			document.addEventListener('keydown', (e) => {
+				if (isUploadModalOpen && e.key === 'Escape') {
+					closeUploadModal();
+				}
+			});
+		}
+	);
 
 	onDestroy(() => {
 		if (!browser) return;
@@ -2134,11 +2133,17 @@
 					/>
 					{#if searchQuery}
 						<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+									 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<line x1="18" y1="6" x2="6" y2="18"></line>
+								<line x1="6" y1="6" x2="18" y2="18"></line>
+							</svg>
 						</button>
 					{:else}
             <span class="search-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle
+									cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </span>
 					{/if}
 				</div>
@@ -2146,7 +2151,8 @@
 				{#if searchQuery && searchResults.length === 0}
 					<div class="search-results-count empty">No matching books found</div>
 				{:else if searchQuery && searchResults.length > 0}
-					<div class="search-results-count">Found {searchResults.length} book{searchResults.length !== 1 ? 's' : ''}</div>
+					<div class="search-results-count">Found {searchResults.length}
+						book{searchResults.length !== 1 ? 's' : ''}</div>
 				{/if}
 			</div>
 		{/if}
@@ -2182,10 +2188,11 @@
 					on:drop={handleFileDrop}
 				>
 					<div class="modal-drop-content">
-						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-							<polyline points="17 8 12 3 7 8"/>
-							<line x1="12" y1="3" x2="12" y2="15"/>
+						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+								 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+							<polyline points="17 8 12 3 7 8" />
+							<line x1="12" y1="3" x2="12" y2="15" />
 						</svg>
 						<h3>Drop files here</h3>
 						<p>or</p>
@@ -2231,7 +2238,8 @@
 				{#if isMobile}
 					Swipe left and right to navigate through your books
 				{:else}
-					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to navigate through your books
+					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to
+					navigate through your books
 				{/if}
 			</div>
 		{:else}
@@ -2247,7 +2255,7 @@
 											<span class="ribbon">{dummy.ribbon}</span>
 											<div class="cover-image" style="background-image: url('/placeholder-cover.png')"></div>
 											<div class="cover-text">
-												<h1>EMPTY <br/> LIBRARY</h1>
+												<h1>EMPTY <br /> LIBRARY</h1>
 												<p></p>
 											</div>
 										</div>
@@ -2277,7 +2285,7 @@
 				</ul>
 			</div>
 			<div class="spray-painted-text">
-				Its looking lonely in here...<br/>
+				Its looking lonely in here...<br />
 				Add some of your favourite books to get started
 			</div>
 		{/if}
@@ -2298,10 +2306,17 @@
 						/>
 						<div class="edit-buttons">
 							<button class="btn-icon" on:click={saveEditedTitle} title="Save">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="20 6 9 17 4 12"></polyline>
+								</svg>
 							</button>
 							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="18" y1="6" x2="6" y2="18"></line>
+									<line x1="6" y1="6" x2="18" y2="18"></line>
+								</svg>
 							</button>
 						</div>
 					</div>
@@ -2326,10 +2341,17 @@
 						/>
 						<div class="edit-buttons">
 							<button class="btn-icon" on:click={saveEditedAuthor} title="Save">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<polyline points="20 6 9 17 4 12"></polyline>
+								</svg>
 							</button>
 							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="18" y1="6" x2="6" y2="18"></line>
+									<line x1="6" y1="6" x2="18" y2="18"></line>
+								</svg>
 							</button>
 						</div>
 					</div>
@@ -2342,7 +2364,8 @@
 				{/if}
 
 				<div class="flex justify-center gap-4">
-					<button class="btn btn-primary mt-4" on:click={() => { openSelectedBook().catch(err => console.error('Error opening book:', err)); }}>
+					<button class="btn btn-primary mt-4"
+									on:click={() => { openSelectedBook().catch(err => console.error('Error opening book:', err)); }}>
 						Open Book
 					</button>
 					<button class="btn btn-danger mt-4" on:click={removeSelectedBook}>
@@ -2376,10 +2399,7 @@
         color: #ffffff;
 
         /* Add a grungy "spray paint" effect via multiple text shadows */
-        text-shadow:
-                0 0 2px #ff00ff,   /* faint magenta outline */
-                0 0 5px #ff00ff,   /* bigger magenta glow */
-                2px 2px 4px #000000; /* a slight black drop shadow */
+        text-shadow: 0 0 2px #ff00ff, /* faint magenta outline */ 0 0 5px #ff00ff, /* bigger magenta glow */ 2px 2px 4px #000000; /* a slight black drop shadow */
 
         /* Extra styling: uppercase, letter spacing, etc. */
         text-transform: uppercase;
@@ -2387,7 +2407,7 @@
 
         /* Justify text, but center the last line */
         text-align: justify;
-        text-align-last: center;  /* makes the final line centered instead of left-justified */
+        text-align-last: center; /* makes the final line centered instead of left-justified */
 
         /* If you want some spacing above/below */
         margin: 2rem;
@@ -2447,7 +2467,7 @@
     }
 
     :global(.hardcover_front li:last-child) {
-        background:#666;
+        background: #666;
     }
 
     /* Book Hardcover Back */
@@ -2964,8 +2984,14 @@
     }
 
     @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     /* Empty library placeholder styling */
@@ -2993,8 +3019,8 @@
         border-radius: 8px;
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
         transition: transform 0.3s ease;
-        position: static;  /* Prevent position:absolute from coverflow */
-        transform: none;   /* Prevent transform from coverflow */
+        position: static; /* Prevent position:absolute from coverflow */
+        transform: none; /* Prevent transform from coverflow */
     }
 
     .empty-library-image:hover {
