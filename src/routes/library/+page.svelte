@@ -7,6 +7,12 @@
 		registerServiceWorker, deleteBook, migrateData,
 		sendMessageToSW
 	} from '$lib/serviceWorker';
+	
+	// Import type constants - define at the top to avoid reference errors
+	const ImportType = {
+		Book: 'book',
+		BookCover: 'bookCover'
+	} as const;
 
 	// Supported e-book formats
 	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
@@ -27,6 +33,10 @@
 	let isUploadModalOpen = false;
 	let coverflow: Coverflow;
 	let isMobile: boolean = false;
+	
+	// Import settings
+	let importType: typeof ImportType[keyof typeof ImportType] = ImportType.Book;
+	let similarityThreshold: number = 0.7; // Default 70% similarity
 
 	// Define the three dummy books
 	const dummyBooks: DummyBook[] = [
@@ -36,6 +46,51 @@
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
 	const BOOKS_STORE = 'books';
+	
+	// Title similarity scoring function - computes similarity between two strings from 0 to 1
+	function calculateTitleSimilarity(title1: string, title2: string): number {
+		// Normalize strings: lowercase, remove non-alphanumeric characters, trim
+		const normalize = (str: string): string => {
+			return str.toLowerCase()
+				.replace(/[^\w\s]/g, '') // Remove punctuation
+				.replace(/\s+/g, ' ')    // Replace multiple spaces with single space
+				.trim();
+		};
+		
+		const normalizedTitle1 = normalize(title1);
+		const normalizedTitle2 = normalize(title2);
+		
+		// If either string is empty after normalization, return 0
+		if (!normalizedTitle1 || !normalizedTitle2) return 0;
+		
+		// If strings are identical after normalization, return 1
+		if (normalizedTitle1 === normalizedTitle2) return 1;
+		
+		// Simple word-based matching
+		const words1 = normalizedTitle1.split(' ');
+		const words2 = normalizedTitle2.split(' ');
+		
+		// Count matching words (case insensitive)
+		let matchCount = 0;
+		for (const word1 of words1) {
+			if (word1.length < 3) continue; // Skip very short words
+			for (const word2 of words2) {
+				if (word2.length < 3) continue; // Skip very short words
+				if (word1 === word2) {
+					matchCount++;
+					break;
+				}
+			}
+		}
+		
+		// Calculate similarity as proportion of words that match
+		const totalWords = Math.max(
+			words1.filter(w => w.length >= 3).length, 
+			words2.filter(w => w.length >= 3).length
+		);
+		
+		return totalWords > 0 ? matchCount / totalWords : 0;
+	}
 
 	// Hash function for generating unique IDs - at module scope
 	function hashString(str) {
@@ -530,19 +585,29 @@
 		}
 	}
 
-	// Process folder of e-books - one book at a time with immediate UI updates
+	// Process folder of e-books or book covers - one file at a time with immediate UI updates
 	async function processFolder(files: File[]) {
 		console.log('[DEBUG] Processing folder with', files.length, 'files');
 
-		// Filter for supported e-book formats
-		const bookFiles = files.filter(file =>
-			SUPPORTED_FORMATS.some(format => file.name.toLowerCase().endsWith(format))
+		// Determine file filter based on import type
+		let supportedFormats = SUPPORTED_FORMATS;
+		let filterMessage = 'No supported e-book files found. Supported formats: ' + SUPPORTED_FORMATS.join(', ');
+		
+		// For book cover imports, allow image formats
+		if (importType === ImportType.BookCover) {
+			supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+			filterMessage = 'No supported image files found. Supported formats: ' + supportedFormats.join(', ');
+		}
+
+		// Filter for supported formats
+		const filteredFiles = files.filter(file =>
+			supportedFormats.some(format => file.name.toLowerCase().endsWith(format))
 		);
 
-		console.log('[DEBUG] Found', bookFiles.length, 'supported e-book files');
+		console.log('[DEBUG] Found', filteredFiles.length, 'supported files');
 
-		if (bookFiles.length === 0) {
-			alert('No supported e-book files found. Supported formats: ' + SUPPORTED_FORMATS.join(', '));
+		if (filteredFiles.length === 0) {
+			alert(filterMessage);
 			return;
 		}
 
@@ -554,7 +619,7 @@
 
 		// Tracking for summary dialog
 		const summary = {
-			total: bookFiles.length,
+			total: filteredFiles.length,
 			succeeded: 0,
 			failed: 0,
 			new: 0,
@@ -562,102 +627,229 @@
 			failedBooks: []
 		};
 
-		// Create a progress notification for multi-file operations
-		const progressId = 'book-import-progress';
-		if (bookFiles.length > 1) {
-			showProgressNotification('Processing books...', 0, bookFiles.length, progressId);
+		// Create appropriate progress notification message
+		const progressId = 'import-progress';
+		const progressMessage = importType === ImportType.Book 
+			? 'Processing books...' 
+			: 'Processing book covers...';
+			
+		if (filteredFiles.length > 1) {
+			showProgressNotification(progressMessage, 0, filteredFiles.length, progressId);
 		}
 
-		// Process each book file one at a time and update UI immediately
-		for (let i = 0; i < bookFiles.length; i++) {
-			const file = bookFiles[i];
+		// Process based on import type
+		if (importType === ImportType.Book) {
+			// Standard book import logic
+			for (let i = 0; i < filteredFiles.length; i++) {
+				const file = filteredFiles[i];
 
-			// Update progress for multi-file operations
-			if (bookFiles.length > 1) {
-				updateProgressNotification(`Processing book ${i + 1}/${bookFiles.length}: ${file.name}`,
-					i, bookFiles.length, progressId);
-			}
+				// Update progress for multi-file operations
+				if (filteredFiles.length > 1) {
+					updateProgressNotification(`Processing book ${i + 1}/${filteredFiles.length}: ${file.name}`,
+						i, filteredFiles.length, progressId);
+				}
 
-			console.log(`[DEBUG] Processing book file ${i + 1}/${bookFiles.length}: ${file.name}`);
+				console.log(`[DEBUG] Processing book file ${i + 1}/${filteredFiles.length}: ${file.name}`);
 
-			try {
-				// Get book metadata
-				const { url, title, author } = await extractCover(file);
-				console.log('[DEBUG] Extracted metadata:', { title, author, coverUrl: url });
+				try {
+					// Get book metadata
+					const { url, title, author } = await extractCover(file);
+					console.log('[DEBUG] Extracted metadata:', { title, author, coverUrl: url });
 
-				// Create a unique hash ID
-				const hashSource = `${title}-${author}-${file.name}-${file.size}`;
-				const uniqueId = hashString(hashSource);
+					// Create a unique hash ID
+					const hashSource = `${title}-${author}-${file.name}-${file.size}`;
+					const uniqueId = hashString(hashSource);
 
-				// Create book data object
-				const bookData = {
-					id: uniqueId, // Add unique ID immediately
-					title,
-					author,
-					file,
-					fileName: file.name,
-					fileType: file.type,
-					fileSize: file.size,
-					coverUrl: url,
-					progress: 0,
-					lastAccessed: Date.now(),
-					dateAdded: Date.now()
-				};
+					// Create book data object
+					const bookData = {
+						id: uniqueId, // Add unique ID immediately
+						title,
+						author,
+						file,
+						fileName: file.name,
+						fileType: file.type,
+						fileSize: file.size,
+						coverUrl: url,
+						progress: 0,
+						lastAccessed: Date.now(),
+						dateAdded: Date.now()
+					};
 
-				// Save to database immediately
-				await saveBook(bookData);
+					// Save to database immediately
+					await saveBook(bookData);
 
-				bookData.ribbonData = 'NEW';
+					bookData.ribbonData = 'NEW';
 
-				// Add the book to library immediately 
-				libraryBooks = [...libraryBooks, bookData];
+					// Add the book to library immediately 
+					libraryBooks = [...libraryBooks, bookData];
 
-				// Mark library as loaded
-				isLibraryLoaded = true;
+					// Mark library as loaded
+					isLibraryLoaded = true;
 
-				// Update tracking
-				summary.succeeded++;
-				summary.new++;
+					// Update tracking
+					summary.succeeded++;
+					summary.new++;
 
-				// Sort the library
-				libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+					// Sort the library
+					libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
-				// Find the position of the newly added book after sorting
-				const bookIndex = libraryBooks.findIndex(book => book.id === bookData.id);
+					// Find the position of the newly added book after sorting
+					const bookIndex = libraryBooks.findIndex(book => book.id === bookData.id);
 
-				// Update UI immediately after each book
-				if (bookshelf) {
-					// Update the coverflow - wrap in a Promise to ensure it completes
-					await new Promise(resolve => {
-						setTimeout(() => {
-							initCoverflow();
+					// Update UI immediately after each book
+					if (bookshelf) {
+						// Update the coverflow - wrap in a Promise to ensure it completes
+						await new Promise(resolve => {
+							setTimeout(() => {
+								initCoverflow();
 
-							// Always select the newly added book
-							if (bookIndex >= 0) {
-								selectedBookIndex = bookIndex;
-								if (coverflow) {
-									coverflow.select(bookIndex);
+								// Always select the newly added book
+								if (bookIndex >= 0) {
+									selectedBookIndex = bookIndex;
+									if (coverflow) {
+										coverflow.select(bookIndex);
+									}
 								}
+								resolve(null);
+							}, 100);
+						});
+					}
+
+					// Small delay between books to allow UI to render
+					if (i < filteredFiles.length - 1) {
+						await new Promise(resolve => setTimeout(resolve, 200));
+					}
+
+				} catch (error) {
+					console.error('[DEBUG] Error processing book:', file.name, error);
+					summary.failed++;
+					summary.failedBooks.push(file.name);
+				}
+			}
+		} else {
+			// Book cover update logic
+			for (let i = 0; i < filteredFiles.length; i++) {
+				const file = filteredFiles[i];
+
+				// Update progress for multi-file operations
+				if (filteredFiles.length > 1) {
+					updateProgressNotification(`Processing cover ${i + 1}/${filteredFiles.length}: ${file.name}`,
+						i, filteredFiles.length, progressId);
+				}
+
+				console.log(`[DEBUG] Processing cover file ${i + 1}/${filteredFiles.length}: ${file.name}`);
+
+				try {
+					// Create a blob URL for the image
+					const coverUrl = URL.createObjectURL(file);
+					
+					// Extract a potential title from the filename
+					const possibleTitle = file.name
+						.replace(/\.[^/.]+$/, '') // Remove file extension
+						.replace(/[_\-]/g, ' ')   // Replace underscores and hyphens with spaces
+						.trim();
+						
+					console.log('[DEBUG] Extracted possible title from filename:', possibleTitle);
+					
+					// Look for matching books in the library based on title similarity
+					let matchFound = false;
+					let matchedBook = null;
+					
+					for (const book of libraryBooks) {
+						const similarity = calculateTitleSimilarity(book.title, possibleTitle);
+						console.log(`[DEBUG] Similarity score for "${book.title}" vs "${possibleTitle}": ${similarity}`);
+						
+						if (similarity >= similarityThreshold) {
+							matchFound = true;
+							matchedBook = book;
+							
+							// Update the book's cover with the new image
+							console.log(`[DEBUG] Updating cover for book "${book.title}" with file ${file.name}`);
+							
+							// Store the old URL so we can revoke it later
+							const oldCoverUrl = book.coverUrl;
+							
+							// Update the book's cover URL
+							book.coverUrl = coverUrl;
+							
+							// Create a blob from the file
+							const fileReader = new FileReader();
+							const coverBlob = await new Promise<Blob>((resolve) => {
+								fileReader.onload = () => {
+									resolve(new Blob([fileReader.result], { type: file.type }));
+								};
+								fileReader.readAsArrayBuffer(file);
+							});
+							
+							// Update the book's cover blob
+							book.coverBlob = coverBlob;
+							
+							// Update lastAccessed field
+							book.lastAccessed = Date.now();
+							
+							// Save the updated book to the database
+							await saveBook(book);
+							
+							// Revoke the old URL to prevent memory leaks
+							if (oldCoverUrl && oldCoverUrl.startsWith('blob:')) {
+								URL.revokeObjectURL(oldCoverUrl);
 							}
-							resolve(null);
-						}, 100);
-					});
+							
+							// Update tracking
+							summary.succeeded++;
+							summary.updated++;
+							
+							// Apply a ribbon to show it's been updated
+							book.ribbonData = 'UPDATED';
+							
+							// Break after the first match (only update one book per cover file)
+							break;
+						}
+					}
+					
+					if (!matchFound) {
+						console.log(`[DEBUG] No matching book found for cover "${possibleTitle}"`);
+						summary.failed++;
+						summary.failedBooks.push(file.name);
+					}
+					
+					// Update UI after processing each cover
+					if (bookshelf && matchFound) {
+						// Update the coverflow - wrap in a Promise to ensure it completes
+						await new Promise(resolve => {
+							setTimeout(() => {
+								initCoverflow();
+								
+								// Select the updated book
+								if (matchedBook) {
+									const bookIndex = libraryBooks.findIndex(book => book.id === matchedBook.id);
+									if (bookIndex >= 0) {
+										selectedBookIndex = bookIndex;
+										if (coverflow) {
+											coverflow.select(bookIndex);
+										}
+									}
+								}
+								
+								resolve(null);
+							}, 100);
+						});
+					}
+					
+					// Small delay between covers to allow UI to render
+					if (i < filteredFiles.length - 1) {
+						await new Promise(resolve => setTimeout(resolve, 200));
+					}
+				} catch (error) {
+					console.error('[DEBUG] Error processing cover:', file.name, error);
+					summary.failed++;
+					summary.failedBooks.push(file.name);
 				}
-
-				// Small delay between books to allow UI to render
-				if (i < bookFiles.length - 1) {
-					await new Promise(resolve => setTimeout(resolve, 200));
-				}
-
-			} catch (error) {
-				console.error('[DEBUG] Error processing book:', file.name, error);
-				summary.failed++;
-				summary.failedBooks.push(file.name);
 			}
 		}
 
 		// Remove progress notification
-		if (bookFiles.length > 1) {
+		if (filteredFiles.length > 1) {
 			removeNotification(progressId);
 		}
 
@@ -668,13 +860,24 @@
 				(summary.failedBooks.length > 3 ? `... and ${summary.failedBooks.length - 3} more` : '')
 				: '';
 
-			if (summary.failed > 0) {
-				showNotification(
-					`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`,
-					summary.failed > 5 ? 'error' : 'warning'
-				);
+			if (importType === ImportType.Book) {
+				if (summary.failed > 0) {
+					showNotification(
+						`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`,
+						summary.failed > 5 ? 'error' : 'warning'
+					);
+				} else {
+					showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
+				}
 			} else {
-				showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
+				if (summary.failed > 0) {
+					showNotification(
+						`Updated covers for ${summary.updated} books. Failed to match: ${failedList}`,
+						summary.failed > 5 ? 'error' : 'warning'
+					);
+				} else {
+					showNotification(`Successfully updated covers for ${summary.updated} books`, 'success');
+				}
 			}
 		}
 
@@ -2179,7 +2382,44 @@
 		<div class="upload-modal-overlay">
 			<div class="upload-modal-content">
 				<button class="modal-close-button" on:click={closeUploadModal}>×</button>
-				<h2>Import E-books</h2>
+				<h2>Import Files</h2>
+				
+				<!-- Import type selection -->
+				<div class="import-type-selector">
+					<label>Import Type:</label>
+					<div class="select-wrapper">
+						<select bind:value={importType}>
+							<option value={ImportType.Book}>Books</option>
+							<option value={ImportType.BookCover}>Book Covers</option>
+						</select>
+					</div>
+				</div>
+				
+				<!-- Show similarity threshold slider only for cover import -->
+				{#if importType === ImportType.BookCover}
+					<div class="similarity-slider">
+						<label>
+							Title Matching Threshold: {Math.round(similarityThreshold * 100)}%
+							<span class="tooltip">?
+								<span class="tooltip-text">
+									Determines how similar a filename must be to a book title for the cover to be applied.
+									Higher values require more similar matches, lower values allow more fuzzy matching.
+								</span>
+							</span>
+						</label>
+						<input 
+							type="range" 
+							min="0.2" 
+							max="1" 
+							step="0.05" 
+							bind:value={similarityThreshold}
+						/>
+						<div class="slider-labels">
+							<span>Lenient</span>
+							<span>Strict</span>
+						</div>
+					</div>
+				{/if}
 
 				<div
 					class="modal-drop-zone"
@@ -2201,17 +2441,30 @@
 							<button class="btn btn-primary" on:click={() => document.getElementById('file-input').click()}>
 								Browse Files
 							</button>
-							<button class="btn btn-secondary" on:click={() => {
-                        closeUploadModal();
-                        initGoogleDrivePicker();
-                    }}>
-								Import from Google Drive
-							</button>
+							{#if importType === ImportType.Book}
+								<button class="btn btn-secondary" on:click={() => {
+                          closeUploadModal();
+                          initGoogleDrivePicker();
+                      }}>
+									Import from Google Drive
+								</button>
+							{/if}
 						</div>
 
 						<p class="supported-formats">
-							Supported formats: EPUB, PDF, MOBI, AZW3, CBZ
+							{#if importType === ImportType.Book}
+								Supported formats: EPUB, PDF, MOBI, AZW3, CBZ
+							{:else}
+								Supported formats: JPG, JPEG, PNG, WEBP, GIF
+							{/if}
 						</p>
+						
+						{#if importType === ImportType.BookCover}
+							<p class="import-hint">
+								Cover images should have filenames that match your book titles.
+								For example, <code>Return-of-the-King.jpg</code> will be matched to a book titled "The Return of the King".
+							</p>
+						{/if}
 					</div>
 				</div>
 			</div>
@@ -2224,7 +2477,9 @@
 		id="file-input"
 		style="display: none;"
 		multiple
-		accept=".epub,.pdf,.mobi,.azw3,.cbz"
+		accept={importType === ImportType.Book 
+			? ".epub,.pdf,.mobi,.azw3,.cbz" 
+			: ".jpg,.jpeg,.png,.webp,.gif"}
 	/>
 
 	<!-- Main container for coverflow or empty library image -->
@@ -3509,5 +3764,127 @@
 
     .epic-quote p {
         margin-bottom: 5px;
+    }
+    
+    /* Import type selector */
+    .import-type-selector {
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .import-type-selector label {
+        margin-bottom: 6px;
+        font-weight: 500;
+    }
+    
+    .select-wrapper {
+        position: relative;
+    }
+    
+    .select-wrapper select {
+        width: 100%;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid rgba(128, 128, 128, 0.3);
+        background-color: var(--color-bg-2);
+        color: var(--color-text);
+        font-size: 1rem;
+        appearance: none;
+    }
+    
+    .select-wrapper::after {
+        content: "▼";
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        pointer-events: none;
+        font-size: 0.8rem;
+        opacity: 0.6;
+    }
+    
+    /* Similarity threshold slider */
+    .similarity-slider {
+        margin-bottom: 20px;
+    }
+    
+    .similarity-slider label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+    
+    .similarity-slider input[type="range"] {
+        width: 100%;
+        margin: 10px 0;
+    }
+    
+    .slider-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8em;
+        opacity: 0.7;
+        margin-top: -5px;
+    }
+    
+    /* Tooltip for similarity threshold */
+    .tooltip {
+        position: relative;
+        display: inline-block;
+        margin-left: 5px;
+        width: 16px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        background: rgba(128, 128, 128, 0.2);
+        border-radius: 50%;
+        font-size: 0.8em;
+        cursor: help;
+    }
+    
+    .tooltip .tooltip-text {
+        visibility: hidden;
+        width: 250px;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        text-align: center;
+        border-radius: 4px;
+        padding: 8px;
+        position: absolute;
+        z-index: 1;
+        bottom: 150%;
+        left: 50%;
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-weight: normal;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+    
+    .tooltip:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    /* Import hint */
+    .import-hint {
+        font-size: 0.9em;
+        color: var(--color-text);
+        opacity: 0.8;
+        margin-top: 10px;
+        line-height: 1.5;
+        padding: 8px 12px;
+        background-color: rgba(128, 128, 128, 0.1);
+        border-radius: 4px;
+        border-left: 3px solid var(--color-theme-1);
+    }
+    
+    .import-hint code {
+        background-color: rgba(0, 0, 0, 0.1);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: monospace;
     }
 </style>
