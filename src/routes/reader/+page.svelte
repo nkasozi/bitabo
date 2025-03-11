@@ -669,6 +669,15 @@
         height: calc(100vh - 96px);
         width: 100%;
     }
+    
+    /* Adjust for mobile screens to ensure content isn't covered */
+    @media (max-width: 768px) {
+        .reader-container {
+            /* Increase bottom spacing to ensure text isn't covered by nav bar */
+            bottom: 60px;
+            height: calc(100vh - 108px);
+        }
+    }
 
     /* Reader drop target */
     .reader-drop-target {
@@ -732,6 +741,23 @@
         bottom: 0;
         display: flex;
         gap: 12px;
+        background-color: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+        transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    /* Support dark mode */
+    :global(.dark-mode) .nav-bar {
+        background-color: rgba(30, 30, 30, 0.95);
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Ensure nav bar is clearly separated from content on mobile */
+    @media (max-width: 768px) {
+        .nav-bar {
+            padding: 8px 12px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
     }
 
     /* Progress slider */
@@ -739,6 +765,25 @@
         flex: 1;
         min-width: 0;
         margin: 0;
+        height: 16px;
+    }
+    
+    /* Make slider more touch-friendly on mobile */
+    @media (max-width: 768px) {
+        #progress-slider {
+            height: 24px; /* Taller for better touch target */
+        }
+        
+        /* Improve thumb size for better touch targeting */
+        #progress-slider::-webkit-slider-thumb {
+            width: 18px;
+            height: 18px;
+        }
+        
+        #progress-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+        }
     }
 
     /* Sidebar styles */
