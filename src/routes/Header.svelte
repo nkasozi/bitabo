@@ -39,10 +39,10 @@
 			<li aria-current={$page && $page.url && $page.url.pathname && ($page.url.pathname === '/library' || $page.url.pathname === '/') ? 'page' : undefined}>
 				<a href="/library">Library</a>
 			</li>
-			<li aria-current={$page && $page.url && $page.url.pathname === '/privacy' ? 'page' : undefined}>
+			<li class="hide-on-mobile" aria-current={$page && $page.url && $page.url.pathname === '/privacy' ? 'page' : undefined}>
 				<a href="/privacy">Privacy</a>
 			</li>
-			<li aria-current={$page && $page.url && $page.url.pathname === '/tos' ? 'page' : undefined}>
+			<li class="hide-on-mobile" aria-current={$page && $page.url && $page.url.pathname === '/tos' ? 'page' : undefined}>
 				<a href="/tos">Terms</a>
 			</li>
 		</ul>
@@ -191,6 +191,10 @@
 		nav a {
 			padding: 0 0.5em;
 			font-size: 0.8rem;
+		}
+		
+		.hide-on-mobile {
+			display: none;
 		}
 	}
 </style>

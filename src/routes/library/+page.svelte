@@ -3175,7 +3175,7 @@
         line-height: 30px;
         text-align: center;
 
-        background-color: #c0392b;
+        background-color: #2a90d4;
         color: #fff;
         font-weight: bold;
 
