@@ -4,6 +4,9 @@
 	import Header from './Header.svelte';
 	import '../app.css';
 	import { registerServiceWorker } from '$lib/serviceWorker';
+	import { injectSpeedInsights } from '@vercel/speed-insights/sveltekit';
+
+	injectSpeedInsights();
 	
 	let { children } = $props();
 	
