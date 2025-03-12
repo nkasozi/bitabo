@@ -514,44 +514,48 @@
 	</div>
 {/if}
 
-<!-- Direct e-book container element -->
-<div id="ebook-container" class="reader-container"></div>
-
-<div id="header-bar" class="toolbar header-bar">
-	<button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>
-		<svg class="icon" width="24" height="24" aria-hidden="true">
-			<path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
-		</svg>
-	</button>
-	<button id="side-bar-button" aria-label="Show sidebar">
-		<svg class="icon" width="24" height="24" aria-hidden="true">
-			<path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
-		</svg>
-	</button>
-	<div id="menu-button" class="menu-container">
-		<button aria-label="Show settings" aria-haspopup="true">
+<div class="reader-page-layout">
+	<!-- Header toolbar -->
+	<div id="header-bar" class="toolbar header-bar">
+		<button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>
 			<svg class="icon" width="24" height="24" aria-hidden="true">
-				<path
-					d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
-				<circle cx="12" cy="12" r="3" />
+				<path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
+			</svg>
+		</button>
+		<button id="side-bar-button" aria-label="Show sidebar">
+			<svg class="icon" width="24" height="24" aria-hidden="true">
+				<path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
+			</svg>
+		</button>
+		<div id="menu-button" class="menu-container">
+			<button aria-label="Show settings" aria-haspopup="true">
+				<svg class="icon" width="24" height="24" aria-hidden="true">
+					<path
+						d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
+					<circle cx="12" cy="12" r="3" />
+				</svg>
+			</button>
+		</div>
+	</div>
+
+	<!-- Book content container -->
+	<div id="ebook-container" class="reader-container"></div>
+
+	<!-- Navigation bar with progress slider -->
+	<div id="nav-bar" class="toolbar nav-bar">
+		<button id="left-button" aria-label="Go left">
+			<svg class="icon" width="24" height="24" aria-hidden="true">
+				<path d="M 15 6 L 9 12 L 15 18" />
+			</svg>
+		</button>
+		<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
+		<datalist id="tick-marks"></datalist>
+		<button id="right-button" aria-label="Go right">
+			<svg class="icon" width="24" height="24" aria-hidden="true">
+				<path d="M 9 6 L 15 12 L 9 18" />
 			</svg>
 		</button>
 	</div>
-</div>
-
-<div id="nav-bar" class="toolbar nav-bar">
-	<button id="left-button" aria-label="Go left">
-		<svg class="icon" width="24" height="24" aria-hidden="true">
-			<path d="M 15 6 L 9 12 L 15 18" />
-		</svg>
-	</button>
-	<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
-	<datalist id="tick-marks"></datalist>
-	<button id="right-button" aria-label="Go right">
-		<svg class="icon" width="24" height="24" aria-hidden="true">
-			<path d="M 9 6 L 15 12 L 9 18" />
-		</svg>
-	</button>
 </div>
 
 <style>
@@ -656,65 +660,54 @@
         color: #ff0000;
     }
 
-    /* Reader container styling */
-    .reader-container {
-        display: block;
-        position: absolute;
-        top: 48px;
-        bottom: 48px;
-        left: 0;
-        right: 0;
-        overflow: hidden;
-        z-index: 0;
-        height: calc(100vh - 96px);
-        width: 100%;
-    }
-    
-    /* Adjust for mobile screens to ensure content isn't covered */
-    @media (max-width: 768px) {
-        .reader-container {
-            /* Increase bottom spacing to ensure text isn't covered by nav bar */
-            bottom: 60px;
-            height: calc(100vh - 108px);
-        }
-    }
-
-    /* Reader drop target */
-    .reader-drop-target {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        right: 0;
+    /* Overall layout of the reader page */
+    .reader-page-layout {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: Canvas;
-        border: 3px dashed ThreeDShadow;
-        border-radius: 10px;
-        margin: 2em;
-        z-index: 0;
+        height: 100vh;
+        width: 100%;
+        overflow: hidden;
     }
 
-    /* Icon styles */
-    .icon {
-        display: block;
-        fill: currentcolor;
-        stroke: none;
-    }
-
-    /* Toolbar styles */
-    .toolbar {
-        box-sizing: border-box;
-        position: absolute;
-        z-index: 1;
+    /* Header toolbar */
+    .header-bar {
+        flex: 0 0 48px;
         display: flex;
         align-items: center;
-        width: 100%;
-        height: 48px;
         padding: 6px 12px;
-        transition: opacity 250ms ease;
+        background-color: var(--color-bg-1, #ffffff);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    /* Book content container */
+    .reader-container {
+        flex: 1;
+        width: 100%;
+        overflow: hidden;
+        position: relative;
+    }
+
+    /* Navigation bar */
+    .nav-bar {
+        flex: 0 0 48px;
+        display: flex;
+        align-items: center;
+        padding: 6px 12px;
+        gap: 12px;
+        background-color: var(--color-bg-1, #ffffff);
+        border-top: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    /* Dark mode support */
+    :global(.dark-mode) .header-bar,
+    :global(.dark-mode) .nav-bar {
+        background-color: var(--color-bg-0, #1a1a1a);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Toolbar common styles */
+    .toolbar {
+        box-sizing: border-box;
     }
 
     .toolbar button {
@@ -729,35 +722,6 @@
     .toolbar button:hover {
         background: var(--active-bg, rgba(0, 0, 0, 0.05));
         color: currentcolor;
-    }
-
-    /* Header bar */
-    .header-bar {
-        top: 0;
-    }
-
-    /* Navigation bar */
-    .nav-bar {
-        bottom: 0;
-        display: flex;
-        gap: 12px;
-        background-color: rgba(255, 255, 255, 0.95);
-        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
-        transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    /* Support dark mode */
-    :global(.dark-mode) .nav-bar {
-        background-color: rgba(30, 30, 30, 0.95);
-        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
-    }
-    
-    /* Ensure nav bar is clearly separated from content on mobile */
-    @media (max-width: 768px) {
-        .nav-bar {
-            padding: 8px 12px;
-            border-top: 1px solid rgba(0, 0, 0, 0.1);
-        }
     }
 
     /* Progress slider */
@@ -784,6 +748,18 @@
             width: 18px;
             height: 18px;
         }
+    }
+
+    /* Icon styles */
+    .icon {
+        display: block;
+        fill: currentcolor;
+        stroke: none;
+    }
+
+    /* Menu container */
+    .menu-container {
+        position: relative;
     }
 
     /* Sidebar styles */
@@ -845,10 +821,5 @@
     /* Back to library button styling */
     #back-to-library-button {
         margin-right: auto;
-    }
-
-    /* Menu container */
-    .menu-container {
-        position: relative;
     }
 </style>
