@@ -1,4 +1,97 @@
-// Updated Google Drive picker callback
+// Upload books to Google Drive
+async function uploadBooksToGoogleDrive(books, token, folderId, notificationId, showNotification, updateProgressNotification, removeNotification) {
+  if (!books || books.length === 0 || !token) {
+    console.error('Missing required parameters for upload');
+    return { success: false, count: 0 };
+  }
+
+  // Track upload progress
+  let successCount = 0;
+  const failedFiles = [];
+  const totalBooks = books.length;
+
+  // Show progress notification
+  updateProgressNotification(`Uploading ${totalBooks} books to Google Drive...`, 0, totalBooks, notificationId);
+
+  // Process each book
+  for (let i = 0; i < books.length; i++) {
+    const book = books[i];
+    try {
+      // Update progress
+      updateProgressNotification(`Uploading ${i+1}/${totalBooks}: ${book.title}`, i+1, totalBooks, notificationId);
+      
+      // Only upload if we have the file data
+      if (!book.file) {
+        console.error(`Book ${book.title} missing file data, skipping upload`);
+        failedFiles.push(book.title);
+        continue;
+      }
+
+      // Prepare file metadata
+      const metadata = {
+        name: book.fileName || book.title + getFileExtension(book.file.name),
+        mimeType: book.fileType || 'application/octet-stream',
+        parents: folderId ? [folderId] : []
+      };
+
+      // Convert metadata to form data
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', book.file);
+
+      // Upload the file
+      const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: form
+      });
+
+      if (!uploadResponse.ok) {
+        console.error(`Failed to upload ${book.title}: ${uploadResponse.status}`);
+        failedFiles.push(book.title);
+        continue;
+      }
+
+      // Parse the response
+      const uploadResult = await uploadResponse.json();
+      console.log(`Successfully uploaded ${book.title} to Google Drive, ID: ${uploadResult.id}`);
+      successCount++;
+      
+      // Small delay between uploads
+      if (i < books.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    } catch (error) {
+      console.error(`Error uploading ${book.title}:`, error);
+      failedFiles.push(book.title);
+    }
+  }
+
+  // Show summary notification
+  if (successCount > 0) {
+    if (failedFiles.length > 0) {
+      const failedList = failedFiles.length <= 3
+        ? failedFiles.join(', ')
+        : `${failedFiles.slice(0, 3).join(', ')}... and ${failedFiles.length - 3} more`;
+      showNotification(`Uploaded ${successCount} of ${totalBooks} books to Google Drive. Failed: ${failedList}`, failedFiles.length > 5 ? 'error' : 'info');
+    } else {
+      showNotification(`Successfully uploaded ${successCount} books to Google Drive for cross-platform access`, 'success');
+    }
+  } else {
+    showNotification('Failed to upload any books to Google Drive', 'error');
+  }
+
+  return { success: successCount > 0, count: successCount };
+}
+
+// Helper function to get file extension
+function getFileExtension(filename) {
+  return filename.substring(filename.lastIndexOf('.')) || '';
+}
+
+// Updated Google Drive picker callback for importing books
 async function pickerCallback(data, token, notificationId, processFolder) {
   if (data.action !== window.google.picker.Action.PICKED) {
     return; // User canceled or closed the picker
@@ -144,4 +237,38 @@ async function pickerCallback(data, token, notificationId, processFolder) {
   removeNotification(notificationId);
 }
 
-export { pickerCallback };
+// Google Drive picker specifically for selecting a folder for uploads
+async function folderPickerCallback(data, token, books, notificationId, 
+  { showNotification, updateProgressNotification, removeNotification }) {
+  if (data.action !== window.google.picker.Action.PICKED) {
+    return null; // User canceled or closed the picker
+  }
+
+  const docs = data.docs;
+  if (!docs || docs.length === 0) return null;
+
+  // We only care about the first selected folder
+  const selectedFolder = docs.find(doc => doc.mimeType === 'application/vnd.google-apps.folder');
+  
+  if (!selectedFolder) {
+    showNotification('Please select a folder for your book uploads', 'warning');
+    return null;
+  }
+
+  console.log('Selected folder for uploads:', selectedFolder.name, 'ID:', selectedFolder.id);
+  
+  // Upload books to the selected folder
+  const result = await uploadBooksToGoogleDrive(
+    books, 
+    token, 
+    selectedFolder.id, 
+    notificationId,
+    showNotification,
+    updateProgressNotification,
+    removeNotification
+  );
+  
+  return result;
+}
+
+export { pickerCallback, uploadBooksToGoogleDrive, folderPickerCallback };

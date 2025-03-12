@@ -869,6 +869,17 @@
 				} else {
 					showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
 				}
+				
+				// If books were imported locally and successfully added
+				// Store them for potential cross-platform upload
+				if (summary.succeeded > 0) {
+					// Get the newly added books
+					lastImportedBooks = libraryBooks.slice(-summary.succeeded);
+					
+					// Show cross-platform dialog only if at least one book was added
+					// and the import wasn't already from Google Drive
+					showCrossplatformDialog = true;
+				}
 			} else {
 				if (summary.failed > 0) {
 					showNotification(
@@ -884,7 +895,8 @@
 		return {
 			success: summary.succeeded > 0,
 			count: summary.succeeded,
-			summary
+			summary,
+			showCrossplatformOptions: summary.succeeded > 0 && importType === ImportType.Book
 		};
 	}
 
@@ -1948,10 +1960,129 @@
 	}
 
 	// Google Drive API integration
+	import { folderPickerCallback } from './googleDrive.js';
 	const CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com';
 	const APP_ID = '765754879203';
+	
+	// Track books imported in the current session for cross-platform upload
+	let lastImportedBooks = [];
+	let showCrossplatformDialog = false;
 
-	// Use a simpler approach with Google's Picker API directly
+	// Initialize a Google Drive folder picker for uploading books
+	async function initGoogleDriveFolderPicker(books) {
+		try {
+			if (!browser) return;
+			
+			showNotification('Loading Google Drive Folder Picker...', 'info');
+			
+			// Load Google API resources if not already loaded
+			if (!window.gapi || !window.google) {
+				// Load the Google API client if not already loaded
+				if (!window.gapi) {
+					await new Promise<void>((resolve, reject) => {
+						const script = document.createElement('script');
+						script.src = 'https://apis.google.com/js/api.js';
+						script.async = true;
+						script.defer = true;
+						script.onload = () => resolve();
+						script.onerror = () => reject(new Error('Failed to load Google API client'));
+						document.head.appendChild(script);
+					});
+				}
+				
+				// Load the Google Identity Services library if not already loaded
+				if (!window.google) {
+					await new Promise<void>((resolve, reject) => {
+						const script = document.createElement('script');
+						script.src = 'https://accounts.google.com/gsi/client';
+						script.async = true;
+						script.defer = true;
+						script.onload = () => resolve();
+						script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+						document.head.appendChild(script);
+					});
+				}
+			}
+			
+			// Initialize the API client - just load picker
+			await new Promise<void>((resolve) => {
+				window.gapi.load('picker', resolve);
+			});
+			
+			// Create a token client
+			const tokenClient = window.google.accounts.oauth2.initTokenClient({
+				client_id: CLIENT_ID,
+				scope: 'https://www.googleapis.com/auth/drive.file',
+				callback: (tokenResponse) => {
+					if (tokenResponse && tokenResponse.access_token) {
+						// Save token for later use
+						localStorage.setItem('google_drive_token', tokenResponse.access_token);
+						
+						// Create folder picker
+						createFolderPicker(tokenResponse.access_token, books);
+					} else {
+						showNotification('Failed to get authorization token', 'error');
+					}
+				}
+			});
+			
+			// Request the access token
+			tokenClient.requestAccessToken();
+		} catch (error) {
+			console.error('Error initializing Google Drive Folder Picker:', error);
+			showNotification('Failed to load Google Drive Folder Picker', 'error');
+		}
+	}
+	
+	// Create folder picker for uploading books
+	function createFolderPicker(token, books) {
+		window.gapi.load('picker', () => {
+			try {
+				// Create a folders view specifically for selecting a destination folder
+				const foldersView = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
+					.setSelectFolderEnabled(true)
+					.setMimeTypes('application/vnd.google-apps.folder');
+				
+				// Create the picker
+				const picker = new window.google.picker.PickerBuilder()
+					.setTitle('Select a folder for your books')
+					.setOAuthToken(token)
+					.addView(foldersView)
+					.setCallback((data) => handleFolderPickerCallback(data, token, books))
+					.build();
+				
+				// Show the picker
+				picker.setVisible(true);
+			} catch (error) {
+				console.error('Error creating folder picker:', error);
+				showNotification('Error creating folder picker', 'error');
+			}
+		});
+	}
+	
+	// Handle folder picker selection
+	async function handleFolderPickerCallback(data, token, books) {
+		// Create a notification ID for tracking upload progress
+		const notificationId = 'upload-to-drive-' + Date.now();
+		
+		// Call the folder picker callback function
+		await folderPickerCallback(
+			data, 
+			token, 
+			books, 
+			notificationId, 
+			{
+				showNotification,
+				updateProgressNotification,
+				removeNotification
+			}
+		);
+		
+		// Hide the cross-platform dialog
+		showCrossplatformDialog = false;
+	}
+
+	// Use a simpler approach with Google's Picker API directly for importing books
 	async function initGoogleDrivePicker() {
 		try {
 			if (!browser) return;
@@ -2465,6 +2596,50 @@
 								For example, <code>Return-of-the-King.jpg</code> will be matched to a book titled "The Return of the King".
 							</p>
 						{/if}
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+	
+	<!-- Cross-platform access dialog -->
+	{#if showCrossplatformDialog && lastImportedBooks.length > 0}
+		<div class="upload-modal-overlay">
+			<div class="upload-modal-content">
+				<button class="modal-close-button" on:click={() => showCrossplatformDialog = false}>×</button>
+				<h2>Enable Cross-Platform Access</h2>
+				
+				<div class="crossplatform-content">
+					<div class="info-icon">
+						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+							stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="10"></circle>
+							<line x1="12" y1="16" x2="12" y2="12"></line>
+							<line x1="12" y1="8" x2="12.01" y2="8"></line>
+						</svg>
+					</div>
+					
+					<p class="crossplatform-text">
+						Would you like to enable cross-platform access for your imported books?
+					</p>
+					
+					<p class="crossplatform-description">
+						Your books will be uploaded to your Google Drive account, allowing you to access them from any device.
+						This ensures your library is available everywhere you go.
+					</p>
+					
+					<div class="crossplatform-buttons">
+						<button class="btn btn-secondary" on:click={() => showCrossplatformDialog = false}>
+							No, Thanks
+						</button>
+						<button class="btn btn-primary" on:click={() => {
+							// Hide this dialog
+							showCrossplatformDialog = false;
+							// Initialize Google Drive folder picker for upload
+							initGoogleDriveFolderPicker(lastImportedBooks);
+						}}>
+							Yes, Enable Cross-Platform Access
+						</button>
 					</div>
 				</div>
 			</div>
@@ -3886,5 +4061,44 @@
         padding: 2px 4px;
         border-radius: 3px;
         font-family: monospace;
+    }
+    
+    /* Cross-platform dialog styling */
+    .crossplatform-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 10px 0;
+    }
+    
+    .info-icon {
+        margin-bottom: 15px;
+        color: var(--color-theme-1);
+    }
+    
+    .crossplatform-text {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+    }
+    
+    .crossplatform-description {
+        color: #666;
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+    
+    .crossplatform-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    @media (max-width: 480px) {
+        .crossplatform-buttons {
+            flex-direction: column-reverse;
+        }
     }
 </style>

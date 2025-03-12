@@ -515,47 +515,24 @@
 {/if}
 
 <div class="reader-page-layout">
-	<!-- Header toolbar -->
-	<div id="header-bar" class="toolbar header-bar">
-		<button id="back-to-library-button" aria-label="Return to Library" on:click={returnToLibrary}>
-			<svg class="icon" width="24" height="24" aria-hidden="true">
-				<path d="M 19 11 H 9 l 7 -7 l -1.4 -1.4 l -8.4 8.4 l 8.4 8.4 L 16 18 l -7 -7 h 10 v -2 Z" />
-			</svg>
-		</button>
-		<button id="side-bar-button" aria-label="Show sidebar">
-			<svg class="icon" width="24" height="24" aria-hidden="true">
-				<path d="M 4 6 h 16 M 4 12 h 16 M 4 18 h 16" />
-			</svg>
-		</button>
-		<div id="menu-button" class="menu-container">
-			<button aria-label="Show settings" aria-haspopup="true">
-				<svg class="icon" width="24" height="24" aria-hidden="true">
-					<path
-						d="M5 12.7a7 7 0 0 1 0-1.4l-1.8-2 2-3.5 2.7.5a7 7 0 0 1 1.2-.7L10 3h4l.9 2.6 1.2.7 2.7-.5 2 3.4-1.8 2a7 7 0 0 1 0 1.5l1.8 2-2 3.5-2.7-.5a7 7 0 0 1-1.2.7L14 21h-4l-.9-2.6a7 7 0 0 1-1.2-.7l-2.7.5-2-3.4 1.8-2Z" />
-					<circle cx="12" cy="12" r="3" />
-				</svg>
-			</button>
-		</div>
-	</div>
-
 	<!-- Book content container -->
 	<div id="ebook-container" class="reader-container"></div>
+</div>
 
-	<!-- Navigation bar with progress slider -->
-	<div id="nav-bar" class="toolbar nav-bar">
-		<button id="left-button" aria-label="Go left">
-			<svg class="icon" width="24" height="24" aria-hidden="true">
-				<path d="M 15 6 L 9 12 L 15 18" />
-			</svg>
-		</button>
-		<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
-		<datalist id="tick-marks"></datalist>
-		<button id="right-button" aria-label="Go right">
-			<svg class="icon" width="24" height="24" aria-hidden="true">
-				<path d="M 9 6 L 15 12 L 9 18" />
-			</svg>
-		</button>
-	</div>
+<!-- Navigation bar with progress slider -->
+<div id="nav-bar" class="toolbar nav-bar">
+	<button id="left-button" aria-label="Go left">
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 15 6 L 9 12 L 15 18" />
+		</svg>
+	</button>
+	<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
+	<datalist id="tick-marks"></datalist>
+	<button id="right-button" aria-label="Go right">
+		<svg class="icon" width="24" height="24" aria-hidden="true">
+			<path d="M 9 6 L 15 12 L 9 18" />
+		</svg>
+	</button>
 </div>
 
 <style>
@@ -664,7 +641,7 @@
     .reader-page-layout {
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        height: 83vh;
         width: 100%;
         overflow: hidden;
     }
