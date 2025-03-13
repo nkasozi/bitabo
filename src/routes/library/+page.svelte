@@ -678,7 +678,8 @@
 					// Save to database immediately
 					await saveBook(bookData);
 
-					bookData.ribbonData = 'NEW';
+					bookData.ribbonData = "NEW";
+						bookData.ribbonExpiry = Date.now() + 60000; // 60 seconds from now
 
 					// Get the newly added books
 					lastImportedBooks = [...lastImportedBooks, bookData];
@@ -1970,6 +1971,38 @@
 	// Track books imported in the current session for cross-platform upload
 	let lastImportedBooks = [];
 	let showCrossPlatformDialog = false;
+	let ribbonCheckInterval; // Timer for checking expired ribbons
+	
+	// Check for temporary ribbons that have expired
+	function checkExpiredRibbons() {
+		if (!libraryBooks || libraryBooks.length === 0) return;
+		
+		const now = Date.now();
+		let ribbonsExpired = false;
+		
+		// Loop through all books and check for expired ribbons
+		libraryBooks.forEach(book => {
+			// Only check books with temporary ribbon types (NEW, UPDATED) that have an expiry
+			if (book.ribbonData && (book.ribbonData === 'NEW' || book.ribbonData === 'UPDATED') && book.ribbonExpiry) {
+				if (now > book.ribbonExpiry) {
+					// Ribbon has expired - clear it
+					console.log(`Ribbon expired for book: ${book.title}`);
+					book.ribbonData = null;
+					book.ribbonExpiry = null;
+					ribbonsExpired = true;
+					
+					// Update the book in the database silently (don't need to await)
+					saveBook(book);
+				}
+			}
+		});
+		
+		// If any ribbons expired, refresh the coverflow to update the UI
+		if (ribbonsExpired && coverflow) {
+			console.log('Refreshing coverflow due to expired ribbons');
+			setTimeout(initCoverflow, 100);
+		}
+	}
 
 	// Initialize a Google Drive folder picker for uploading books
 	async function initGoogleDriveFolderPicker(books) {
@@ -2374,6 +2407,12 @@
 
 	onMount(async () => {
 			if (!browser) return;
+			
+			// Set up timer to check for expired ribbons every 10 seconds
+			ribbonCheckInterval = setInterval(checkExpiredRibbons, 10000);
+			
+			// Also check once immediately to handle any ribbons that may have expired while away
+			setTimeout(checkExpiredRibbons, 1000);
 
 			const checkIsMobile = () => {
 				// Adjust this threshold value if needed
@@ -2419,6 +2458,11 @@
 
 	onDestroy(() => {
 		if (!browser) return;
+		
+		// Clear the ribbon check interval
+		if (ribbonCheckInterval) {
+			clearInterval(ribbonCheckInterval);
+		}
 
 		// Remove event listeners
 		window.removeEventListener('keydown', handleKeyNavigation);
