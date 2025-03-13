@@ -2848,7 +2848,7 @@
 </div>
 
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap'); /* Reset and Base Styles for 3D Books */
+    @import url('https://fonts.googleapis.com/css2?family=Finger+Paint&family=Sedgwick+Ave&display=swap'); /* Reset and Base Styles for 3D Books */
     *,
     *:after,
     *:before {
@@ -2863,7 +2863,7 @@
     /* 2. Add a class to style the text */
     .spray-painted-text {
         /* Use the imported font */
-        font-family: 'Permanent Marker', cursive;
+        font-family: 'Sedgwick Ave', cursive;
         font-size: 2rem;
         /* Make it stand out with a bright color */
         color: #ffffff;
@@ -2872,7 +2872,6 @@
         text-shadow: 0 0 2px #ff00ff, /* faint magenta outline */ 0 0 5px #ff00ff, /* bigger magenta glow */ 2px 2px 4px #000000; /* a slight black drop shadow */
 
         /* Extra styling: uppercase, letter spacing, etc. */
-        text-transform: uppercase;
         letter-spacing: 0.05em;
 
         /* Justify text, but center the last line */
