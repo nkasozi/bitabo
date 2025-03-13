@@ -641,7 +641,7 @@
     .reader-page-layout {
         display: flex;
         flex-direction: column;
-        height: 83dvh;
+        height: 80dvh;
         width: 100%;
         overflow: hidden;
     }
