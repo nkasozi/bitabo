@@ -26,7 +26,7 @@
   "categories": ["books", "education", "productivity"],
   "dir": "ltr",
   "lang": "en-US",
-  "orientation": "any",
+  "orientation": "portrait",
   "scope": "/",
   "prefer_related_applications": false,
   "related_applications": [],
