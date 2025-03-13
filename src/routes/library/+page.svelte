@@ -7,7 +7,7 @@
 		registerServiceWorker, deleteBook, migrateData,
 		sendMessageToSW
 	} from '$lib/serviceWorker';
-	
+
 	// Import type constants - define at the top to avoid reference errors
 	const ImportType = {
 		Book: 'book',
@@ -33,7 +33,7 @@
 	let isUploadModalOpen = false;
 	let coverflow: Coverflow;
 	let isMobile: boolean = false;
-	
+
 	// Import settings
 	let importType: typeof ImportType[keyof typeof ImportType] = ImportType.Book;
 	let similarityThreshold: number = 0.7; // Default 70% similarity
@@ -46,7 +46,7 @@
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'bitabo-books';
 	const BOOKS_STORE = 'books';
-	
+
 	// Title similarity scoring function - computes similarity between two strings from 0 to 1
 	function calculateTitleSimilarity(title1: string, title2: string): number {
 		// Normalize strings: lowercase, remove non-alphanumeric characters, trim
@@ -56,20 +56,20 @@
 				.replace(/\s+/g, ' ')    // Replace multiple spaces with single space
 				.trim();
 		};
-		
+
 		const normalizedTitle1 = normalize(title1);
 		const normalizedTitle2 = normalize(title2);
-		
+
 		// If either string is empty after normalization, return 0
 		if (!normalizedTitle1 || !normalizedTitle2) return 0;
-		
+
 		// If strings are identical after normalization, return 1
 		if (normalizedTitle1 === normalizedTitle2) return 1;
-		
+
 		// Simple word-based matching
 		const words1 = normalizedTitle1.split(' ');
 		const words2 = normalizedTitle2.split(' ');
-		
+
 		// Count matching words (case insensitive)
 		let matchCount = 0;
 		for (const word1 of words1) {
@@ -82,13 +82,13 @@
 				}
 			}
 		}
-		
+
 		// Calculate similarity as proportion of words that match
 		const totalWords = Math.max(
-			words1.filter(w => w.length >= 3).length, 
+			words1.filter(w => w.length >= 3).length,
 			words2.filter(w => w.length >= 3).length
 		);
-		
+
 		return totalWords > 0 ? matchCount / totalWords : 0;
 	}
 
@@ -586,13 +586,13 @@
 	}
 
 	// Process folder of e-books or book covers - one file at a time with immediate UI updates
-	async function processFolder(files: File[]) {
+	async function processFolder(files: File[], isFromGoogleDrive = false) {
 		console.log('[DEBUG] Processing folder with', files.length, 'files');
 
 		// Determine file filter based on import type
 		let supportedFormats = SUPPORTED_FORMATS;
 		let filterMessage = 'No supported e-book files found. Supported formats: ' + SUPPORTED_FORMATS.join(', ');
-		
+
 		// For book cover imports, allow image formats
 		if (importType === ImportType.BookCover) {
 			supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
@@ -629,10 +629,10 @@
 
 		// Create appropriate progress notification message
 		const progressId = 'import-progress';
-		const progressMessage = importType === ImportType.Book 
-			? 'Processing books...' 
+		const progressMessage = importType === ImportType.Book
+			? 'Processing books...'
 			: 'Processing book covers...';
-			
+
 		if (filteredFiles.length > 1) {
 			showProgressNotification(progressMessage, 0, filteredFiles.length, progressId);
 		}
@@ -679,6 +679,10 @@
 					await saveBook(bookData);
 
 					bookData.ribbonData = 'NEW';
+
+					// Get the newly added books
+					lastImportedBooks = [...lastImportedBooks, bookData];
+
 
 					// Add the book to library immediately 
 					libraryBooks = [...libraryBooks, bookData];
@@ -742,36 +746,36 @@
 				try {
 					// Create a blob URL for the image
 					const coverUrl = URL.createObjectURL(file);
-					
+
 					// Extract a potential title from the filename
 					const possibleTitle = file.name
 						.replace(/\.[^/.]+$/, '') // Remove file extension
 						.replace(/[_\-]/g, ' ')   // Replace underscores and hyphens with spaces
 						.trim();
-						
+
 					console.log('[DEBUG] Extracted possible title from filename:', possibleTitle);
-					
+
 					// Look for matching books in the library based on title similarity
 					let matchFound = false;
 					let matchedBook = null;
-					
+
 					for (const book of libraryBooks) {
 						const similarity = calculateTitleSimilarity(book.title, possibleTitle);
 						console.log(`[DEBUG] Similarity score for "${book.title}" vs "${possibleTitle}": ${similarity}`);
-						
+
 						if (similarity >= similarityThreshold) {
 							matchFound = true;
 							matchedBook = book;
-							
+
 							// Update the book's cover with the new image
 							console.log(`[DEBUG] Updating cover for book "${book.title}" with file ${file.name}`);
-							
+
 							// Store the old URL so we can revoke it later
 							const oldCoverUrl = book.coverUrl;
-							
+
 							// Update the book's cover URL
 							book.coverUrl = coverUrl;
-							
+
 							// Create a blob from the file
 							const fileReader = new FileReader();
 							const coverBlob = await new Promise<Blob>((resolve) => {
@@ -780,46 +784,46 @@
 								};
 								fileReader.readAsArrayBuffer(file);
 							});
-							
+
 							// Update the book's cover blob
 							book.coverBlob = coverBlob;
-							
+
 							// Update lastAccessed field
 							book.lastAccessed = Date.now();
-							
+
 							// Save the updated book to the database
 							await saveBook(book);
-							
+
 							// Revoke the old URL to prevent memory leaks
 							if (oldCoverUrl && oldCoverUrl.startsWith('blob:')) {
 								URL.revokeObjectURL(oldCoverUrl);
 							}
-							
+
 							// Update tracking
 							summary.succeeded++;
 							summary.updated++;
-							
+
 							// Apply a ribbon to show it's been updated
 							book.ribbonData = 'UPDATED';
-							
+
 							// Break after the first match (only update one book per cover file)
 							break;
 						}
 					}
-					
+
 					if (!matchFound) {
 						console.log(`[DEBUG] No matching book found for cover "${possibleTitle}"`);
 						summary.failed++;
 						summary.failedBooks.push(file.name);
 					}
-					
+
 					// Update UI after processing each cover
 					if (bookshelf && matchFound) {
 						// Update the coverflow - wrap in a Promise to ensure it completes
 						await new Promise(resolve => {
 							setTimeout(() => {
 								initCoverflow();
-								
+
 								// Select the updated book
 								if (matchedBook) {
 									const bookIndex = libraryBooks.findIndex(book => book.id === matchedBook.id);
@@ -830,12 +834,12 @@
 										}
 									}
 								}
-								
+
 								resolve(null);
 							}, 100);
 						});
 					}
-					
+
 					// Small delay between covers to allow UI to render
 					if (i < filteredFiles.length - 1) {
 						await new Promise(resolve => setTimeout(resolve, 200));
@@ -869,16 +873,14 @@
 				} else {
 					showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
 				}
-				
+
 				// If books were imported locally and successfully added
 				// Store them for potential cross-platform upload
 				if (summary.succeeded > 0) {
-					// Get the newly added books
-					lastImportedBooks = libraryBooks.slice(-summary.succeeded);
-					
+
 					// Show cross-platform dialog only if at least one book was added
 					// and the import wasn't already from Google Drive
-					showCrossplatformDialog = true;
+					showCrossPlatformDialog = !isFromGoogleDrive;
 				}
 			} else {
 				if (summary.failed > 0) {
@@ -1961,20 +1963,31 @@
 
 	// Google Drive API integration
 	import { folderPickerCallback } from './googleDrive.js';
+
 	const CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com';
 	const APP_ID = '765754879203';
-	
+
 	// Track books imported in the current session for cross-platform upload
 	let lastImportedBooks = [];
-	let showCrossplatformDialog = false;
+	let showCrossPlatformDialog = false;
 
 	// Initialize a Google Drive folder picker for uploading books
 	async function initGoogleDriveFolderPicker(books) {
+		// Ensure we're using only the books just imported, not from elsewhere
+		if (!books || books.length === 0) {
+			console.error('No books provided for upload');
+			showNotification('No books selected for cross-platform access', 'error');
+			return;
+		}
+
+		// Debug log the books we're about to upload
+		console.log('About to upload these books to Google Drive:',
+			books.map(b => ({ title: b.title, fileName: b.fileName })));
 		try {
 			if (!browser) return;
-			
+
 			showNotification('Loading Google Drive Folder Picker...', 'info');
-			
+
 			// Load Google API resources if not already loaded
 			if (!window.gapi || !window.google) {
 				// Load the Google API client if not already loaded
@@ -1989,7 +2002,7 @@
 						document.head.appendChild(script);
 					});
 				}
-				
+
 				// Load the Google Identity Services library if not already loaded
 				if (!window.google) {
 					await new Promise<void>((resolve, reject) => {
@@ -2003,12 +2016,12 @@
 					});
 				}
 			}
-			
+
 			// Initialize the API client - just load picker
 			await new Promise<void>((resolve) => {
 				window.gapi.load('picker', resolve);
 			});
-			
+
 			// Create a token client
 			const tokenClient = window.google.accounts.oauth2.initTokenClient({
 				client_id: CLIENT_ID,
@@ -2017,7 +2030,7 @@
 					if (tokenResponse && tokenResponse.access_token) {
 						// Save token for later use
 						localStorage.setItem('google_drive_token', tokenResponse.access_token);
-						
+
 						// Create folder picker
 						createFolderPicker(tokenResponse.access_token, books);
 					} else {
@@ -2025,7 +2038,7 @@
 					}
 				}
 			});
-			
+
 			// Request the access token
 			tokenClient.requestAccessToken();
 		} catch (error) {
@@ -2033,7 +2046,7 @@
 			showNotification('Failed to load Google Drive Folder Picker', 'error');
 		}
 	}
-	
+
 	// Create folder picker for uploading books
 	function createFolderPicker(token, books) {
 		window.gapi.load('picker', () => {
@@ -2042,7 +2055,7 @@
 				const foldersView = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
 					.setSelectFolderEnabled(true)
 					.setMimeTypes('application/vnd.google-apps.folder');
-				
+
 				// Create the picker
 				const picker = new window.google.picker.PickerBuilder()
 					.setTitle('Select a folder for your books')
@@ -2050,7 +2063,7 @@
 					.addView(foldersView)
 					.setCallback((data) => handleFolderPickerCallback(data, token, books))
 					.build();
-				
+
 				// Show the picker
 				picker.setVisible(true);
 			} catch (error) {
@@ -2059,27 +2072,27 @@
 			}
 		});
 	}
-	
+
 	// Handle folder picker selection
 	async function handleFolderPickerCallback(data, token, books) {
 		// Create a notification ID for tracking upload progress
 		const notificationId = 'upload-to-drive-' + Date.now();
-		
+
 		// Call the folder picker callback function
 		await folderPickerCallback(
-			data, 
-			token, 
-			books, 
-			notificationId, 
+			data,
+			token,
+			books,
+			notificationId,
 			{
 				showNotification,
 				updateProgressNotification,
 				removeNotification
 			}
 		);
-		
+
 		// Hide the cross-platform dialog
-		showCrossplatformDialog = false;
+		showCrossPlatformDialog = false;
 	}
 
 	// Use a simpler approach with Google's Picker API directly for importing books
@@ -2285,7 +2298,7 @@
 						updateProgressNotification(`Importing ${i + 1}/${totalFiles}: ${doc.name}`, i + 1, totalFiles, notificationId);
 
 						// Process this file individually
-						const result = await processFolder([file]);
+						const result = await processFolder([file], true);
 
 						if (result && result.success) {
 							successCount++;
@@ -2442,8 +2455,8 @@
 	<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
 
 	<div class="epic-quote text-center mb-4">
-		<p>One place to house them, One shelf to hold them,</p>
-		<p>One search to find them, And in knowledge bind them</p>
+		<p>One place to store your books, One shelf to hold them,</p>
+		<p>One search to find them, And with knowledge organise them</p>
 	</div>
 
 	<div class="flex flex-col justify-center mb-4">
@@ -2514,7 +2527,7 @@
 			<div class="upload-modal-content">
 				<button class="modal-close-button" on:click={closeUploadModal}>×</button>
 				<h2>Import Files</h2>
-				
+
 				<!-- Import type selection -->
 				<div class="import-type-selector">
 					<label>Import Type:</label>
@@ -2525,7 +2538,7 @@
 						</select>
 					</div>
 				</div>
-				
+
 				<!-- Show similarity threshold slider only for cover import -->
 				{#if importType === ImportType.BookCover}
 					<div class="similarity-slider">
@@ -2538,11 +2551,11 @@
 								</span>
 							</span>
 						</label>
-						<input 
-							type="range" 
-							min="0.2" 
-							max="1" 
-							step="0.05" 
+						<input
+							type="range"
+							min="0.2"
+							max="1"
+							step="0.05"
 							bind:value={similarityThreshold}
 						/>
 						<div class="slider-labels">
@@ -2589,11 +2602,12 @@
 								Supported formats: JPG, JPEG, PNG, WEBP, GIF
 							{/if}
 						</p>
-						
+
 						{#if importType === ImportType.BookCover}
 							<p class="import-hint">
 								Cover images should have filenames that match your book titles.
-								For example, <code>Return-of-the-King.jpg</code> will be matched to a book titled "The Return of the King".
+								For example, <code>Return-of-the-King.jpg</code> will be matched to a book titled "The Return of the
+								King".
 							</p>
 						{/if}
 					</div>
@@ -2601,42 +2615,62 @@
 			</div>
 		</div>
 	{/if}
-	
+
 	<!-- Cross-platform access dialog -->
-	{#if showCrossplatformDialog && lastImportedBooks.length > 0}
+	{#if showCrossPlatformDialog && lastImportedBooks.length > 0}
 		<div class="upload-modal-overlay">
 			<div class="upload-modal-content">
-				<button class="modal-close-button" on:click={() => showCrossplatformDialog = false}>×</button>
+				<button class="modal-close-button" on:click={() => showCrossPlatformDialog = false}>×</button>
 				<h2>Enable Cross-Platform Access</h2>
-				
+
 				<div class="crossplatform-content">
 					<div class="info-icon">
 						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
-							stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<circle cx="12" cy="12" r="10"></circle>
 							<line x1="12" y1="16" x2="12" y2="12"></line>
 							<line x1="12" y1="8" x2="12.01" y2="8"></line>
 						</svg>
 					</div>
-					
+
 					<p class="crossplatform-text">
 						Would you like to enable cross-platform access for your imported books?
 					</p>
-					
+
 					<p class="crossplatform-description">
 						Your books will be uploaded to your Google Drive account, allowing you to access them from any device.
 						This ensures your library is available everywhere you go.
 					</p>
-					
+
 					<div class="crossplatform-buttons">
-						<button class="btn btn-secondary" on:click={() => showCrossplatformDialog = false}>
+						<button class="btn btn-secondary" on:click={() => showCrossPlatformDialog = false}>
 							No, Thanks
 						</button>
-						<button class="btn btn-primary" on:click={() => {
+						<button class="btn btn-primary" on:click={() =>
+						{
 							// Hide this dialog
-							showCrossplatformDialog = false;
+							showCrossPlatformDialog = false;
 							// Initialize Google Drive folder picker for upload
-							initGoogleDriveFolderPicker(lastImportedBooks);
+							// Debug logging - print books being sent for upload
+							console.log('Books to be uploaded:', lastImportedBooks.map(b => b.title));
+
+							// Create a copy of the books array and filter out books without file data
+							const booksToUpload = [...lastImportedBooks].filter(book =>
+							{
+									const hasFileData = book?.file instanceof File;
+									if (!hasFileData) {
+											console.warn('Book missing file data:', book.title);
+									}
+									return hasFileData;
+							});
+
+							console.log('Filtered books for upload:', booksToUpload.map(b => b.title));
+
+							// Initialize Google Drive folder picker for upload with the filtered books
+							initGoogleDriveFolderPicker(booksToUpload);
+
+							//reset the lastImported Books field
+							lastImportedBooks = [];
 						}}>
 							Yes, Enable Cross-Platform Access
 						</button>
@@ -2718,6 +2752,12 @@
 				Its looking lonely in here...<br />
 				Add some of your favourite books to get started
 			</div>
+			<div class="epic-quote text-center mb-4">
+				<p>This is your FREE online ebook library and reader</p>
+				<p>One place to store all your books and read them</p>
+				<p>Cross platform support for EPUB, PDF, MOBI, AZW3, CBZ books</p>
+				<p>Premium version supports time bound controlled sharing <br/> of your ebooks with friends AND more Ebook formats</p>
+			</div>
 		{/if}
 
 		<!-- Show selected book info - only visible when books are loaded -->
@@ -2796,7 +2836,7 @@
 				<div class="flex justify-center gap-4">
 					<button class="btn btn-primary mt-4"
 									on:click={() => { openSelectedBook().catch(err => console.error('Error opening book:', err)); }}>
-						Open Book
+						Read this Book
 					</button>
 					<button class="btn btn-danger mt-4" on:click={removeSelectedBook}>
 						Remove Book
@@ -3940,23 +3980,23 @@
     .epic-quote p {
         margin-bottom: 5px;
     }
-    
+
     /* Import type selector */
     .import-type-selector {
         margin-bottom: 20px;
         display: flex;
         flex-direction: column;
     }
-    
+
     .import-type-selector label {
         margin-bottom: 6px;
         font-weight: 500;
     }
-    
+
     .select-wrapper {
         position: relative;
     }
-    
+
     .select-wrapper select {
         width: 100%;
         padding: 10px;
@@ -3967,7 +4007,7 @@
         font-size: 1rem;
         appearance: none;
     }
-    
+
     .select-wrapper::after {
         content: "▼";
         position: absolute;
@@ -3978,23 +4018,23 @@
         font-size: 0.8rem;
         opacity: 0.6;
     }
-    
+
     /* Similarity threshold slider */
     .similarity-slider {
         margin-bottom: 20px;
     }
-    
+
     .similarity-slider label {
         display: block;
         margin-bottom: 8px;
         font-weight: 500;
     }
-    
+
     .similarity-slider input[type="range"] {
         width: 100%;
         margin: 10px 0;
     }
-    
+
     .slider-labels {
         display: flex;
         justify-content: space-between;
@@ -4002,7 +4042,7 @@
         opacity: 0.7;
         margin-top: -5px;
     }
-    
+
     /* Tooltip for similarity threshold */
     .tooltip {
         position: relative;
@@ -4017,7 +4057,7 @@
         font-size: 0.8em;
         cursor: help;
     }
-    
+
     .tooltip .tooltip-text {
         visibility: hidden;
         width: 250px;
@@ -4037,12 +4077,12 @@
         font-size: 0.9rem;
         line-height: 1.4;
     }
-    
+
     .tooltip:hover .tooltip-text {
         visibility: visible;
         opacity: 1;
     }
-    
+
     /* Import hint */
     .import-hint {
         font-size: 0.9em;
@@ -4055,14 +4095,14 @@
         border-radius: 4px;
         border-left: 3px solid var(--color-theme-1);
     }
-    
+
     .import-hint code {
         background-color: rgba(0, 0, 0, 0.1);
         padding: 2px 4px;
         border-radius: 3px;
         font-family: monospace;
     }
-    
+
     /* Cross-platform dialog styling */
     .crossplatform-content {
         display: flex;
@@ -4071,31 +4111,31 @@
         text-align: center;
         padding: 10px 0;
     }
-    
+
     .info-icon {
         margin-bottom: 15px;
         color: var(--color-theme-1);
     }
-    
+
     .crossplatform-text {
         font-size: 1.2rem;
         font-weight: 500;
         margin-bottom: 10px;
     }
-    
+
     .crossplatform-description {
         color: #666;
         margin-bottom: 20px;
         line-height: 1.5;
     }
-    
+
     .crossplatform-buttons {
         display: flex;
         gap: 15px;
         justify-content: center;
         flex-wrap: wrap;
     }
-    
+
     @media (max-width: 480px) {
         .crossplatform-buttons {
             flex-direction: column-reverse;

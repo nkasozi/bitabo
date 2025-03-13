@@ -4,6 +4,14 @@ async function uploadBooksToGoogleDrive(books, token, folderId, notificationId, 
     console.error('Missing required parameters for upload');
     return { success: false, count: 0 };
   }
+  
+  // Debug log the books we're uploading to help identify the issue
+  console.log('Books to upload to Google Drive:', books.map(book => ({
+    title: book.title,
+    fileName: book.fileName,
+    hasFile: !!book.file,
+    fileSize: book.file ? book.file.size : 0
+  })));
 
   // Track upload progress
   let successCount = 0;
@@ -17,19 +25,29 @@ async function uploadBooksToGoogleDrive(books, token, folderId, notificationId, 
   for (let i = 0; i < books.length; i++) {
     const book = books[i];
     try {
-      // Update progress
-      updateProgressNotification(`Uploading ${i+1}/${totalBooks}: ${book.title}`, i+1, totalBooks, notificationId);
+      // Get the actual filename that will be used for the upload
+      const uploadFilename = book.fileName || book.title + getFileExtension(book.file.name);
+      
+      // Update progress with the actual filename
+      updateProgressNotification(`Uploading ${i+1}/${totalBooks}: ${uploadFilename}`, i+1, totalBooks, notificationId);
       
       // Only upload if we have the file data
       if (!book.file) {
-        console.error(`Book ${book.title} missing file data, skipping upload`);
-        failedFiles.push(book.title);
+        console.error(`Book ${uploadFilename} missing file data, skipping upload`);
+        failedFiles.push(uploadFilename);
+        continue;
+      }
+      
+      // Verify the file data is valid
+      if (!(book.file instanceof File) || book.file.size === 0) {
+        console.error(`Book ${uploadFilename} has invalid file data, skipping upload`);
+        failedFiles.push(uploadFilename);
         continue;
       }
 
       // Prepare file metadata
       const metadata = {
-        name: book.fileName || book.title + getFileExtension(book.file.name),
+        name: uploadFilename,
         mimeType: book.fileType || 'application/octet-stream',
         parents: folderId ? [folderId] : []
       };
@@ -49,14 +67,14 @@ async function uploadBooksToGoogleDrive(books, token, folderId, notificationId, 
       });
 
       if (!uploadResponse.ok) {
-        console.error(`Failed to upload ${book.title}: ${uploadResponse.status}`);
-        failedFiles.push(book.title);
+        console.error(`Failed to upload ${uploadFilename}: ${uploadResponse.status}`);
+        failedFiles.push(uploadFilename);
         continue;
       }
 
       // Parse the response
       const uploadResult = await uploadResponse.json();
-      console.log(`Successfully uploaded ${book.title} to Google Drive, ID: ${uploadResult.id}`);
+      console.log(`Successfully uploaded ${uploadFilename} to Google Drive, ID: ${uploadResult.id}`);
       successCount++;
       
       // Small delay between uploads
@@ -64,8 +82,8 @@ async function uploadBooksToGoogleDrive(books, token, folderId, notificationId, 
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (error) {
-      console.error(`Error uploading ${book.title}:`, error);
-      failedFiles.push(book.title);
+      console.error(`Error uploading ${uploadFilename || book.fileName || book.title}:`, error);
+      failedFiles.push(uploadFilename || book.fileName || book.title);
     }
   }
 
@@ -198,8 +216,8 @@ async function pickerCallback(data, token, notificationId, processFolder) {
       // Process this file immediately and add to library
       updateProgressNotification(`Importing ${i+1}/${totalFiles}: ${doc.name}`, i+1, totalFiles, notificationId);
       
-      // Process this file individually
-      const result = await processFolder([file]);
+      // Process this file individually - pass true to indicate it's from Google Drive
+      const result = await processFolder([file], true);
       
       if (result && result.success) {
         successCount++;

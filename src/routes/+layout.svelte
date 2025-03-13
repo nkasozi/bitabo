@@ -48,6 +48,8 @@
 			<a href="/privacy">Privacy Policy</a>
 			<span class="separator">|</span>
 			<a href="/tos">Terms of Service</a>
+			<span class="separator">|</span>
+			<a href="mailto:mwooyogwajanzi@gmail.com">Contact Us</a>
 		</div>
 	</footer>
 </div>
