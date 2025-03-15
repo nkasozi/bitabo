@@ -1150,7 +1150,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 						if (book) {
 							// Extract cover image
 							const coverBlob = await book.getCover?.();
-							let coverUrl = '/empty-library-image.png';
+							let coverUrl = '/placeholder-cover.png';
 							
 							if (coverBlob) {
 								coverUrl = URL.createObjectURL(coverBlob);
@@ -1175,7 +1175,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 						throw error; // Re-throw to allow proper error handling in the library page
 					}
 				}
-				return { cover: '/empty-library-image.png' };
+				return { cover: '/placeholder-cover.png' };
 			}
 			
 			// Normal book opening
