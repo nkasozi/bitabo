@@ -2961,9 +2961,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
         /* Add will-change for better performance */
         will-change: transform;
         /* Use hardware acceleration with translateZ(0) */
-        -webkit-transform: translateZ(0);
-        -moz-transform: translateZ(0);
-        transform: translateZ(0);
+        -webkit-transform: translateZ(0.1);
+        -moz-transform: translateZ(0.1);
+        transform: translateZ(0.1);
         /* Improve iOS performance */
         -webkit-backface-visibility: hidden;
         backface-visibility: hidden;
@@ -2982,9 +2982,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-perspective: 800px;
         perspective: 800px;
         /* Hardware acceleration */
-        -webkit-transform: translateZ(0);
-        -moz-transform: translateZ(0);
-        transform: translateZ(0);
+        -webkit-transform: translateZ(0.1);
+        -moz-transform: translateZ(0.1);
+        transform: translateZ(0.1);
         -webkit-transform-style: preserve-3d;
         -moz-transform-style: preserve-3d;
         transform-style: preserve-3d;
@@ -3475,8 +3475,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
         backface-visibility: hidden;
         
         /* Simplify transform to reduce iOS shakiness */
-        -webkit-transform: rotate(45deg) translate3d(-70px, 0, 0);
-        transform: rotate(45deg) translate3d(-70px, 0, 0);
+        -webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
+        transform: rotate(45deg) translate3d(40px, -100px, 0);
         /* Keep transform origin consistent */
         -webkit-transform-origin: top left;
         transform-origin: top left;
@@ -3513,8 +3513,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
         backface-visibility: hidden;
         
         /* Simplify transform to reduce iOS shakiness - using same transform as regular ribbon */
-        -webkit-transform: rotate(45deg) translate3d(-70px, 0, 0);
-        transform: rotate(45deg) translate3d(-70px, 0, 0);
+        -webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
+        transform: rotate(45deg) translate3d(40px, -100px, 0);
         /* Keep transform origin consistent */
         -webkit-transform-origin: top left;
         transform-origin: top left;
@@ -3549,8 +3549,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
         background-size: contain;
         background-position: center;
         /* Improve iOS rendering */
-        -webkit-transform: translateZ(0);
-        transform: translateZ(0);
+        -webkit-transform: translateZ(0.1);
+        transform: translateZ(0.1);
         -webkit-backface-visibility: hidden;
         backface-visibility: hidden;
         /* Help avoid iOS flickering */
@@ -3601,21 +3601,6 @@ book.style.webkitTransformStyle = 'preserve-3d';
         .coverflow-empty-container {
             height: 400px;
         }
-    }
-
-    .empty-library-image {
-        max-width: 70%;
-        max-height: 70%;
-        object-fit: contain;
-        border-radius: 8px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
-        transition: transform 0.3s ease;
-        position: static; /* Prevent position:absolute from coverflow */
-        transform: none; /* Prevent transform from coverflow */
-    }
-
-    .empty-library-image:hover {
-        transform: scale(1.03);
     }
 
     /* Modal dialog styling */
