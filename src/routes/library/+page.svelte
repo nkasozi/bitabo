@@ -3438,6 +3438,8 @@
         font-weight: bold;
 
         /* Rotate the entire span to create the diagonal effect */
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
         transform: rotate(45deg) translateY(-100px) translateX(30px);
         transform-origin: top left;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
@@ -3461,6 +3463,8 @@
         font-weight: bold;
 
         /* Rotate the entire span to create the diagonal effect */
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
         transform: rotate(45deg) translateY(-100px) translateX(30px);
         transform-origin: top left;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
@@ -3470,6 +3474,8 @@
     /* Active book styling */
     :global(.active-book) {
         transform: scale(1.05) !important;
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
         z-index: 10 !important;
         position: relative;
     }
@@ -3500,10 +3506,14 @@
         from {
             opacity: 0;
             transform: translateY(10px);
+            -webkit-backface-visibility: hidden;
+            -moz-backface-visibility: hidden;
         }
         to {
             opacity: 1;
             transform: translateY(0);
+            -webkit-backface-visibility: hidden;
+            -moz-backface-visibility: hidden;
         }
     }
 
