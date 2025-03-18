@@ -1168,7 +1168,10 @@
 
 				if (offset === 0) {
 					// Center book - keep as is
-					book.style.transform = `translateX(0) translateZ(60px) rotateY(0deg) scale(${this.params.scale.active})`;
+					// Use translate3d for better iOS performance
+book.style.transform = `translate3d(0, 0, 60px) rotateY(0deg) scale(${this.params.scale.active})`;
+// For iOS, explicitly set transform style for child elements
+book.style.webkitTransformStyle = 'preserve-3d';
 					book.classList.add('active-book');
 					//book.style.filter = 'drop-shadow(0 10px 15px rgba(0,0,0,0.6))';
 
@@ -1202,8 +1205,10 @@
 
 					const scaleValue = this.params.scale.inactive - (distance * 0.05);
 
-					// Apply transform
-					book.style.transform = `translateX(${xPosition}px) translateZ(${zPosition}px) rotateY(${rotationAngle}deg) scale(${scaleValue})`;
+					// Apply transform using translate3d for iOS performance
+					book.style.transform = `translate3d(${xPosition}px, 0, ${zPosition}px) rotateY(${rotationAngle}deg) scale(${scaleValue})`;
+					// Explicitly set webkit styles for iOS
+					book.style.webkitTransformStyle = 'preserve-3d';
 
 					// Adjust z-indexes based on new rotation approach
 					if (direction < 0) {
@@ -2953,7 +2958,17 @@
         position: absolute;
         width: 160px;
         height: 300px;
-        transition: all 0.5s ease;
+        /* Add will-change for better performance */
+        will-change: transform;
+        /* Use hardware acceleration with translateZ(0) */
+        -webkit-transform: translateZ(0);
+        -moz-transform: translateZ(0);
+        transform: translateZ(0);
+        /* Improve iOS performance */
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        /* Smooth iOS transitions */
+        transition: transform 0.5s cubic-bezier(0.215, 0.61, 0.355, 1);
         transform-style: preserve-3d;
     }
 
@@ -2962,13 +2977,25 @@
         position: relative;
         width: 160px;
         height: 220px;
-        -webkit-perspective: 1000px;
-        -moz-perspective: 1000px;
-        perspective: 1000px;
+        /* More stable perspective for iOS */
+        -webkit-perspective: 800px;
+        -moz-perspective: 800px;
+        perspective: 800px;
+        /* Hardware acceleration */
+        -webkit-transform: translateZ(0);
+        -moz-transform: translateZ(0);
+        transform: translateZ(0);
         -webkit-transform-style: preserve-3d;
         -moz-transform-style: preserve-3d;
         transform-style: preserve-3d;
+        -webkit-backface-visibility: hidden;
+        -moz-backface-visibility: hidden;
+        backface-visibility: hidden;
+        /* Will-change hint */
+        will-change: transform;
         perspective-origin: center;
+        /* Reduce iOS rendering problems */
+        -webkit-font-smoothing: antialiased;
     }
 
     /* Book Hardcover Front */
@@ -3437,16 +3464,29 @@
         color: #fff;
         font-weight: bold;
 
-        /* Rotate the entire span to create the diagonal effect */
+        /* Force hardware acceleration for iOS */
+        -webkit-transform: translate3d(0, 0, 0);
+        transform: translate3d(0, 0, 0);
+        will-change: transform;
+        
+        /* Improved backface visibility for iOS */
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
-        transform: rotate(45deg) translateY(-100px) translateX(30px);
+        backface-visibility: hidden;
+        
+        /* Simplify transform to reduce iOS shakiness */
+        -webkit-transform: rotate(45deg) translate3d(-70px, 0, 0);
+        transform: rotate(45deg) translate3d(-70px, 0, 0);
+        /* Keep transform origin consistent */
+        -webkit-transform-origin: top left;
         transform-origin: top left;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        
+        /* Reduce shadow complexity for performance */
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         z-index: 10; /* Make sure it sits above other elements */
     }
 
-    /* Ribbon Design */
+    /* Ribbon Design - Progress */
     :global(.progress-ribbon) {
         position: absolute;
         top: 10px;
@@ -3462,25 +3502,44 @@
         color: #fff;
         font-weight: bold;
 
-        /* Rotate the entire span to create the diagonal effect */
+        /* Force hardware acceleration for iOS */
+        -webkit-transform: translate3d(0, 0, 0);
+        transform: translate3d(0, 0, 0);
+        will-change: transform;
+        
+        /* Improved backface visibility for iOS */
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
-        transform: rotate(45deg) translateY(-100px) translateX(30px);
+        backface-visibility: hidden;
+        
+        /* Simplify transform to reduce iOS shakiness - using same transform as regular ribbon */
+        -webkit-transform: rotate(45deg) translate3d(-70px, 0, 0);
+        transform: rotate(45deg) translate3d(-70px, 0, 0);
+        /* Keep transform origin consistent */
+        -webkit-transform-origin: top left;
         transform-origin: top left;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        
+        /* Reduce shadow complexity for performance */
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         z-index: 10; /* Make sure it sits above other elements */
     }
 
-    /* Active book styling */
+    /* Active book styling - optimized for iOS */
     :global(.active-book) {
-        transform: scale(1.05) !important;
+        /* Use translate3d for hardware acceleration */
+        -webkit-transform: translate3d(0, 0, 0) scale(1.05) !important;
+        transform: translate3d(0, 0, 0) scale(1.05) !important;
+        /* Improved iOS hardware acceleration */
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
+        backface-visibility: hidden;
+        /* Tell browser this element will be animated */
+        will-change: transform;
         z-index: 10 !important;
         position: relative;
     }
 
-    /* Cover Image Support */
+    /* Cover Image Support - optimized for iOS */
     :global(.cover-image) {
         position: absolute;
         top: 0;
@@ -3489,6 +3548,15 @@
         height: 100%;
         background-size: contain;
         background-position: center;
+        /* Improve iOS rendering */
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        /* Help avoid iOS flickering */
+        -webkit-perspective: 1000;
+        perspective: 1000;
+        -webkit-font-smoothing: antialiased;
     }
 
     /* Ensure text is visible over images */
