@@ -3535,7 +3535,6 @@ book.style.webkitTransformStyle = 'preserve-3d';
         backface-visibility: hidden;
         /* Tell browser this element will be animated */
         will-change: transform;
-        z-index: 10 !important;
         position: relative;
     }
 
@@ -3555,7 +3554,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         backface-visibility: hidden;
         /* Help avoid iOS flickering */
         -webkit-perspective: 1000;
-        z-index: 12 !important;
+        z-index: 5 !important;
         perspective: 1000;
         -webkit-font-smoothing: antialiased;
     }
