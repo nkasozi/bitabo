@@ -633,37 +633,6 @@
 								
 								await reader.openBook(bookData.file);
 								
-								// After book is loaded, apply font size with extra validation
-								const validatedSize = Math.max(10, Math.min(72, Number(fontSize) || 18));
-								console.log(`[DEBUG] Applying validated font size: ${validatedSize}px to reader`);
-								
-								// Apply font size immediately and then again after a small delay to ensure it's applied
-								reader.updateFontSize(validatedSize);
-								
-								// Apply again with a short delay to ensure it's applied after book rendering completes
-								setTimeout(() => {
-									try {
-										console.log(`[DEBUG] Re-applying font size: ${validatedSize}px after delay`);
-										reader.updateFontSize(validatedSize);
-										
-										// Also update the menu selection if possible
-										try {
-											const menuButton = document.getElementById('menu-button');
-											if (menuButton) {
-												const menuElement = menuButton.querySelector('.menu');
-												if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
-													console.log(`[DEBUG] Updating menu font size selection to: ${validatedSize}`);
-													menuElement.__menu.groups.fontSize.select(validatedSize.toString());
-												}
-											}
-										} catch (menuError) {
-											console.error('[DEBUG] Error updating menu font size selection:', menuError);
-										}
-									} catch (e) {
-										console.error('[DEBUG] Error applying font size after delay:', e);
-									}
-								}, 500);
-								
 								isBookLoaded = true;
 
 								// Set title in the UI
@@ -717,6 +686,37 @@
 
 								// Setup the progress tracking
 								setupProgressTracking();
+
+								// After book is loaded, apply font size with extra validation
+								const validatedSize = Math.max(10, Math.min(72, Number(fontSize) || 18));
+								console.log(`[DEBUG] Applying validated font size: ${validatedSize}px to reader`);
+
+								// Apply font size immediately and then again after a small delay to ensure it's applied
+								reader.updateFontSize(validatedSize);
+
+								// Apply again with a short delay to ensure it's applied after book rendering completes
+								setTimeout(() => {
+									try {
+										console.log(`[DEBUG] Re-applying font size: ${validatedSize}px after delay`);
+										reader.updateFontSize(validatedSize);
+
+										// Also update the menu selection if possible
+										try {
+											const menuButton = document.getElementById('menu-button');
+											if (menuButton) {
+												const menuElement = menuButton.querySelector('.menu');
+												if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+													console.log(`[DEBUG] Updating menu font size selection to: ${validatedSize}`);
+													menuElement.__menu.groups.fontSize.select(validatedSize.toString());
+												}
+											}
+										} catch (menuError) {
+											console.error('[DEBUG] Error updating menu font size selection:', menuError);
+										}
+									} catch (e) {
+										console.error('[DEBUG] Error applying font size after delay:', e);
+									}
+								}, 500);
 
 							} catch (err) {
 								console.error('[DEBUG] Error opening book:', err);
