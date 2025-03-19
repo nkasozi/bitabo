@@ -1016,10 +1016,6 @@
 			const bookElement = document.createElement('li');
 			bookElement.setAttribute('tabindex', '0');
 
-			// Determine color based on index (cycle through available colors)
-			const colors = ['yellow', 'blue', 'grey'];
-			const color = colors[index % colors.length];
-
 			const numericProgressAsPercent = Math.round(bookData.progress * 100);
 
 			const displayProgress = `${numericProgressAsPercent}% Read`;
@@ -1028,7 +1024,7 @@
 								<figure class="book">
 									<ul class="hardcover_front">
 										<li>
-											<div class="coverDesign ${color}">
+											<div class="coverDesign">
 												${
 				bookData.ribbonData
 					? `<span class="ribbon">${bookData.ribbonData}</span>`
@@ -2764,7 +2760,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 							<figure class="book">
 								<ul class="hardcover_front">
 									<li>
-										<div class="coverDesign {dummy.color}">
+										<div class="coverDesign">
 											<span class="ribbon">{dummy.ribbon}</span>
 											<div class="cover-image" style="background-image: url('/placeholder-cover.png')"></div>
 											<div class="cover-text">
@@ -2961,9 +2957,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
         /* Add will-change for better performance */
         will-change: transform;
         /* Use hardware acceleration with translateZ(0) */
-        -webkit-transform: translateZ(0.1);
-        -moz-transform: translateZ(0.1);
-        transform: translateZ(0.1);
+        -webkit-transform: translateZ(0);
+        -moz-transform: translateZ(0);
+        transform: translateZ(0);
         /* Improve iOS performance */
         -webkit-backface-visibility: hidden;
         backface-visibility: hidden;
@@ -2982,9 +2978,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-perspective: 800px;
         perspective: 800px;
         /* Hardware acceleration */
-        -webkit-transform: translateZ(0.1);
-        -moz-transform: translateZ(0.1);
-        transform: translateZ(0.1);
+        -webkit-transform: translateZ(0);
+        -moz-transform: translateZ(0);
+        transform: translateZ(0);
         -webkit-transform-style: preserve-3d;
         -moz-transform-style: preserve-3d;
         transform-style: preserve-3d;
@@ -2996,14 +2992,6 @@ book.style.webkitTransformStyle = 'preserve-3d';
         perspective-origin: center;
         /* Reduce iOS rendering problems */
         -webkit-font-smoothing: antialiased;
-    }
-
-    /* Book Hardcover Front */
-    :global(.hardcover_front li:first-child) {
-        background-color: #eee;
-        -webkit-backface-visibility: hidden;
-        -moz-backface-visibility: hidden;
-        backface-visibility: hidden;
     }
 
     :global(.hardcover_front li:last-child) {
@@ -3059,7 +3047,6 @@ book.style.webkitTransformStyle = 'preserve-3d';
     :global(.book_spine li:first-child:before),
     :global(.book_spine li:last-child:after),
     :global(.book_spine li:last-child:before) {
-        content: "";
         position: absolute;
         top: 0;
         left: 0;
@@ -3548,8 +3535,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
         background-size: contain;
         background-position: center;
         /* Improve iOS rendering */
-        -webkit-transform: translateZ(0.1);
-        transform: translateZ(0.1);
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
         -webkit-backface-visibility: hidden;
         backface-visibility: hidden;
         /* Help avoid iOS flickering */
