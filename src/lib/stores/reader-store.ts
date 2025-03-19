@@ -7,6 +7,7 @@ export interface ReaderState {
 	bookTitle: string;
 	bookAuthor: string;
 	currentLocation: string;
+	fontSize: number; // Added font size property
 }
 
 const createInitialReaderState = (): ReaderState => ({
@@ -15,7 +16,8 @@ const createInitialReaderState = (): ReaderState => ({
 	totalPages: 0,
 	bookTitle: '',
 	bookAuthor: '',
-	currentLocation: ''
+	currentLocation: '',
+	fontSize: 18 // Default font size (18px)
 });
 
 function createReaderStore() {
@@ -28,12 +30,14 @@ function createReaderStore() {
 			update((state) => ({ ...state, bookLoaded: isLoaded }));
 		},
 
-		updateBookMetadata: (metadata: { title: string; author: string; totalPages: number }): void => {
+		updateBookMetadata: (metadata: { title: string; author: string; totalPages: number; fontSize?: number }): void => {
 			update((state) => ({
 				...state,
 				bookTitle: metadata.title,
 				bookAuthor: metadata.author,
-				totalPages: metadata.totalPages
+				totalPages: metadata.totalPages,
+				// Use provided fontSize or keep existing value
+				...(metadata.fontSize !== undefined ? { fontSize: metadata.fontSize } : {})
 			}));
 		},
 
@@ -43,6 +47,10 @@ function createReaderStore() {
 
 		updateCurrentLocation: (location: string): void => {
 			update((state) => ({ ...state, currentLocation: location }));
+		},
+
+		updateFontSize: (fontSize: number): void => {
+			update((state) => ({ ...state, fontSize }));
 		},
 
 		resetStore: (): void => {

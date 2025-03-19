@@ -251,8 +251,19 @@
 					bookStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
 					bookStore.createIndex('title', 'title', { unique: false });
 					bookStore.createIndex('author', 'author', { unique: false });
+					bookStore.createIndex('fileName', 'fileName', { unique: false });
 
 					console.log('Created books store with indexes');
+				} else {
+					// Check if we need to add the fileName index to an existing store
+					const transaction = event.target.transaction;
+					const bookStore = transaction.objectStore(BOOKS_STORE);
+					
+					// Check if the fileName index exists and add it if it doesn't
+					if (!bookStore.indexNames.contains('fileName')) {
+						console.log('Adding missing fileName index to books store');
+						bookStore.createIndex('fileName', 'fileName', { unique: false });
+					}
 				}
 			};
 

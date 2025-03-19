@@ -195,12 +195,17 @@ export function sendMessageToSW(message: any): Promise<any> {
 }
 
 // Save reading progress for a book
-export async function saveReadingProgress(bookId: string, progress: number): Promise<boolean> {
+export async function saveReadingProgress(
+  bookId: string, 
+  progress: number, 
+  fontSize?: number
+): Promise<boolean> {
   try {
     const response = await sendMessageToSW({
       type: 'save-progress',
       bookId,
-      progress
+      progress,
+      fontSize // Include fontSize if provided
     });
     
     return response && response.success === true;
@@ -211,17 +216,24 @@ export async function saveReadingProgress(bookId: string, progress: number): Pro
 }
 
 // Get reading progress for a book
-export async function getReadingProgress(bookId: string): Promise<number | null> {
+export async function getReadingProgress(bookId: string): Promise<{ progress: number | null; fontSize?: number | null }> {
   try {
     const response = await sendMessageToSW({
       type: 'get-progress',
       bookId
     });
     
-    return response ? response.progress : null;
+    if (!response) {
+      return { progress: null };
+    }
+    
+    return {
+      progress: response.progress || null,
+      fontSize: response.fontSize || null
+    };
   } catch (error) {
     console.error('Error getting reading progress via service worker:', error);
-    return null;
+    return { progress: null };
   }
 }
 

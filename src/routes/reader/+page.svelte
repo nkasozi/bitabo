@@ -55,10 +55,32 @@
 			console.log('[DEBUG] Service worker registered:', isServiceWorkerRegistered);
 		}
 	}
+	
+	// Get reading progress and font size from service worker
+	async function getBookProgress(bookId: string): Promise<{ progress: number | null; fontSize: number | null }> {
+		if (!isServiceWorkerRegistered) {
+			console.warn('[DEBUG] Service worker not registered, cannot get progress');
+			return { progress: null, fontSize: null };
+		}
+		
+		try {
+			// Import dynamically to avoid circular dependencies
+			const { getReadingProgress } = await import('$lib/serviceWorker');
+			const result = await getReadingProgress(bookId);
+			console.log(`[DEBUG] Retrieved progress from service worker: ${result.progress} and fontSize: ${result.fontSize}`);
+			return {
+				progress: result.progress,
+				fontSize: result.fontSize
+			};
+		} catch (error) {
+			console.error('[DEBUG] Error getting progress from service worker:', error);
+			return { progress: null, fontSize: null };
+		}
+	}
 
 	// Save reading progress - using service worker for background save
-	async function saveReadingProgress(progress: number, navigateBack: boolean = false) {
-		console.log('[DEBUG] saveReadingProgress called with progress:', progress);
+	async function saveReadingProgress(progress: number, navigateBack: boolean = false, explicitFontSize?: number) {
+		console.log('[DEBUG] saveReadingProgress called with progress:', progress, 'explicitFontSize:', explicitFontSize);
 
 		try {
 			// Get the bookId from URL - must be present
@@ -71,18 +93,116 @@
 				return;
 			}
 
+			// Use explicit font size if provided, otherwise try to detect it
+			// Note: We use a separate variable for tracking the original input to help with debugging
+			const providedFontSize = explicitFontSize;
+			let fontSize = explicitFontSize || 18; // Use explicit parameter if provided, fallback to default
+			
+			// If no explicit font size was provided, try to detect it
+			if (!explicitFontSize) {
+				console.log('[DEBUG] No explicit font size provided, attempting to detect current font size');
+				
+				// First try to get directly from reader (most accurate)
+				if (reader && typeof reader.getCurrentFontSize === 'function') {
+					try {
+						const readerFontSize = reader.getCurrentFontSize();
+						console.log(`[DEBUG] Retrieved font size directly from reader instance: ${readerFontSize}`);
+						if (readerFontSize && !isNaN(readerFontSize)) {
+							fontSize = readerFontSize;
+						}
+					} catch (e) {
+						console.warn('[DEBUG] Error getting font size from reader:', e);
+					}
+				}
+				
+				// As a fallback, check the menu (not always in sync with actual size)
+				const menuButton = document.getElementById('menu-button');
+				if (menuButton) {
+					const menuElement = menuButton.querySelector('.menu');
+					if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+						const selectedValue = menuElement.__menu.groups.fontSize.getValue();
+						console.log(`[DEBUG] Retrieved font size from menu: ${selectedValue}`);
+						if (selectedValue) {
+							const menuFontSize = parseInt(selectedValue, 10);
+							if (menuFontSize !== fontSize) {
+								console.log(`[DEBUG] Menu font size (${menuFontSize}) differs from reader font size (${fontSize})`);
+							}
+						}
+					} else {
+						console.warn('[DEBUG] Could not find menu or fontSize group for font size retrieval');
+					}
+				} else {
+					console.warn('[DEBUG] Menu button not found for retrieving font size');
+				}
+			} else {
+				console.log(`[DEBUG] Using explicit font size parameter: ${fontSize}px`);
+			}
+
+			// Ensure font size is a valid number before saving
+			if (typeof fontSize !== 'number' || isNaN(fontSize) || fontSize <= 0) {
+				console.warn(`[DEBUG] Invalid font size detected (${fontSize}), using default value instead`);
+				fontSize = 18; // Fallback to default if invalid
+			}
+
+			// Debug the actual value we're about to save
+			console.log(`[DEBUG] Final font size value being saved: ${fontSize}px (provided: ${providedFontSize}, type: ${typeof fontSize})`);
+
+			// Direct database save as backup - this ensures it gets saved even if service worker fails
+			try {
+				console.log('[DEBUG] Attempting direct IndexedDB save as backup');
+				const db = await new Promise<IDBDatabase>((resolve, reject) => {
+					const request = indexedDB.open('bitabo-books');
+					request.onerror = (event) => reject(event.target.error);
+					request.onsuccess = (event) => resolve(event.target.result);
+				});
+				
+				const transaction = db.transaction(['books'], 'readwrite');
+				const store = transaction.objectStore('books');
+				const getRequest = store.get(bookId);
+				
+				getRequest.onsuccess = (event) => {
+					const book = event.target.result;
+					if (book) {
+						// Update progress and font size
+						book.progress = progress;
+						book.fontSize = fontSize;
+						book.lastAccessed = Date.now();
+						
+						// Save back to database
+						const putRequest = store.put(book);
+						putRequest.onsuccess = () => {
+							console.log(`[DEBUG] Direct IndexedDB save successful. Font size: ${fontSize}px`);
+						};
+						putRequest.onerror = (e) => {
+							console.error('[DEBUG] Error in direct IndexedDB save:', e.target.error);
+						};
+					} else {
+						console.warn(`[DEBUG] Book ${bookId} not found in direct IndexedDB save`);
+					}
+				};
+				
+				getRequest.onerror = (e) => {
+					console.error('[DEBUG] Error getting book from IndexedDB:', e.target.error);
+				};
+			} catch (dbError) {
+				console.warn('[DEBUG] Direct IndexedDB save failed:', dbError);
+				// Continue with service worker save even if direct save fails
+			}
+
 			// Save progress via service worker if available
 			if (isServiceWorkerRegistered) {
 				// Save using service worker in background
-				console.log(`[DEBUG] Saving progress with service worker: ${progress} for book ${bookId}`);
-				const savePromise = swSaveProgress(bookId, progress).catch(err => {
+				console.log(`[DEBUG] Saving progress with service worker: ${progress} for book ${bookId} with fontSize: ${fontSize}`);
+				const savePromise = swSaveProgress(bookId, progress, fontSize).catch(err => {
 					console.error('[DEBUG] Error saving progress with service worker:', err);
 				});
 
 				// If we need to navigate back, do so after saving
 				if (navigateBack) {
-					// Use URL parameters for both navigation and backup
-					window.location.href = `/library?bookId=${encodeURIComponent(bookId)}&progress=${progress}`;
+					// Wait a moment to ensure saves complete
+					await new Promise(resolve => setTimeout(resolve, 200));
+					// Use URL parameters for both navigation and backup, including fontSize
+					window.location.href = `/library?bookId=${encodeURIComponent(bookId)}&progress=${progress}&fontSize=${fontSize}`;
 				} else {
 					// If autosaving, we don't want to display any UI - just log result
 					savePromise.then(() => {
@@ -94,7 +214,7 @@
 				if (navigateBack) {
 					// Just use URL parameters if service worker not available
 					console.log('[DEBUG] Service worker not available, saving via URL parameters only');
-					window.location.href = `/library?bookId=${encodeURIComponent(bookId)}&progress=${progress}`;
+					window.location.href = `/library?bookId=${encodeURIComponent(bookId)}&progress=${progress}&fontSize=${fontSize}`;
 				} else {
 					console.warn('[DEBUG] Service worker not available, cannot autosave progress in background');
 				}
@@ -162,7 +282,17 @@
 			if (progressSlider) {
 				const progress = parseFloat(progressSlider.value);
 				if (!isNaN(progress)) {
-					saveReadingProgress(progress, false);
+					// Auto-save with current font size
+					if (reader && typeof reader.getCurrentFontSize === 'function') {
+						try {
+							const currentFontSize = reader.getCurrentFontSize();
+							saveReadingProgress(progress, false, currentFontSize);
+						} catch (e) {
+							saveReadingProgress(progress, false);
+						}
+					} else {
+						saveReadingProgress(progress, false);
+					}
 				}
 			}
 		}, 10000); // Every 10 seconds
@@ -183,8 +313,154 @@
 						document.title = `${bookInfo.title} | Bitabo Reader`;
 					}
 
-					// Save progress periodically
-					saveReadingProgress(progress, false);
+					// Save progress periodically - use current font size
+					if (reader && typeof reader.getCurrentFontSize === 'function') {
+						try {
+							const currentFontSize = reader.getCurrentFontSize();
+							saveReadingProgress(progress, false, currentFontSize);
+						} catch (e) {
+							saveReadingProgress(progress, false);
+						}
+					} else {
+						saveReadingProgress(progress, false);
+					}
+				}
+			});
+		}
+
+		// Setup font size controls
+		const decreaseFontBtn = document.getElementById('decrease-font-size');
+		const increaseFontBtn = document.getElementById('increase-font-size');
+		
+		// Font size limits and increment
+		const MIN_FONT_SIZE = 10; // Minimum font size in px
+		const MAX_FONT_SIZE = 72; // Maximum font size in px
+		const FONT_INCREMENT = 4; // Amount to change font size by - increased for more noticeable changes
+		
+		// Decrease font size button
+		if (decreaseFontBtn) {
+			decreaseFontBtn.addEventListener('click', (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				
+				if (!reader) return;
+				
+				try {
+					// Get current font size
+					const currentSize = reader.getCurrentFontSize();
+					console.log(`[DEBUG] Current font size before decrease: ${currentSize}px`);
+					
+					// Check if we can decrease further
+					if (currentSize > MIN_FONT_SIZE) {
+						// Calculate new size
+						const newSize = Math.max(MIN_FONT_SIZE, currentSize - FONT_INCREMENT);
+						console.log(`[DEBUG] Attempting to decrease font size to ${newSize}px`);
+						
+						// Update the font size
+						reader.updateFontSize(newSize);
+						
+						// Update the menu to keep it in sync with the actual font size
+						try {
+							const menuButton = document.getElementById('menu-button');
+							if (menuButton) {
+								const menuElement = menuButton.querySelector('.menu');
+								if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+									console.log(`[DEBUG] Updating menu font size selection to: ${newSize}`);
+									menuElement.__menu.groups.fontSize.select(newSize.toString());
+								}
+							}
+						} catch (menuError) {
+							console.error('[DEBUG] Error updating menu font size selection:', menuError);
+						}
+						
+						// Add a visual feedback element
+						const feedback = document.createElement('div');
+						feedback.className = 'font-size-feedback';
+						feedback.textContent = `Font size: ${newSize}px`;
+						document.body.appendChild(feedback);
+						
+						// Remove after a delay
+						setTimeout(() => {
+							feedback.classList.add('fade-out');
+							setTimeout(() => feedback.remove(), 500);
+						}, 1500);
+						
+						// Autosave the setting with explicit font size
+						const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
+						if (progressSlider) {
+							const progress = parseFloat(progressSlider.value);
+							if (!isNaN(progress)) {
+								console.log(`[DEBUG] Explicitly saving font size ${newSize}px after decrease`);
+								saveReadingProgress(progress, false, newSize);
+							}
+						}
+					}
+				} catch (error) {
+					console.error('[DEBUG] Error in font size decrease function:', error);
+				}
+			});
+		}
+		
+		// Increase font size button
+		if (increaseFontBtn) {
+			increaseFontBtn.addEventListener('click', (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				
+				if (!reader) return;
+				
+				try {
+					// Get current font size
+					const currentSize = reader.getCurrentFontSize();
+					console.log(`[DEBUG] Current font size before increase: ${currentSize}px`);
+					
+					// Check if we can increase further
+					if (currentSize < MAX_FONT_SIZE) {
+						// Calculate new size
+						const newSize = Math.min(MAX_FONT_SIZE, currentSize + FONT_INCREMENT);
+						console.log(`[DEBUG] Attempting to increase font size to ${newSize}px`);
+						
+						// Update the font size
+						reader.updateFontSize(newSize);
+						
+						// Update the menu to keep it in sync with the actual font size
+						try {
+							const menuButton = document.getElementById('menu-button');
+							if (menuButton) {
+								const menuElement = menuButton.querySelector('.menu');
+								if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+									console.log(`[DEBUG] Updating menu font size selection to: ${newSize}`);
+									menuElement.__menu.groups.fontSize.select(newSize.toString());
+								}
+							}
+						} catch (menuError) {
+							console.error('[DEBUG] Error updating menu font size selection:', menuError);
+						}
+						
+						// Add a visual feedback element
+						const feedback = document.createElement('div');
+						feedback.className = 'font-size-feedback';
+						feedback.textContent = `Font size: ${newSize}px`;
+						document.body.appendChild(feedback);
+						
+						// Remove after a delay
+						setTimeout(() => {
+							feedback.classList.add('fade-out');
+							setTimeout(() => feedback.remove(), 500);
+						}, 1500);
+						
+						// Autosave the setting with explicit font size
+						const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
+						if (progressSlider) {
+							const progress = parseFloat(progressSlider.value);
+							if (!isNaN(progress)) {
+								console.log(`[DEBUG] Explicitly saving font size ${newSize}px after increase`);
+								saveReadingProgress(progress, false, newSize);
+							}
+						}
+					}
+				} catch (error) {
+					console.error('[DEBUG] Error in font size increase function:', error);
 				}
 			});
 		}
@@ -220,6 +496,7 @@
 			const urlParams = new URLSearchParams(window.location.search);
 			const bookId = urlParams.get('bookId');
 			const progressParam = urlParams.get('progress');
+			const fontSizeParam = urlParams.get('fontSize');
 
 			if (!bookId) {
 				console.error('[DEBUG] No bookId parameter found in URL');
@@ -306,7 +583,87 @@
 
 							// Open the book with our reader
 							try {
+								// Try to get font size from multiple sources in order of priority:
+								// 1. URL parameter (most recent)
+								// 2. Service worker (saved in IndexedDB)
+								// 3. Book data in the current response
+								// 4. Default value (18px)
+								let fontSize = 18; // Default font size
+								
+								// Check URL parameter first (highest priority)
+								if (fontSizeParam) {
+									const parsedFontSize = parseInt(fontSizeParam, 10);
+									if (!isNaN(parsedFontSize)) {
+										fontSize = parsedFontSize;
+										console.log(`[DEBUG] Using font size from URL parameter: ${fontSize}px`);
+									}
+								} 
+								// If not in URL, try to get from service worker / IndexedDB
+								else if (isServiceWorkerRegistered) {
+									try {
+										const savedData = await getBookProgress(bookId);
+										console.log(`[DEBUG] Service worker returned data:`, savedData);
+										if (savedData && savedData.fontSize !== undefined && savedData.fontSize !== null) {
+											const swFontSize = Number(savedData.fontSize);
+											if (!isNaN(swFontSize) && swFontSize > 0) {
+												fontSize = swFontSize;
+												console.log(`[DEBUG] Using font size from service worker: ${fontSize}px`);
+											} else {
+												console.warn(`[DEBUG] Invalid font size from service worker: ${savedData.fontSize}, using default`);
+											}
+										}
+									} catch (e) {
+										console.warn('[DEBUG] Error getting font size from service worker:', e);
+									}
+								}
+
+								// Direct database check for font size (highly reliable)
+								console.log(`[DEBUG] Directly checking bookData for fontSize: ${bookData.fontSize !== undefined ? bookData.fontSize : 'not set'}`);
+								if (bookData.fontSize !== undefined && bookData.fontSize !== null) {
+									const dbFontSize = Number(bookData.fontSize);
+									if (!isNaN(dbFontSize) && dbFontSize > 0) {
+										fontSize = dbFontSize;
+										console.log(`[DEBUG] Using font size directly from bookData: ${fontSize}px`);
+									} else {
+										console.warn(`[DEBUG] Invalid font size in bookData: ${bookData.fontSize}, using: ${fontSize}px`);
+									}
+								}
+								
+								console.log(`[DEBUG] Final font size to be applied: ${fontSize}px (${typeof fontSize})`);
+								
 								await reader.openBook(bookData.file);
+								
+								// After book is loaded, apply font size with extra validation
+								const validatedSize = Math.max(10, Math.min(72, Number(fontSize) || 18));
+								console.log(`[DEBUG] Applying validated font size: ${validatedSize}px to reader`);
+								
+								// Apply font size immediately and then again after a small delay to ensure it's applied
+								reader.updateFontSize(validatedSize);
+								
+								// Apply again with a short delay to ensure it's applied after book rendering completes
+								setTimeout(() => {
+									try {
+										console.log(`[DEBUG] Re-applying font size: ${validatedSize}px after delay`);
+										reader.updateFontSize(validatedSize);
+										
+										// Also update the menu selection if possible
+										try {
+											const menuButton = document.getElementById('menu-button');
+											if (menuButton) {
+												const menuElement = menuButton.querySelector('.menu');
+												if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+													console.log(`[DEBUG] Updating menu font size selection to: ${validatedSize}`);
+													menuElement.__menu.groups.fontSize.select(validatedSize.toString());
+												}
+											}
+										} catch (menuError) {
+											console.error('[DEBUG] Error updating menu font size selection:', menuError);
+										}
+									} catch (e) {
+										console.error('[DEBUG] Error applying font size after delay:', e);
+									}
+								}, 500);
+								
 								isBookLoaded = true;
 
 								// Set title in the UI
@@ -454,7 +811,8 @@
 					defaultStyle: {
 						spacing: 1.4,
 						justify: true,
-						hyphenate: true
+						hyphenate: true,
+						fontSize: 18 // Default font size
 					}
 				};
 
@@ -519,15 +877,21 @@
 	<div id="ebook-container" class="reader-container"></div>
 </div>
 
-<!-- Navigation bar with progress slider -->
+<!-- Navigation bar with progress slider and font size controls -->
 <div id="nav-bar" class="toolbar nav-bar">
 	<button id="left-button" aria-label="Go left">
 		<svg class="icon" width="24" height="24" aria-hidden="true">
 			<path d="M 15 6 L 9 12 L 15 18" />
 		</svg>
 	</button>
+	<button id="decrease-font-size" class="font-size-button" aria-label="Decrease font size" title="Decrease font size">
+		<span class="font-size-icon">A-</span>
+	</button>
 	<input id="progress-slider" type="range" min="0" max="1" step="any" list="tick-marks" />
 	<datalist id="tick-marks"></datalist>
+	<button id="increase-font-size" class="font-size-button" aria-label="Increase font size" title="Increase font size">
+		<span class="font-size-icon">A+</span>
+	</button>
 	<button id="right-button" aria-label="Go right">
 		<svg class="icon" width="24" height="24" aria-hidden="true">
 			<path d="M 9 6 L 15 12 L 9 18" />
@@ -709,6 +1073,74 @@
         height: 16px;
     }
     
+    /* Font size controls */
+    .font-size-controls {
+        display: flex;
+        gap: 8px;
+        margin-left: 16px;
+        z-index: 100;
+    }
+    
+    .font-size-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background-color: #2275d7;
+        color: white;
+        border-radius: 4px;
+        border: none;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
+        padding: 8px;
+        font-weight: bold;
+        margin: 0 4px;
+    }
+    
+    .font-size-icon {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    
+    :global(.dark-mode) .font-size-button {
+        background-color: #4285f4;
+    }
+    
+    .font-size-button:hover {
+        background-color: #1c5eb3;
+    }
+    
+    .font-size-button:active {
+        background-color: #174e99;
+        transform: translateY(1px);
+    }
+    
+    :global(.dark-mode) .font-size-button:hover {
+        background-color: #3b77db;
+    }
+    
+    /* Font size feedback popup */
+    .font-size-feedback {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 18px;
+        font-weight: bold;
+        z-index: 9999;
+        opacity: 1;
+        transition: opacity 0.3s;
+    }
+    
+    .font-size-feedback.fade-out {
+        opacity: 0;
+    }
+    
     /* Make slider more touch-friendly on mobile */
     @media (max-width: 768px) {
         #progress-slider {
@@ -724,6 +1156,17 @@
         #progress-slider::-moz-range-thumb {
             width: 18px;
             height: 18px;
+        }
+        
+        .font-size-button {
+            width: 36px;
+            height: 36px;
+            margin: 0 2px;
+            padding: 4px;
+        }
+        
+        .font-size-icon {
+            font-size: 16px;
         }
     }
 

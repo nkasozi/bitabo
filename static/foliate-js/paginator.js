@@ -442,7 +442,7 @@ export class Paginator extends HTMLElement {
 		'max-block-size',
 		'max-column-count'
 	];
-	#root = this.attachShadow({ mode: 'closed' });
+	#root = this.attachShadow({ mode: 'open' });
 	#observer = new ResizeObserver(() => this.render());
 	#top;
 	#background;

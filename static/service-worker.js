@@ -290,14 +290,19 @@ async function deleteBook(bookId) {
 }
 
 // Save reading progress to IndexedDB
-async function saveReadingProgress(bookId, progress) {
+async function saveReadingProgress(bookId, progress, fontSize) {
   if (!bookId) {
     debugLog('Invalid bookId for saving progress', { bookId });
     return false;
   }
   
   try {
-    debugLog('Saving reading progress', { bookId, progress });
+    debugLog('Saving reading progress with font size', { 
+      bookId, 
+      progress, 
+      fontSize,
+      timestamp: new Date().toISOString() 
+    });
     
     const db = await openDatabase();
     const transaction = db.transaction([BOOKS_STORE], 'readwrite');
@@ -312,24 +317,37 @@ async function saveReadingProgress(bookId, progress) {
         
         if (!book) {
           // Try to find book by filename
-          const index = store.index('fileName');
-          const indexRequest = index.get(bookId);
-          
-          indexRequest.onsuccess = (event) => {
-            const bookByFilename = event.target.result;
+          try {
+            const index = store.index('fileName');
+            const indexRequest = index.get(bookId);
+            
+            indexRequest.onsuccess = (event) => {
+              const bookByFilename = event.target.result;
             
             if (bookByFilename) {
-              // Update the book's progress
+              // Update the book's progress and font size
               bookByFilename.progress = progress;
               bookByFilename.lastAccessed = Date.now();
+              
+              // Save font size if provided
+              if (fontSize !== undefined) {
+                bookByFilename.fontSize = fontSize;
+                debugLog('Saving font size preference', { 
+                  bookId, 
+                  fontSize,
+                  bookTitle: bookByFilename.title 
+                });
+              }
               
               const updateRequest = store.put(bookByFilename);
               
               updateRequest.onsuccess = () => {
-                debugLog('Progress saved successfully (by filename)', { 
+                debugLog('Progress and font size saved successfully (by filename)', { 
                   bookId, 
                   progress,
-                  bookTitle: bookByFilename.title 
+                  fontSize: bookByFilename.fontSize,
+                  bookTitle: bookByFilename.title,
+                  timestamp: new Date().toISOString() 
                 });
                 resolve(true);
               };
@@ -354,18 +372,38 @@ async function saveReadingProgress(bookId, progress) {
             });
             resolve(false);
           };
+          } catch (indexError) {
+            // Handle missing index error
+            debugLog('Error accessing fileName index, it might not exist yet', { 
+              error: indexError.message,
+              bookId
+            });
+            resolve(false);
+          }
         } else {
-          // Update the book's progress
+          // Update the book's progress and font size
           book.progress = progress;
           book.lastAccessed = Date.now();
+          
+          // Save font size if provided
+          if (fontSize !== undefined) {
+            book.fontSize = fontSize;
+            debugLog('Saving font size preference', { 
+              bookId, 
+              fontSize,
+              bookTitle: book.title 
+            });
+          }
           
           const updateRequest = store.put(book);
           
           updateRequest.onsuccess = () => {
-            debugLog('Progress saved successfully', { 
+            debugLog('Progress and font size saved successfully', { 
               bookId, 
               progress,
-              bookTitle: book.title 
+              fontSize: book.fontSize,
+              bookTitle: book.title,
+              timestamp: new Date().toISOString()
             });
             resolve(true);
           };
@@ -389,20 +427,20 @@ async function saveReadingProgress(bookId, progress) {
       };
     });
   } catch (error) {
-    debugLog('Exception saving progress', { error: error.message, bookId, progress });
+    debugLog('Exception saving progress', { error: error.message, bookId, progress, fontSize });
     return false;
   }
 }
 
-// Get reading progress from IndexedDB
+// Get reading progress and font size from IndexedDB
 async function getReadingProgress(bookId) {
   if (!bookId) {
     debugLog('Invalid bookId for getting progress', { bookId });
-    return null;
+    return { progress: null, fontSize: null };
   }
   
   try {
-    debugLog('Getting reading progress', { bookId });
+    debugLog('Getting reading progress and preferences', { bookId });
     
     const db = await openDatabase();
     const transaction = db.transaction([BOOKS_STORE], 'readonly');
@@ -416,12 +454,16 @@ async function getReadingProgress(bookId) {
         const book = event.target.result;
         
         if (book) {
-          debugLog('Book found, returning progress', { 
+          debugLog('Book found, returning progress and preferences', { 
             bookId, 
             progress: book.progress,
+            fontSize: book.fontSize,
             title: book.title
           });
-          resolve(book.progress || 0);
+          resolve({ 
+            progress: book.progress || 0,
+            fontSize: book.fontSize || 18 // Default to 18px if not set
+          });
         } else {
           // Try to find by filename
           try {
@@ -432,38 +474,42 @@ async function getReadingProgress(bookId) {
               const bookByFilename = event.target.result;
               
               if (bookByFilename) {
-                debugLog('Book found by filename, returning progress', { 
+                debugLog('Book found by filename, returning progress and preferences', { 
                   bookId, 
                   progress: bookByFilename.progress,
+                  fontSize: bookByFilename.fontSize,
                   title: bookByFilename.title
                 });
-                resolve(bookByFilename.progress || 0);
+                resolve({ 
+                  progress: bookByFilename.progress || 0,
+                  fontSize: bookByFilename.fontSize || 18 // Default to 18px if not set
+                });
               } else {
                 debugLog('No book found for progress', { bookId });
-                resolve(null);
+                resolve({ progress: null, fontSize: null });
               }
             };
             
             indexRequest.onerror = (event) => {
               debugLog('Error finding book by filename', { error: event.target.error, bookId });
-              resolve(null);
+              resolve({ progress: null, fontSize: null });
             };
           } catch (indexError) {
             // Index might not exist yet
-            debugLog('Error accessing filename index', { error: indexError.message });
-            resolve(null);
+            debugLog('Error accessing fileName index in getReadingProgress, it might not exist yet', { error: indexError.message, bookId });
+            resolve({ progress: null, fontSize: null });
           }
         }
       };
       
       request.onerror = (event) => {
         debugLog('Error getting book for progress', { error: event.target.error, bookId });
-        resolve(null);
+        resolve({ progress: null, fontSize: null });
       };
     });
   } catch (error) {
     debugLog('Exception getting progress', { error: error.message, bookId });
-    return null;
+    return { progress: null, fontSize: null };
   }
 }
 
@@ -675,15 +721,18 @@ self.addEventListener('message', (event) => {
     // Save reading progress for a book
     event.waitUntil((async () => {
       try {
-        const saved = await saveReadingProgress(bookId, progress);
-        debugLog('Progress saved result', { saved, bookId, progress });
+        // Extract fontSize from the message data
+        const { fontSize } = event.data;
+        const saved = await saveReadingProgress(bookId, progress, fontSize);
+        debugLog('Progress saved result', { saved, bookId, progress, fontSize });
         
         // Respond to the client
         sendResponse({
           type: 'save-progress-response',
           success: saved,
           bookId,
-          progress
+          progress,
+          fontSize
         });
       } catch (error) {
         debugLog('Error saving progress', { error: error.message });
@@ -695,20 +744,25 @@ self.addEventListener('message', (event) => {
       }
     })());
   } else if (type === 'get-progress') {
-    // Get reading progress for a book
+    // Get reading progress and font size for a book
     event.waitUntil((async () => {
       try {
-        const progress = await getReadingProgress(bookId);
-        debugLog('Get progress result', { bookId, progress });
+        const result = await getReadingProgress(bookId);
+        debugLog('Get progress and preferences result', { 
+          bookId, 
+          progress: result.progress, 
+          fontSize: result.fontSize 
+        });
         
         // Respond to the client
         sendResponse({
           type: 'get-progress-response',
           bookId,
-          progress
+          progress: result.progress,
+          fontSize: result.fontSize
         });
       } catch (error) {
-        debugLog('Error getting progress', { error: error.message });
+        debugLog('Error getting progress and preferences', { error: error.message });
         sendResponse({
           type: 'get-progress-response',
           bookId,

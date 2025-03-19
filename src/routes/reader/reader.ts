@@ -18,6 +18,7 @@ type StyleConfig = {
 	spacing: number;
 	justify: boolean;
 	hyphenate: boolean;
+	fontSize: number; // Added font size property (in pixels)
 };
 
 type BookMetadata = {
@@ -114,7 +115,8 @@ const DEFAULT_READER_CONFIG: ReaderConfig = {
 	defaultStyle: {
 		spacing: 1.4,
 		justify: true,
-		hyphenate: true
+		hyphenate: true,
+		fontSize: 18 // Default font size in pixels
 	}
 };
 
@@ -150,11 +152,15 @@ class ReaderStyleGenerator {
             @namespace epub "http://www.idpf.org/2007/ops";
             html {
                 color-scheme: light dark;
+                font-size: ${config.fontSize}px;
             }
             @media (prefers-color-scheme: dark) {
                 a:link {
                     color: lightblue;
                 }
+            }
+            body {
+                font-size: 1em;
             }
             p, li, blockquote, dd {
                 line-height: ${config.spacing};
@@ -218,7 +224,7 @@ class EbookReader {
 	private readonly elements: Map<string, Element>;
 	private readonly annotations: Map<number, AnnotationType[]>;
 	private readonly annotationsByValue: Map<string, AnnotationType>;
-	private readonly defaultStyle: StyleConfig;
+	private currentStyle: StyleConfig;
 
 	constructor(config: Partial<ReaderConfig> = {}) {
 		this.config = this.mergeConfig(DEFAULT_READER_CONFIG, config);
@@ -226,7 +232,7 @@ class EbookReader {
 		this.elements = new Map();
 		this.annotations = new Map();
 		this.annotationsByValue = new Map();
-		this.defaultStyle = this.config.defaultStyle;
+		this.currentStyle = { ...this.config.defaultStyle }; // Clone the default style
 
 		this.initializeElements();
 		this.initializeUserInterface();
@@ -505,6 +511,18 @@ class EbookReader {
 					['Scrolled', 'scrolled']
 				],
 				onclick: (value: string) => this.updateLayoutFlow(value)
+			},
+			{
+				name: 'fontSize',
+				label: 'Font Size',
+				type: 'radio',
+				items: [
+					['Small', '14'],
+					['Medium', '18'],
+					['Large', '22'],
+					['Extra Large', '26']
+				],
+				onclick: (value: string) => this.updateFontSize(parseInt(value, 10))
 			}
 		]);
 
@@ -517,6 +535,102 @@ class EbookReader {
 			return;
 		}
 		this.view.renderer.setAttribute('flow', value);
+	}
+
+	/**
+	 * Updates the font size setting for the current book
+	 * @param fontSize - Font size in pixels
+	 * @param saveToBook - Whether to save the setting to the current book
+	 */
+	updateFontSize(fontSize: number, saveToBook: boolean = true): void {
+		if (!this.view?.renderer) {
+			console.warn('updateFontSize: view or renderer is not initialized.');
+			return;
+		}
+
+		// Validate font size input
+		if (typeof fontSize !== 'number' || isNaN(fontSize) || fontSize <= 0) {
+			console.warn(`[DEBUG] Invalid font size passed: ${fontSize}, using default instead`);
+			fontSize = 18; // Default to 18px if invalid
+		}
+
+		// Clamp to reasonable limits
+		const MIN_FONT_SIZE = 10;
+		const MAX_FONT_SIZE = 72;
+		fontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, fontSize));
+		console.log(`[DEBUG] Font size after validation and clamping: ${fontSize}px`);
+
+		// Update the current style
+		this.currentStyle.fontSize = fontSize;
+		
+		// Track application success
+		let appliedToHTML = false;
+		let appliedToBody = false;
+		let appliedViaStyles = false;
+		
+		try {
+			// Direct approach to modify font size in the shadow DOM
+			// Since we modified foliate-js to use open mode, we can access the shadow root
+			const contents = this.view.renderer.getContents();
+			
+			if (contents && contents.length > 0) {
+				for (const content of contents) {
+					if (content.doc) {
+						// Apply font size directly to html element in the shadow DOM
+						const htmlElement = content.doc.documentElement;
+						if (htmlElement) {
+							htmlElement.style.setProperty('font-size', `${fontSize}px`, 'important');
+							console.log(`[DEBUG] Applied font-size ${fontSize}px directly to HTML element`);
+							appliedToHTML = true;
+						}
+						
+						// Also apply to body as a fallback
+						const bodyElement = content.doc.body;
+						if (bodyElement) {
+							bodyElement.style.setProperty('font-size', `${fontSize/16}rem`, 'important');
+							console.log(`[DEBUG] Applied font-size ${fontSize/16}rem to body element`);
+							appliedToBody = true;
+						}
+					}
+				}
+			} else {
+				console.warn('[DEBUG] No content elements found in renderer');
+			}
+		} catch (error) {
+			console.error('[DEBUG] Error applying direct font size to shadow DOM:', error);
+		}
+
+		// Also apply via the standard renderer API as fallback
+		try {
+			if (typeof this.view.renderer.setStyles === 'function') {
+				// Generate style with the updated font size
+				const styles = ReaderStyleGenerator.generateStyles(this.currentStyle);
+				console.log(`[DEBUG] Generated styles for font size ${fontSize}px: ${styles.substring(0, 100)}...`);
+				
+				// Apply the styles
+				this.view.renderer.setStyles(styles);
+				appliedViaStyles = true;
+			} else {
+				console.warn('[DEBUG] setStyles method not available on renderer');
+			}
+		} catch (styleError) {
+			console.error('[DEBUG] Error applying styles via renderer API:', styleError);
+		}
+
+		try {
+			// Force a re-render to apply the changes
+			if (typeof this.view.renderer.next === 'function') {
+				this.view.renderer.next();
+				console.log('[DEBUG] Called renderer.next() to apply changes');
+			} else {
+				console.warn('[DEBUG] next method not available on renderer');
+			}
+		} catch (nextError) {
+			console.error('[DEBUG] Error calling renderer.next():', nextError);
+		}
+		
+		// Log application success summary
+		console.log(`[DEBUG] Font size ${fontSize}px application summary - HTML: ${appliedToHTML}, Body: ${appliedToBody}, Styles API: ${appliedViaStyles}`);
 	}
 
 	private appendMenuToInterface(menu: any): void {
@@ -536,6 +650,14 @@ class EbookReader {
 		button.addEventListener('click', () => menu.element.classList.toggle('show'));
 
 		menu.groups.layout.select('paginated');
+		
+		// Set default font size based on current style
+		const defaultFontSize = this.currentStyle && this.currentStyle.fontSize ? 
+			this.currentStyle.fontSize.toString() : '18';
+		menu.groups.fontSize.select(defaultFontSize);
+		
+		// Log for debugging
+		console.log(`[DEBUG] Default font size set to ${defaultFontSize}px on menu initialization`);
 	}
 
 	async openBook(file: File | string): Promise<void> {
@@ -654,7 +776,7 @@ class EbookReader {
 			// Apply styles if renderer is available
 			if (this.view.renderer) {
 				if (typeof this.view.renderer.setStyles === 'function') {
-					this.view.renderer.setStyles(ReaderStyleGenerator.generateStyles(this.config.defaultStyle));
+					this.view.renderer.setStyles(ReaderStyleGenerator.generateStyles(this.currentStyle));
 				}
 				
 				if (typeof this.view.renderer.next === 'function') {
@@ -1180,6 +1302,118 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 			
 			// Normal book opening
 			return reader.openBook(file);
+		},
+		// Expose the font size update method
+		updateFontSize: (fontSize: number) => {
+			return reader.updateFontSize(fontSize);
+		},
+		// Method to get the current font size
+		getCurrentFontSize: () => {
+			console.log('[DEBUG] getCurrentFontSize called - getting current font size');
+			let fontSizeSource = 'none';
+			let fontSize = 18; // Default fallback value
+			
+			// 1. First try to get it from the current style object (highest priority)
+			if (reader.currentStyle?.fontSize) {
+				fontSize = reader.currentStyle.fontSize;
+				fontSizeSource = 'currentStyle';
+				console.log(`[DEBUG] Got font size from currentStyle: ${fontSize}px`);
+			} else {
+				console.log('[DEBUG] No fontSize in currentStyle object');
+			}
+			
+			// 2. If not available or seems invalid, try to get it from the shadow DOM
+			if (fontSizeSource === 'none' || typeof fontSize !== 'number' || isNaN(fontSize) || fontSize <= 0) {
+				try {
+					const contents = reader.view?.renderer.getContents();
+					if (contents && contents.length > 0) {
+						// Try multiple approaches to find the best value
+						for (const content of contents) {
+							if (content.doc && content.doc.documentElement) {
+								// First check inline style which would be most recent
+								const htmlElement = content.doc.documentElement;
+								const inlineStyle = htmlElement.style.fontSize;
+								
+								if (inlineStyle) {
+									// Parse the px value, e.g., "18px" -> 18
+									const match = inlineStyle.match(/(\d+)px/);
+									if (match && match[1]) {
+										const inlineFontSize = parseInt(match[1], 10);
+										if (!isNaN(inlineFontSize) && inlineFontSize > 0) {
+											fontSize = inlineFontSize;
+											fontSizeSource = 'inlineStyle';
+											console.log(`[DEBUG] Got font size from inline style: ${fontSize}px`);
+											break; // Found a valid value, no need to continue
+										}
+									}
+								}
+								
+								// Next try computed style
+								try {
+									const computedStyle = content.doc.defaultView.getComputedStyle(htmlElement);
+									const fontSizeStr = computedStyle.getPropertyValue('font-size');
+									if (fontSizeStr) {
+										// Parse the font size and convert to a number
+										const computedFontSize = parseInt(fontSizeStr);
+										if (!isNaN(computedFontSize) && computedFontSize > 0) {
+											fontSize = computedFontSize;
+											fontSizeSource = 'computedStyle';
+											console.log(`[DEBUG] Got font size from computed style: ${fontSize}px`);
+											break; // Found a valid value, no need to continue
+										}
+									}
+								} catch (computedStyleError) {
+									console.warn('[DEBUG] Error getting computed style:', computedStyleError);
+								}
+							}
+						}
+					} else {
+						console.warn('[DEBUG] No content elements available in renderer');
+					}
+				} catch (error) {
+					console.error('[DEBUG] Error accessing shadow DOM for font size:', error);
+				}
+			}
+			
+			// 3. Finally, try to get from the menu UI as last resort
+			if (fontSizeSource === 'none' || typeof fontSize !== 'number' || isNaN(fontSize) || fontSize <= 0) {
+				try {
+					const menuButton = document.getElementById('menu-button');
+					if (menuButton) {
+						const menuElement = menuButton.querySelector('.menu');
+						if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+							const selectedValue = menuElement.__menu.groups.fontSize.getValue();
+							if (selectedValue) {
+								const menuFontSize = parseInt(selectedValue, 10);
+								if (!isNaN(menuFontSize) && menuFontSize > 0) {
+									fontSize = menuFontSize;
+									fontSizeSource = 'menuUI';
+									console.log(`[DEBUG] Got font size from menu UI: ${fontSize}px`);
+								}
+							}
+						}
+					}
+				} catch (menuError) {
+					console.warn('[DEBUG] Error getting font size from menu:', menuError);
+				}
+			}
+			
+			// Ensure we have a valid value before returning
+			if (typeof fontSize !== 'number' || isNaN(fontSize) || fontSize <= 0) {
+				console.warn(`[DEBUG] Invalid font size detected (${fontSize}), using default value`);
+				fontSize = 18; // Final fallback to default
+				fontSizeSource = 'default';
+			}
+			
+			console.log(`[DEBUG] Final font size: ${fontSize}px (source: ${fontSizeSource})`);
+			
+			// Store the discovered value in currentStyle for future reference
+			if (fontSizeSource !== 'currentStyle' && fontSizeSource !== 'none' && fontSize !== reader.currentStyle?.fontSize) {
+				reader.currentStyle.fontSize = fontSize;
+				console.log(`[DEBUG] Updated currentStyle.fontSize to ${fontSize}px for consistency`);
+			}
+			
+			return fontSize;
 		}
 	};
 	

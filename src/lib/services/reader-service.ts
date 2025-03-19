@@ -14,23 +14,29 @@ interface ReaderStyle {
 	spacing: number;
 	justify: boolean;
 	hyphenate: boolean;
+	fontSize: number;
 }
 
 const DEFAULT_READER_STYLE: ReaderStyle = {
 	spacing: 1.4,
 	justify: true,
-	hyphenate: true
+	hyphenate: true,
+	fontSize: 18 // Default font size (18px)
 };
 
-const getReaderCSS = ({ spacing, justify, hyphenate }: ReaderStyle): string => `
+const getReaderCSS = ({ spacing, justify, hyphenate, fontSize }: ReaderStyle): string => `
     @namespace epub "http://www.idpf.org/2007/ops";
     html {
         color-scheme: light dark;
+        font-size: ${fontSize}px;
     }
     @media (prefers-color-scheme: dark) {
         a:link {
             color: lightblue;
         }
+    }
+    body {
+        font-size: 1em;
     }
     p, li, blockquote, dd {
         line-height: ${spacing};
@@ -178,6 +184,18 @@ async function initializeReader(bookData: ArrayBuffer): Promise<void> {
 					['Scrolled', 'scrolled']
 				],
 				onclick: (value) => view.setAttribute('flow', value)
+			},
+			{
+				name: 'fontSize',
+				label: 'Font Size',
+				type: 'radio',
+				items: [
+					['Small', '14'],
+					['Medium', '18'],
+					['Large', '22'],
+					['Extra Large', '26']
+				],
+				onclick: (value) => updateFontSize(view, parseInt(value, 10))
 			}
 		]);
 		const menuContainer = document.getElementById('menu-container');
@@ -210,4 +228,31 @@ async function extractBookMetadata(book: any): Promise<BookMetadata> {
 function updateReaderState(metadata: BookMetadata): void {
 	readerStore.setBookLoaded(true);
 	readerStore.updateBookMetadata(metadata);
+}
+
+/**
+ * Updates the font size in the reader
+ * @param view - The reader view element
+ * @param fontSize - The new font size in pixels
+ */
+function updateFontSize(view: HTMLElement, fontSize: number): void {
+	// First update the store
+	readerStore.updateFontSize(fontSize);
+	
+	// Get the style element in the shadow DOM
+	const styleElement = view.shadowRoot?.querySelector('style');
+	if (!styleElement) {
+		console.warn('Style element not found in reader view');
+		return;
+	}
+	
+	// Update the CSS with the new font size
+	const updatedStyle = {
+		...DEFAULT_READER_STYLE,
+		fontSize
+	};
+	styleElement.textContent = getReaderCSS(updatedStyle);
+	
+	// TODO: Save font size preference to the book record in IndexedDB
+	// This would require accessing the current book ID and updating its record
 }
