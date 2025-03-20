@@ -1121,163 +1121,29 @@
 				});
 			});
 
-			// Enhanced touch swipe support with momentum
+			// Touch swipe support
 			let touchStartX = 0;
-			let touchStartY = 0;
 			let touchEndX = 0;
-			let touchLastX = 0;
-			let touchStartTime = 0;
-			let touchEndTime = 0;
-			let isSwiping = false;
-			let swipeVelocity = 0;
-			let touchMoveTimestamp = 0;
-			let touchMoveHistory = [];
-			let isScrollingVertically = false;
 
-			// Touch start event
 			this.container.addEventListener('touchstart', (e) => {
 				touchStartX = e.changedTouches[0].screenX;
-				touchStartY = e.changedTouches[0].screenY;
-				touchLastX = touchStartX;
-				touchStartTime = Date.now();
-				isSwiping = true;
-				swipeVelocity = 0;
-				isScrollingVertically = false;
-				
-				// Reset the move history
-				touchMoveHistory = [{
-					x: touchStartX,
-					time: touchStartTime
-				}];
-			});
-			
-			// Touch move event to track velocity
-			this.container.addEventListener('touchmove', (e) => {
-				if (!isSwiping) return;
-				
-				const currentX = e.changedTouches[0].screenX;
-				const currentY = e.changedTouches[0].screenY;
-				const currentTime = Date.now();
-				
-				// Determine if this is more of a vertical scroll than a horizontal swipe
-				if (touchMoveHistory.length === 1) {
-					const deltaX = Math.abs(currentX - touchStartX);
-					const deltaY = Math.abs(currentY - touchStartY);
-					
-					// If the vertical movement is significantly greater than horizontal,
-					// treat this as a vertical scroll and don't interfere
-					if (deltaY > deltaX * 1.5) {
-						isScrollingVertically = true;
-						return;
-					}
-				}
-				
-				// If we're not scrolling vertically, prevent default behavior to avoid page scrolling
-				if (!isScrollingVertically) {
-					e.preventDefault();
-				}
-				
-				// Add to move history, keeping last 5 points for velocity calculation
-				touchMoveHistory.push({
-					x: currentX,
-					time: currentTime
-				});
-				
-				if (touchMoveHistory.length > 5) {
-					touchMoveHistory.shift();
-				}
-				
-				// Update last touch position
-				touchLastX = currentX;
-				touchMoveTimestamp = currentTime;
 			});
 
-			// Touch end event
 			this.container.addEventListener('touchend', (e) => {
-				if (!isSwiping || isScrollingVertically) {
-					isSwiping = false;
-					return;
-				}
-				
 				touchEndX = e.changedTouches[0].screenX;
-				touchEndTime = Date.now();
-				
-				// Calculate swipe velocity based on the move history
-				this.calculateSwipeVelocity();
-				
-				// Handle momentum-based swipe
-				this.handleMomentumSwipe();
-				
-				isSwiping = false;
+				this.handleSwipe();
 			});
-			
-			// Calculate swipe velocity using recent movement history
-			this.calculateSwipeVelocity = () => {
-				if (touchMoveHistory.length < 2) return;
-				
-				// Use the most recent points to calculate velocity
-				const newest = touchMoveHistory[touchMoveHistory.length - 1];
-				const oldest = touchMoveHistory[0];
-				
-				const timeDelta = newest.time - oldest.time;
-				
-				// Avoid division by zero
-				if (timeDelta <= 0) {
-					swipeVelocity = 0;
-					return;
-				}
-				
-				// Calculate pixels per millisecond, with direction
-				const distance = newest.x - oldest.x;
-				swipeVelocity = distance / timeDelta;
-			};
 
-			// Handle momentum-based swipe
-			this.handleMomentumSwipe = () => {
+			// Helper function to handle swipe
+			this.handleSwipe = () => {
 				const swipeThreshold = 50;
-				const velocityThreshold = 0.5; // Pixels per millisecond
-				const swipeDistance = touchEndX - touchStartX;
-				
-				// Check direction and distance
-				if (Math.abs(swipeDistance) < swipeThreshold && Math.abs(swipeVelocity) < velocityThreshold) {
-					// Small swipe without enough velocity - no action
-					return;
+				if (touchEndX < touchStartX - swipeThreshold && this.currentIndex < this.bookData.length - 1) {
+					// Swipe left
+					this.select(this.currentIndex + 1);
+				} else if (touchEndX > touchStartX + swipeThreshold && this.currentIndex > 0) {
+					// Swipe right
+					this.select(this.currentIndex - 1);
 				}
-				
-				// Calculate how many books to scroll based on velocity
-				let scrollCount = 0;
-				
-				// Direction is determined by both distance and velocity
-				const direction = swipeVelocity < 0 ? 1 : -1; // 1 for left swipe, -1 for right swipe
-				
-				// Calculate multiple book scrolling based on velocity
-				const absVelocity = Math.abs(swipeVelocity);
-				
-				if (absVelocity > 2.0) {
-					scrollCount = 3; // Very fast swipe - scroll 3 books
-				} else if (absVelocity > 1.25) {
-					scrollCount = 2; // Fast swipe - scroll 2 books
-				} else {
-					scrollCount = 1; // Normal swipe - scroll 1 book
-				}
-				
-				// Apply direction to scroll count
-				scrollCount *= direction;
-				
-				// Calculate target index with boundaries
-				const targetIndex = Math.max(0, Math.min(this.bookData.length - 1, this.currentIndex + scrollCount));
-				
-				// Animate to the target book with easing effect based on velocity
-				this.animateToIndex(targetIndex, absVelocity);
-			};
-			
-			// Animate to a target index with easing
-			this.animateToIndex = (targetIndex, velocity) => {
-				// If target is current, no need to animate
-				if (targetIndex === this.currentIndex) return;
-				
-				// Select the target index (immediate, no animation)
-				this.select(targetIndex);
 			};
 		}
 
