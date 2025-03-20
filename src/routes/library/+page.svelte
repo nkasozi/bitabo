@@ -44,7 +44,7 @@
 	];
 
 	// Database constants - using only BOOKS_STORE
-	const DB_NAME = 'bitabo-books';
+	const DB_NAME = 'ebitabo-books';
 	const BOOKS_STORE = 'books';
 
 	// Title similarity scoring function - computes similarity between two strings from 0 to 1
@@ -2502,7 +2502,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 </script>
 
 <svelte:head>
-	<title>Bitabo E-book Reader</title>
+	<title>Ebitabo E-book Reader</title>
 	<meta name="description" content="A client-side e-book reader and library manager" />
 </svelte:head>
 

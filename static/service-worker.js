@@ -1,8 +1,8 @@
-// Bitabo Service Worker for Background Tasks
+// Ebitabo Service Worker for Background Tasks
 // Handles book storage, progress tracking, and other background operations
 
 const SW_VERSION = '1.1.0';
-const DB_NAME = 'bitabo-books';
+const DB_NAME = 'ebitabo-books';
 const BOOKS_STORE = 'books'; // Main store for books with their progress and metadata
 
 // Hash function to uniquely identify books based on title and size
@@ -904,7 +904,7 @@ self.addEventListener('message', (event) => {
 });
 
 // Offline support - cache essential app files
-const CACHE_NAME = 'bitabo-app-v1';
+const CACHE_NAME = 'ebitabo-app-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

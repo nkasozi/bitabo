@@ -10,8 +10,8 @@
 </script>
 
 <svelte:head>
-  <title>Terms of Service | Bitabo</title>
-  <meta name="description" content="Terms of Service for Bitabo e-reader application" />
+  <title>Terms of Service | Ebitabo</title>
+  <meta name="description" content="Terms of Service for Ebitabo e-reader application" />
 </svelte:head>
 
 <div class="tos-container">
@@ -21,7 +21,7 @@
   <section>
     <h2>Introduction</h2>
     <p>
-      Welcome to Bitabo. These Terms of Service ("Terms") govern your use of our e-reader application and website 
+      Welcome to Ebitabo. These Terms of Service ("Terms") govern your use of our e-reader application and website 
       (collectively, the "Service"). By using our Service, you agree to these Terms. Please read them carefully.
     </p>
   </section>
@@ -29,7 +29,7 @@
   <section>
     <h2>Client-Side Application</h2>
     <p>
-      <strong>Bitabo operates entirely within your browser.</strong> This means:
+      <strong>Ebitabo operates entirely within your browser.</strong> This means:
     </p>
     <ul>
       <li>All processing occurs on your device</li>
@@ -55,7 +55,7 @@
   <section>
     <h2>Intellectual Property</h2>
     <p>
-      Bitabo respects intellectual property rights. Our Service is designed for you to read e-books that you legally own or have permission to access.
+      Ebitabo respects intellectual property rights. Our Service is designed for you to read e-books that you legally own or have permission to access.
     </p>
     <p>
       You are solely responsible for ensuring that your use of e-books through our Service complies with all applicable copyright laws and the terms under which you acquired those e-books.
@@ -68,7 +68,7 @@
   <section>
     <h2>Content Responsibility</h2>
     <p>
-      You are entirely responsible for the content you access through our Service. As Bitabo operates entirely client-side, we do not monitor, review, or have access to the e-books or other content you access through our Service.
+      You are entirely responsible for the content you access through our Service. As Ebitabo operates entirely client-side, we do not monitor, review, or have access to the e-books or other content you access through our Service.
     </p>
   </section>
 
@@ -125,7 +125,7 @@
   </section>
 
   <footer>
-    <p class="copyright">© {currentYear} Bitabo E-Reader. All rights reserved.</p>
+    <p class="copyright">© {currentYear} Ebitabo E-Reader. All rights reserved.</p>
     <p class="links">
       <a href="/">Home</a> | 
       <a href="/privacy">Privacy Policy</a>

@@ -1,6 +1,6 @@
 {
-  "name": "Bitabo E-book Reader",
-  "short_name": "Bitabo",
+  "name": "Ebitabo E-book Reader",
+  "short_name": "Ebitabo",
   "description": "A beautiful client-side e-book reader and library manager",
   "start_url": "/library",
   "display": "standalone",
@@ -54,13 +54,13 @@
       "sizes": "3602x1954",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Bitabo library view on desktop"
+      "label": "Ebitabo library view on desktop"
     },
     {
       "src": "/screenshots/mobile.png",
       "sizes": "846x1486",
       "type": "image/png",
-      "label": "Bitabo library view on mobile"
+      "label": "Ebitabo library view on mobile"
     }
   ]
 }

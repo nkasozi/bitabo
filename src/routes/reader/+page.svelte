@@ -3,7 +3,7 @@
 	import { browser } from '$app/environment';
 
 	// Constants for database - only using BOOKS_STORE now
-	const DB_NAME = 'bitabo-books';
+	const DB_NAME = 'ebitabo-books';
 	const BOOKS_STORE = 'books';
 
 	// State variables
@@ -151,7 +151,7 @@
 			try {
 				console.log('[DEBUG] Attempting direct IndexedDB save as backup');
 				const db = await new Promise<IDBDatabase>((resolve, reject) => {
-					const request = indexedDB.open('bitabo-books');
+					const request = indexedDB.open('ebitabo-books');
 					request.onerror = (event) => reject(event.target.error);
 					request.onsuccess = (event) => resolve(event.target.result);
 				});
@@ -310,7 +310,7 @@
 				if (!isNaN(progress)) {
 					// Update book metadata and save progress
 					if (bookInfo.title) {
-						document.title = `${bookInfo.title} | Bitabo Reader`;
+						document.title = `${bookInfo.title} | Ebitabo Reader`;
 					}
 
 					// Save progress periodically - use current font size
@@ -636,7 +636,7 @@
 								isBookLoaded = true;
 
 								// Set title in the UI
-								document.title = `${bookInfo.title} | Bitabo Reader`;
+								document.title = `${bookInfo.title} | Ebitabo Reader`;
 
 								// Update sidebar details
 								const titleEl = document.getElementById('side-bar-title');
@@ -852,7 +852,7 @@
 </script>
 
 <svelte:head>
-	<title>Bitabo Reader</title>
+	<title>Ebitabo Reader</title>
 	<!-- Load Foliate Reader scripts -->
 	<script src="/foliate-js/view.js" defer></script>
 	<script src="/foliate-js/ui/menu.js" defer></script>

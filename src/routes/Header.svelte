@@ -30,7 +30,7 @@
 <header>
 	<div class="corner">
 		<a href="/library">
-			<h1 class="logo">Bitabo</h1>
+			<h1 class="logo">Ebitabo</h1>
 		</a>
 	</div>
 
@@ -185,7 +185,7 @@
 		}
 
 		.corner {
-			width: 4em;
+			width: 6em;
 		}
 
 		nav a {
