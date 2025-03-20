@@ -3075,9 +3075,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
 
     /* 3D positioning */
     :global(.hardcover_front) {
-        -webkit-transform: rotateY(-34deg) translateZ(8px);
-        -moz-transform: rotateY(-34deg) translateZ(8px);
-        transform: rotateY(-34deg) translateZ(8px);
+        -webkit-transform: rotateY(-35deg) translateZ(8px);
+        -moz-transform: rotateY(-35deg) translateZ(8px);
+        transform: rotateY(-35deg) translateZ(8px);
     }
 
     :global(.hardcover_back) {
