@@ -3153,7 +3153,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         /* Will-change hint */
         will-change: transform;
         perspective-origin: center;
-        /* Reduce iOsS rendering problems */
+        /* Reduce iOS rendering problems */
         -webkit-font-smoothing: antialiased;
     }
 
@@ -3230,14 +3230,12 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transform: rotateY(-35deg) translateZ(8px);
         -moz-transform: rotateY(-35deg) translateZ(8px);
         transform: rotateY(-35deg) translateZ(8px);
-        box-shadow: 0 35px 15px -30px rgba(0, 0, 0, 0.5);
     }
 
     :global(.hardcover_back) {
         -webkit-transform: rotateY(-15deg) translateZ(-8px);
         -moz-transform: rotateY(-15deg) translateZ(-8px);
         transform: rotateY(-30deg) translateZ(-8px) translateX(10px);
-        box-shadow: 0 35px 15px -30px rgba(0, 0, 0, 0.5);
     }
 
     :global(.page li:nth-child(1)) {
@@ -3454,7 +3452,6 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
         transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
         width: 26px;
-        box-shadow: 0 25px 10px -15px rgba(0, 0, 0, 0.3);
     }
 
     :global(.book_spine li:first-child) {
