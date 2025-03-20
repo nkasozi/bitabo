@@ -2757,6 +2757,20 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			<div class="keyboard-instructions">
 				{#if isMobile}
 					Swipe left and right to navigate through your books
+					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
+						<button style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;" on:click={() => {
+							if (selectedBookIndex > 0) {
+								selectedBookIndex--;
+								coverflow.select(selectedBookIndex);
+							}
+						}}><span class="keyboard-arrow">←</span></button>
+						<button style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;" on:click={() => {
+							if (selectedBookIndex < libraryBooks.length - 1) {
+								selectedBookIndex++;
+								coverflow.select(selectedBookIndex);
+							}
+						}}><span class="keyboard-arrow">→</span></button>
+					</div>
 				{:else}
 					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to
 					navigate through your books
