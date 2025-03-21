@@ -78,7 +78,7 @@
 		}
 	}
 
-	// Save reading progress - using service worker for background save
+	// Save reading progress with robust IndexedDB handling and retry capability
 	async function saveReadingProgress(progress: number, navigateBack: boolean = false, explicitFontSize?: number) {
 		console.log('[DEBUG] saveReadingProgress called with progress:', progress, 'explicitFontSize:', explicitFontSize);
 
@@ -147,45 +147,121 @@
 			// Debug the actual value we're about to save
 			console.log(`[DEBUG] Final font size value being saved: ${fontSize}px (provided: ${providedFontSize}, type: ${typeof fontSize})`);
 
-			// Direct database save as backup - this ensures it gets saved even if service worker fails
+			// Direct database save as backup with retry logic
 			try {
 				console.log('[DEBUG] Attempting direct IndexedDB save as backup');
-				const db = await new Promise<IDBDatabase>((resolve, reject) => {
-					const request = indexedDB.open('ebitabo-books');
-					request.onerror = (event) => reject(event.target.error);
-					request.onsuccess = (event) => resolve(event.target.result);
-				});
 				
-				const transaction = db.transaction(['books'], 'readwrite');
-				const store = transaction.objectStore('books');
-				const getRequest = store.get(bookId);
-				
-				getRequest.onsuccess = (event) => {
-					const book = event.target.result;
-					if (book) {
-						// Update progress and font size
-						book.progress = progress;
-						book.fontSize = fontSize;
-						book.lastAccessed = Date.now();
+				// Function to attempt the save with retry capability
+				const attemptDirectSave = async (retryAttempt = 0): Promise<boolean> => {
+					try {
+						console.log(`[DEBUG] Direct save attempt ${retryAttempt + 1}`);
 						
-						// Save back to database
-						const putRequest = store.put(book);
-						putRequest.onsuccess = () => {
-							console.log(`[DEBUG] Direct IndexedDB save successful. Font size: ${fontSize}px`);
-						};
-						putRequest.onerror = (e) => {
-							console.error('[DEBUG] Error in direct IndexedDB save:', e.target.error);
-						};
-					} else {
-						console.warn(`[DEBUG] Book ${bookId} not found in direct IndexedDB save`);
+						// Open database with better error handling
+						const db = await new Promise<IDBDatabase>((resolve, reject) => {
+							const request = indexedDB.open(DB_NAME);
+							
+							request.onerror = (event) => {
+								console.error('[DEBUG] Error opening database for save:', event.target.error);
+								reject(event.target.error);
+							};
+							
+							request.onsuccess = (event) => {
+								resolve(event.target.result);
+							};
+							
+							// Handle upgradeneeded event for database initialization
+							request.onupgradeneeded = (event) => {
+								const db = event.target.result;
+								console.log('[DEBUG] Database upgrade needed during save, creating books store');
+								
+								if (!db.objectStoreNames.contains(BOOKS_STORE)) {
+									db.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
+								}
+							};
+						});
+						
+						// Ensure store exists
+						if (!db.objectStoreNames.contains(BOOKS_STORE)) {
+							throw new Error('Books store not found in database');
+						}
+						
+						// Get book and update in a Promise for better control
+						return await new Promise<boolean>((resolve, reject) => {
+							try {
+								const transaction = db.transaction([BOOKS_STORE], 'readwrite');
+								
+								// Set up transaction error handler
+								transaction.onerror = (e) => {
+									console.error('[DEBUG] Transaction error during save:', e.target.error);
+									reject(e.target.error);
+								};
+								
+								// Set up transaction abort handler
+								transaction.onabort = (e) => {
+									console.error('[DEBUG] Transaction aborted during save:', e.target.error);
+									reject(new Error('Transaction aborted'));
+								};
+								
+								const store = transaction.objectStore(BOOKS_STORE);
+								const getRequest = store.get(bookId);
+								
+								getRequest.onsuccess = (event) => {
+									const book = event.target.result;
+									if (book) {
+										// Update progress and font size
+										book.progress = progress;
+										book.fontSize = fontSize;
+										book.lastAccessed = Date.now();
+										
+										// Save back to database
+										const putRequest = store.put(book);
+										
+										putRequest.onsuccess = () => {
+											console.log(`[DEBUG] Direct IndexedDB save successful. Font size: ${fontSize}px`);
+											resolve(true);
+										};
+										
+										putRequest.onerror = (e) => {
+											console.error('[DEBUG] Error in direct IndexedDB put operation:', e.target.error);
+											reject(e.target.error);
+										};
+									} else {
+										console.warn(`[DEBUG] Book ${bookId} not found in direct IndexedDB save`);
+										// Not finding the book is a valid outcome, but we'll return false
+										resolve(false);
+									}
+								};
+								
+								getRequest.onerror = (e) => {
+									console.error('[DEBUG] Error getting book for save:', e.target.error);
+									reject(e.target.error);
+								};
+							} catch (transactionError) {
+								console.error('[DEBUG] Exception in transaction setup:', transactionError);
+								reject(transactionError);
+							}
+						});
+					} catch (error) {
+						console.warn(`[DEBUG] Direct save attempt ${retryAttempt + 1} failed:`, error);
+						
+						// Implement retry logic with exponential backoff
+						if (retryAttempt < 2) {
+							const delay = Math.min(800 * Math.pow(1.5, retryAttempt), 2000);
+							console.log(`[DEBUG] Retrying direct save in ${delay}ms`);
+							await new Promise(resolve => setTimeout(resolve, delay));
+							return attemptDirectSave(retryAttempt + 1);
+						} else {
+							console.error('[DEBUG] All direct save attempts failed');
+							return false;
+						}
 					}
 				};
 				
-				getRequest.onerror = (e) => {
-					console.error('[DEBUG] Error getting book from IndexedDB:', e.target.error);
-				};
+				// Start the direct save process
+				await attemptDirectSave();
+				
 			} catch (dbError) {
-				console.warn('[DEBUG] Direct IndexedDB save failed:', dbError);
+				console.warn('[DEBUG] Direct IndexedDB save failed after all retries:', dbError);
 				// Continue with service worker save even if direct save fails
 			}
 
@@ -489,8 +565,8 @@
 		}
 	}
 
-	// Function to load a book directly into the reader
-	async function loadBookIntoReader() {
+	// Function to load a book directly into the reader with retry capability
+	async function loadBookIntoReader(retryCount = 0) {
 		try {
 			// Get book ID from URL parameters
 			const urlParams = new URLSearchParams(window.location.search);
@@ -506,29 +582,74 @@
 
 			if (!reader) {
 				console.warn('[DEBUG] Reader not initialized yet');
+				if (retryCount < 3) {
+					console.log(`[DEBUG] Reader not ready, retrying in 500ms (attempt ${retryCount + 1}/3)`);
+					setTimeout(() => loadBookIntoReader(retryCount + 1), 500);
+				} else {
+					showErrorNotification('Reader not initialized', bookId, 'Try refreshing the page');
+				}
 				return;
 			}
 
-			// Open IndexedDB to get the book data
-			const request = indexedDB.open(DB_NAME);
+			console.log(`[DEBUG] Opening IndexedDB database (attempt ${retryCount + 1})`);
+			
+			// Use a Promise for better error handling with IndexedDB
+			const db = await new Promise<IDBDatabase>((resolve, reject) => {
+				const request = indexedDB.open(DB_NAME);
+				
+				request.onerror = function(event) {
+					const error = event.target.error;
+					console.error('[DEBUG] IndexedDB open error:', error);
+					reject(error);
+				};
+				
+				request.onsuccess = function(event) {
+					const db = event.target.result;
+					console.log(`[DEBUG] Successfully opened database with version ${db.version}`);
+					resolve(db);
+				};
+				
+				// Handle upgradeneeded event as well
+				request.onupgradeneeded = function(event) {
+					const db = event.target.result;
+					console.log('[DEBUG] Database upgrade needed, creating stores if necessary');
+					
+					if (!db.objectStoreNames.contains(BOOKS_STORE)) {
+						console.log('[DEBUG] Creating books store');
+						db.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
+					}
+				};
+			}).catch(error => {
+				console.error('[DEBUG] Error in database open promise:', error);
+				
+				// Retry logic for database open errors
+				if (retryCount < 3) {
+					console.log(`[DEBUG] Database open failed, retrying in 800ms (attempt ${retryCount + 1}/3)`);
+					setTimeout(() => loadBookIntoReader(retryCount + 1), 800);
+					return null; // Return null to signal retry is happening
+				} else {
+					showErrorNotification(
+						'Could not access the book database',
+						bookId,
+						`Error: ${error.name}: ${error.message}`
+					);
+					throw error; // Propagate the error to stop processing
+				}
+			});
+			
+			// If db is null, it means we're retrying, so exit this attempt
+			if (!db) return;
 
-			request.onerror = function(event) {
-				const error = event.target.error;
-				console.error('[DEBUG] IndexedDB error:', error);
-				showErrorNotification(
-					'Could not access the book database',
-					bookId,
-					`Error: ${error.name}: ${error.message}`
-				);
-			};
-
-			request.onsuccess = async function(event) {
-				const db = event.target.result;
-				console.log(`[DEBUG] Successfully opened database with version ${db.version}`);
-
-				// Check for books store
-				if (!db.objectStoreNames.contains(BOOKS_STORE)) {
-					console.error('[DEBUG] Books store not found in database');
+			// Check for books store
+			if (!db.objectStoreNames.contains(BOOKS_STORE)) {
+				console.error('[DEBUG] Books store not found in database');
+				
+				// Retry logic for missing store
+				if (retryCount < 2) {
+					console.log(`[DEBUG] Books store missing, retrying in 1000ms (attempt ${retryCount + 1}/2)`);
+					setTimeout(() => loadBookIntoReader(retryCount + 1), 1000);
+					return;
+				} else {
 					showErrorNotification(
 						'Book database is missing',
 						bookId,
@@ -536,225 +657,256 @@
 					);
 					return;
 				}
+			}
 
-				// Start a transaction to get the book directly
-				const transaction = db.transaction([BOOKS_STORE], 'readonly');
-				const store = transaction.objectStore(BOOKS_STORE);
+			// Start a transaction to get the book directly
+			const transaction = db.transaction([BOOKS_STORE], 'readonly');
+			const store = transaction.objectStore(BOOKS_STORE);
 
-				// Get the book by its unique ID
+			// Get the book by its unique ID with proper Promise-based error handling
+			const bookData = await new Promise<any>((resolve, reject) => {
 				const getRequest = store.get(bookId);
-
-				getRequest.onsuccess = async function(event) {
-					const bookData = event.target.result;
-
-					// If book not found, show error
-					if (!bookData) {
-						console.error('[DEBUG] Book with ID not found:', bookId);
-						showErrorNotification(
-							'Book not found',
-							bookId,
-							`Book with ID ${bookId} not found in database`
-						);
-						return;
-					}
-
-					if (bookData && bookData.file) {
-						try {
-							console.log(`[DEBUG] Found book in database: ${bookData.title} by ${bookData.author}`);
-
-							// Save book info
-							bookInfo = {
-								title: bookData.title || 'Unknown Title',
-								author: bookData.author || 'Unknown Author',
-								id: bookId,
-								progress: bookData.progress || 0
-							};
-
-							// Determine which progress value to use
-							let initialProgress = null;
-							if (progressParam) {
-								initialProgress = parseFloat(progressParam);
-								if (isNaN(initialProgress)) {
-									initialProgress = null;
-								}
-							} else if (bookData.progress) {
-								initialProgress = bookData.progress;
-							}
-
-							// Open the book with our reader
-							try {
-								// Try to get font size from multiple sources in order of priority:
-								// 1. URL parameter (most recent)
-								// 2. Service worker (saved in IndexedDB)
-								// 3. Book data in the current response
-								// 4. Default value (18px)
-								let fontSize = 18; // Default font size
-								
-								// Check URL parameter first (highest priority)
-								if (fontSizeParam) {
-									const parsedFontSize = parseInt(fontSizeParam, 10);
-									if (!isNaN(parsedFontSize)) {
-										fontSize = parsedFontSize;
-										console.log(`[DEBUG] Using font size from URL parameter: ${fontSize}px`);
-									}
-								} 
-								// If not in URL, try to get from service worker / IndexedDB
-								else if (isServiceWorkerRegistered) {
-									try {
-										const savedData = await getBookProgress(bookId);
-										console.log(`[DEBUG] Service worker returned data:`, savedData);
-										if (savedData && savedData.fontSize !== undefined && savedData.fontSize !== null) {
-											const swFontSize = Number(savedData.fontSize);
-											if (!isNaN(swFontSize) && swFontSize > 0) {
-												fontSize = swFontSize;
-												console.log(`[DEBUG] Using font size from service worker: ${fontSize}px`);
-											} else {
-												console.warn(`[DEBUG] Invalid font size from service worker: ${savedData.fontSize}, using default`);
-											}
-										}
-									} catch (e) {
-										console.warn('[DEBUG] Error getting font size from service worker:', e);
-									}
-								}
-
-								// Direct database check for font size (highly reliable)
-								console.log(`[DEBUG] Directly checking bookData for fontSize: ${bookData.fontSize !== undefined ? bookData.fontSize : 'not set'}`);
-								if (bookData.fontSize !== undefined && bookData.fontSize !== null) {
-									const dbFontSize = Number(bookData.fontSize);
-									if (!isNaN(dbFontSize) && dbFontSize > 0) {
-										fontSize = dbFontSize;
-										console.log(`[DEBUG] Using font size directly from bookData: ${fontSize}px`);
-									} else {
-										console.warn(`[DEBUG] Invalid font size in bookData: ${bookData.fontSize}, using: ${fontSize}px`);
-									}
-								}
-								
-								console.log(`[DEBUG] Final font size to be applied: ${fontSize}px (${typeof fontSize})`);
-								
-								await reader.openBook(bookData.file);
-								
-								isBookLoaded = true;
-
-								// Set title in the UI
-								document.title = `${bookInfo.title} | Ebitabo Reader`;
-
-								// Update sidebar details
-								const titleEl = document.getElementById('side-bar-title');
-								const authorEl = document.getElementById('side-bar-author');
-
-								if (titleEl) titleEl.textContent = bookInfo.title;
-								if (authorEl) authorEl.textContent = bookInfo.author;
-
-								// Set initial progress if available
-								if (initialProgress !== null) {
-									console.log(`[DEBUG] Attempting to set initial progress to: ${initialProgress}`);
-
-									// Simply set the progress slider value directly
-									const setProgressValue = (attempt = 1) => {
-										console.log(`[DEBUG] Setting progress slider attempt ${attempt}`);
-
-										const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
-										if (progressSlider) {
-											console.log(`[DEBUG] Found progress slider, setting value to ${initialProgress}`);
-
-											// Set the value which will update the UI
-											progressSlider.value = initialProgress.toString();
-
-											// Create and dispatch an input event to trigger the slider's event handlers
-											const event = new Event('input', { bubbles: true });
-											progressSlider.dispatchEvent(event);
-
-											console.log(`[DEBUG] Progress slider value after setting: ${progressSlider.value}`);
-											console.log(`[DEBUG] Progress successfully applied via slider`);
-										} else {
-											console.warn(`[DEBUG] Progress slider not found for attempt ${attempt}`);
-
-											if (attempt < 10) {
-												// Use exponential backoff
-												const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 5000);
-												console.log(`[DEBUG] Will retry in ${delay}ms (attempt ${attempt + 1})`);
-												setTimeout(() => setProgressValue(attempt + 1), delay);
-											} else {
-												console.error('[DEBUG] Could not find progress slider after multiple attempts');
-											}
-										}
-									};
-
-									// Start first attempt after a delay to ensure book and UI are loaded
-									setTimeout(() => setProgressValue(1), 1000);
-								}
-
-								// Setup the progress tracking
-								setupProgressTracking();
-
-								// After book is loaded, apply font size with extra validation
-								const validatedSize = Math.max(10, Math.min(72, Number(fontSize) || 18));
-								console.log(`[DEBUG] Applying validated font size: ${validatedSize}px to reader`);
-
-								// Apply font size immediately and then again after a small delay to ensure it's applied
-								reader.updateFontSize(validatedSize);
-
-								// Apply again with a short delay to ensure it's applied after book rendering completes
-								setTimeout(() => {
-									try {
-										console.log(`[DEBUG] Re-applying font size: ${validatedSize}px after delay`);
-										reader.updateFontSize(validatedSize);
-
-										// Also update the menu selection if possible
-										try {
-											const menuButton = document.getElementById('menu-button');
-											if (menuButton) {
-												const menuElement = menuButton.querySelector('.menu');
-												if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
-													console.log(`[DEBUG] Updating menu font size selection to: ${validatedSize}`);
-													menuElement.__menu.groups.fontSize.select(validatedSize.toString());
-												}
-											}
-										} catch (menuError) {
-											console.error('[DEBUG] Error updating menu font size selection:', menuError);
-										}
-									} catch (e) {
-										console.error('[DEBUG] Error applying font size after delay:', e);
-									}
-								}, 500);
-
-							} catch (err) {
-								console.error('[DEBUG] Error opening book:', err);
-								let errorDetails = '';
-								if (err instanceof Error) {
-									errorDetails = err.message;
-								}
-								showErrorNotification('Failed to open book', bookId, errorDetails);
-							}
-
-						} catch (err) {
-							console.error('[DEBUG] Error preparing book file:', err);
-							let errorDetails = '';
-							if (err instanceof Error) {
-								errorDetails = err.message;
-							}
-							showErrorNotification('Failed to prepare book file', bookId, errorDetails);
-						}
+				
+				getRequest.onsuccess = function(event) {
+					const result = event.target.result;
+					if (result) {
+						console.log(`[DEBUG] Book found: ${result.title} by ${result.author}`);
 					} else {
-						console.warn('[DEBUG] Book record missing file data');
-						showErrorNotification(
-							'Book file missing',
-							bookId,
-							`Book with ID ${bookId} exists but has no file data`
-						);
+						console.warn(`[DEBUG] Book with ID not found: ${bookId}`);
 					}
+					resolve(result);
 				};
-
+				
 				getRequest.onerror = function(event) {
-					console.error('[DEBUG] Error retrieving book:', event.target.error);
+					const error = event.target.error;
+					console.error('[DEBUG] Error getting book:', error);
+					reject(error);
+				};
+			}).catch(error => {
+				console.error('[DEBUG] Error in getRequest promise:', error);
+				
+				// Retry logic for book retrieval errors
+				if (retryCount < 3) {
+					console.log(`[DEBUG] Book retrieval failed, retrying in 1200ms (attempt ${retryCount + 1}/3)`);
+					setTimeout(() => loadBookIntoReader(retryCount + 1), 1200);
+					return null; // Return null to signal retry is happening
+				} else {
 					showErrorNotification(
 						'Error retrieving book',
 						bookId,
-						`Error: ${event.target.error.name}: ${event.target.error.message}`
+						`Error: ${error.name}: ${error.message}`
 					);
-				};
-			};
+					throw error; // Propagate the error to stop processing
+				}
+			});
+			
+			// If bookData is null from a caught error, it means we're retrying, so exit this attempt
+			if (bookData === null) return;
 
+			// If book not found, show error or retry
+			if (!bookData) {
+				console.error('[DEBUG] Book with ID not found:', bookId);
+				
+				// Retry logic for missing book
+				if (retryCount < 2) {
+					console.log(`[DEBUG] Book not found, retrying in 1500ms (attempt ${retryCount + 1}/2)`);
+					setTimeout(() => loadBookIntoReader(retryCount + 1), 1500);
+					return;
+				} else {
+					showErrorNotification(
+						'Book not found',
+						bookId,
+						`Book with ID ${bookId} not found in database`
+					);
+					return;
+				}
+			}
+
+			if (bookData && bookData.file) {
+				try {
+					console.log(`[DEBUG] Found book in database: ${bookData.title} by ${bookData.author}`);
+
+					// Save book info
+					bookInfo = {
+						title: bookData.title || 'Unknown Title',
+						author: bookData.author || 'Unknown Author',
+						id: bookId,
+						progress: bookData.progress || 0
+					};
+
+					// Determine which progress value to use
+					let initialProgress = null;
+					if (progressParam) {
+						initialProgress = parseFloat(progressParam);
+						if (isNaN(initialProgress)) {
+							initialProgress = null;
+						}
+					} else if (bookData.progress) {
+						initialProgress = bookData.progress;
+					}
+
+					// Open the book with our reader
+					try {
+						// Try to get font size from multiple sources in order of priority:
+						// 1. URL parameter (most recent)
+						// 2. Service worker (saved in IndexedDB)
+						// 3. Book data in the current response
+						// 4. Default value (18px)
+						let fontSize = 18; // Default font size
+						
+						// Check URL parameter first (highest priority)
+						if (fontSizeParam) {
+							const parsedFontSize = parseInt(fontSizeParam, 10);
+							if (!isNaN(parsedFontSize)) {
+								fontSize = parsedFontSize;
+								console.log(`[DEBUG] Using font size from URL parameter: ${fontSize}px`);
+							}
+						} 
+						// If not in URL, try to get from service worker / IndexedDB
+						else if (isServiceWorkerRegistered) {
+							try {
+								const savedData = await getBookProgress(bookId);
+								console.log(`[DEBUG] Service worker returned data:`, savedData);
+								if (savedData && savedData.fontSize !== undefined && savedData.fontSize !== null) {
+									const swFontSize = Number(savedData.fontSize);
+									if (!isNaN(swFontSize) && swFontSize > 0) {
+										fontSize = swFontSize;
+										console.log(`[DEBUG] Using font size from service worker: ${fontSize}px`);
+									} else {
+										console.warn(`[DEBUG] Invalid font size from service worker: ${savedData.fontSize}, using default`);
+									}
+								}
+							} catch (e) {
+								console.warn('[DEBUG] Error getting font size from service worker:', e);
+							}
+						}
+
+						// Direct database check for font size (highly reliable)
+						console.log(`[DEBUG] Directly checking bookData for fontSize: ${bookData.fontSize !== undefined ? bookData.fontSize : 'not set'}`);
+						if (bookData.fontSize !== undefined && bookData.fontSize !== null) {
+							const dbFontSize = Number(bookData.fontSize);
+							if (!isNaN(dbFontSize) && dbFontSize > 0) {
+								fontSize = dbFontSize;
+								console.log(`[DEBUG] Using font size directly from bookData: ${fontSize}px`);
+							} else {
+								console.warn(`[DEBUG] Invalid font size in bookData: ${bookData.fontSize}, using: ${fontSize}px`);
+							}
+						}
+						
+						console.log(`[DEBUG] Final font size to be applied: ${fontSize}px (${typeof fontSize})`);
+						
+						await reader.openBook(bookData.file);
+						
+						isBookLoaded = true;
+
+						// Set title in the UI
+						document.title = `${bookInfo.title} | Ebitabo Reader`;
+
+						// Update sidebar details
+						const titleEl = document.getElementById('side-bar-title');
+						const authorEl = document.getElementById('side-bar-author');
+
+						if (titleEl) titleEl.textContent = bookInfo.title;
+						if (authorEl) authorEl.textContent = bookInfo.author;
+
+						// Set initial progress if available
+						if (initialProgress !== null) {
+							console.log(`[DEBUG] Attempting to set initial progress to: ${initialProgress}`);
+
+							// Simply set the progress slider value directly
+							const setProgressValue = (attempt = 1) => {
+								console.log(`[DEBUG] Setting progress slider attempt ${attempt}`);
+
+								const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
+								if (progressSlider) {
+									console.log(`[DEBUG] Found progress slider, setting value to ${initialProgress}`);
+
+									// Set the value which will update the UI
+									progressSlider.value = initialProgress.toString();
+
+									// Create and dispatch an input event to trigger the slider's event handlers
+									const event = new Event('input', { bubbles: true });
+									progressSlider.dispatchEvent(event);
+
+									console.log(`[DEBUG] Progress slider value after setting: ${progressSlider.value}`);
+									console.log(`[DEBUG] Progress successfully applied via slider`);
+								} else {
+									console.warn(`[DEBUG] Progress slider not found for attempt ${attempt}`);
+
+									if (attempt < 10) {
+										// Use exponential backoff
+										const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 5000);
+										console.log(`[DEBUG] Will retry in ${delay}ms (attempt ${attempt + 1})`);
+										setTimeout(() => setProgressValue(attempt + 1), delay);
+									} else {
+										console.error('[DEBUG] Could not find progress slider after multiple attempts');
+									}
+								}
+							};
+
+							// Start first attempt after a delay to ensure book and UI are loaded
+							setTimeout(() => setProgressValue(1), 1000);
+						}
+
+						// Setup the progress tracking
+						setupProgressTracking();
+
+						// After book is loaded, apply font size with extra validation
+						const validatedSize = Math.max(10, Math.min(72, Number(fontSize) || 18));
+						console.log(`[DEBUG] Applying validated font size: ${validatedSize}px to reader`);
+
+						// Apply font size immediately and then again after a small delay to ensure it's applied
+						reader.updateFontSize(validatedSize);
+
+						// Apply again with a short delay to ensure it's applied after book rendering completes
+						setTimeout(() => {
+							try {
+								console.log(`[DEBUG] Re-applying font size: ${validatedSize}px after delay`);
+								reader.updateFontSize(validatedSize);
+
+								// Also update the menu selection if possible
+								try {
+									const menuButton = document.getElementById('menu-button');
+									if (menuButton) {
+										const menuElement = menuButton.querySelector('.menu');
+										if (menuElement && menuElement.__menu && menuElement.__menu.groups && menuElement.__menu.groups.fontSize) {
+											console.log(`[DEBUG] Updating menu font size selection to: ${validatedSize}`);
+											menuElement.__menu.groups.fontSize.select(validatedSize.toString());
+										}
+									}
+								} catch (menuError) {
+									console.error('[DEBUG] Error updating menu font size selection:', menuError);
+								}
+							} catch (e) {
+								console.error('[DEBUG] Error applying font size after delay:', e);
+							}
+						}, 500);
+
+					} catch (err) {
+						console.error('[DEBUG] Error opening book:', err);
+						let errorDetails = '';
+						if (err instanceof Error) {
+							errorDetails = err.message;
+						}
+						showErrorNotification('Failed to open book', bookId, errorDetails);
+					}
+
+				} catch (err) {
+					console.error('[DEBUG] Error preparing book file:', err);
+					let errorDetails = '';
+					if (err instanceof Error) {
+						errorDetails = err.message;
+					}
+					showErrorNotification('Failed to prepare book file', bookId, errorDetails);
+				}
+			} else {
+				console.warn('[DEBUG] Book record missing file data');
+				showErrorNotification(
+					'Book file missing',
+					bookId,
+					`Book with ID ${bookId} exists but has no file data`
+				);
+			}
 		} catch (error) {
 			console.error('[DEBUG] Error loading book into reader:', error);
 			let errorMsg = 'Unknown error occurred while loading the book';
