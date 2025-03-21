@@ -2808,7 +2808,7 @@
 				{#if isMobile}
 					Swipe left and right to navigate through your books
 					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
-						<button oncontextmenu="return false;"
+						<button on:contextmenu|preventDefault
 							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
 							on:click={() => {
 								if (selectedBookIndex > 0) {
@@ -2882,8 +2882,8 @@
 								window.addEventListener('touchend', stopNavigation);
 								window.addEventListener('touchcancel', stopNavigation);
 							}}
-						><span oncontextmenu="return false;" class="keyboard-arrow">←</span></button>
-						<button oncontextmenu="return false;"
+						><span on:contextmenu|preventDefault class="keyboard-arrow">←</span></button>
+						<button on:contextmenu|preventDefault
 							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
 							on:click={() => {
 								if (selectedBookIndex < libraryBooks.length - 1) {
@@ -2957,7 +2957,7 @@
 								window.addEventListener('touchend', stopNavigation);
 								window.addEventListener('touchcancel', stopNavigation);
 							}}
-						><span oncontextmenu="return false;" class="keyboard-arrow">→</span></button>
+						><span on:contextmenu|preventDefault class="keyboard-arrow">→</span></button>
 					</div>
 				{:else}
 					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to
