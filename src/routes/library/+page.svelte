@@ -1174,7 +1174,7 @@
 				const xTranslate = (index - activeIndex) * 200;
 				const zTranslate = (index === activeIndex) ? 60 : 0;
 				const rotateY = (index - activeIndex) * 15;
-				const scale = (index === activeIndex) ? 2 : 0.9;
+				const scale = (index === activeIndex) ? 5 : 0.8;
 
 				book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${scale})`;
 				book.style.position = 'absolute';
