@@ -45,6 +45,9 @@
 		{ id: 'dummy-2', title: 'EMPTY LIBRARY', ribbon: 'BOOKS', color: 'blue' },
 		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'HERE', color: 'red' }
 	];
+	
+	// Variable to track the centered dummy book
+	let selectedDummyIndex = 1;
 
 	// Database constants - using only BOOKS_STORE
 	const DB_NAME = 'ebitabo-books';
@@ -1316,6 +1319,13 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			});
 		} catch (error) {
 			console.error('[ERROR] Failed to initialize empty library coverflow:', error);
+		}
+	}
+	
+	// Function to handle selecting a dummy book in the empty library
+	function selectDummyBook(index) {
+		if (index >= 0 && index < dummyBooks.length) {
+			selectedDummyIndex = index;
 		}
 	}
 
@@ -2962,9 +2972,31 @@ book.style.webkitTransformStyle = 'preserve-3d';
 		{:else}
 			<!-- Empty library placeholder -->
 			<div class="coverflow-container fade-in">
+				<!-- Left/Right navigation buttons -->
+				<div class="coverflow-navigation">
+					<button 
+						class="nav-button left"
+						on:click={() => selectedDummyIndex > 0 && selectDummyBook(selectedDummyIndex - 1)}
+						disabled={selectedDummyIndex === 0}
+					>
+						<span class="keyboard-arrow">←</span>
+					</button>
+					<button 
+						class="nav-button right"
+						on:click={() => selectedDummyIndex < dummyBooks.length - 1 && selectDummyBook(selectedDummyIndex + 1)}
+						disabled={selectedDummyIndex === dummyBooks.length - 1}
+					>
+						<span class="keyboard-arrow">→</span>
+					</button>
+				</div>
 				<ul class="align" style="display: flex; justify-content: center; transform-style: preserve-3d;">
 					{#each dummyBooks as dummy, index}
-						<li tabindex="0" data-index={index} style="transform: translate3d({(index-1)*200}px, 0, {(index === 1) ? 60 : 0}px) rotateY({(index-1)*5}deg) scale({(index === 1) ? 1.05 : 0.9}); z-index: {3-Math.abs(index-1)}; position: absolute;">
+						<li 
+							tabindex="0" 
+							data-index={index} 
+							on:click={() => selectDummyBook(index)}
+							on:keydown={(e) => e.key === 'Enter' && selectDummyBook(index)}
+							style="transform: translate3d({(index-selectedDummyIndex)*200}px, 0, {(index === selectedDummyIndex) ? 60 : 0}px) rotateY({(index-selectedDummyIndex)*15}deg) scale({(index === selectedDummyIndex) ? 1.05 : 0.9}); z-index: {3-Math.abs(index-selectedDummyIndex)}; position: absolute; transition: transform 0.5s ease, z-index 0.5s ease;">
 							<figure class="book">
 								<ul class="hardcover_front">
 									<li>
@@ -2972,7 +3004,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 											<span class="ribbon">{dummy.ribbon}</span>
 											<div class="cover-image" style="background-image: url('/placeholder-cover.png')"></div>
 											<div class="cover-text">
-												<h1>EMPTY <br /> LIBRARY</h1>
+												<h1></h1>
 												<p></p>
 											</div>
 										</div>
@@ -4441,5 +4473,51 @@ book.style.webkitTransformStyle = 'preserve-3d';
         .crossplatform-buttons {
             flex-direction: column-reverse;
         }
+    }
+
+    /* Coverflow navigation container */
+    .coverflow-navigation {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        transform: translateY(-50%);
+        z-index: 1100;
+        pointer-events: none;
+        display: flex;
+        justify-content: space-between;
+        padding: 0 1rem;
+    }
+
+    /* Base styles for navigation buttons */
+    .nav-button {
+        pointer-events: auto;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background-color: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.2s;
+    }
+
+    .nav-button:hover {
+        background-color: rgba(255, 255, 255, 0.9);
+        transform: scale(1.1);
+    }
+
+    .nav-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Keyboard arrow styles */
+    .keyboard-arrow {
+        font-size: 1.5rem;
+        line-height: 1;
     }
 </style>
