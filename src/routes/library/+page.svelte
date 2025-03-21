@@ -1328,6 +1328,27 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			selectedDummyIndex = index;
 		}
 	}
+	
+	// Variables to track touch events for swipe support
+	let touchStartX = 0;
+	let touchEndX = 0;
+	
+	// Function to handle swipe on empty library
+	function handleEmptyLibrarySwipe() {
+		const swipeThreshold = 50; // Minimum distance to trigger a swipe
+		
+		if (touchEndX < touchStartX - swipeThreshold) {
+			// Swipe left - go to next book
+			if (selectedDummyIndex < dummyBooks.length - 1) {
+				selectDummyBook(selectedDummyIndex + 1);
+			}
+		} else if (touchEndX > touchStartX + swipeThreshold) {
+			// Swipe right - go to previous book
+			if (selectedDummyIndex > 0) {
+				selectDummyBook(selectedDummyIndex - 1);
+			}
+		}
+	}
 
 	// Initialize coverflow
 	function initCoverflow() {
@@ -2971,7 +2992,13 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			</div>
 		{:else}
 			<!-- Empty library placeholder -->
-			<div class="coverflow-container fade-in">
+			<div class="coverflow-container fade-in" 
+				on:touchstart={(e) => { touchStartX = e.touches[0].screenX; }}
+				on:touchend={(e) => { 
+					touchEndX = e.changedTouches[0].screenX; 
+					handleEmptyLibrarySwipe();
+				}}
+			>
 				<!-- Left/Right navigation buttons -->
 				<div class="coverflow-navigation">
 					<button 
