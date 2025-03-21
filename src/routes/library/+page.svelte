@@ -33,6 +33,9 @@
 	let fileInputElement: HTMLInputElement;
 	let isUploadModalOpen = false;
 	let coverflow: Coverflow;
+	let coverflowSpeed = 15;  // ms between navigations while holding
+	let coverflowDelay = 150; // Initial delay before rapid navigation
+	let coverflowSwipeThreshold = 25;
 	let isMobile: boolean = false;
 
 	// Import settings
@@ -1142,7 +1145,7 @@
 
 			// Helper function to handle swipe
 			this.handleSwipe = () => {
-				const swipeThreshold = 50;
+				const swipeThreshold = coverflowSwipeThreshold;
 				if (touchEndX < touchStartX - swipeThreshold && this.currentIndex < this.bookData.length - 1) {
 					// Swipe left
 					this.select(this.currentIndex + 1);
@@ -1309,7 +1312,7 @@
 
 	// Function to handle swipe on empty library
 	function handleEmptyLibrarySwipe() {
-		const swipeThreshold = 50; // Minimum distance to trigger a swipe
+		const swipeThreshold = coverflowSwipeThreshold; // Minimum distance to trigger a swipe
 
 		if (touchEndX < touchStartX - swipeThreshold) {
 			// Swipe left - go to next book
@@ -2822,8 +2825,8 @@
 								
 								// Navigation interval reference
 								let intervalId;
-								let delay = 300; // Initial delay before rapid navigation
-								let speed = 50; // ms between navigations while holding
+								let delay = coverflowDelay; // Initial delay before rapid navigation
+								let speed = coverflowSpeed; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2854,8 +2857,8 @@
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
-								let delay = 300; // Initial delay before rapid navigation
-								let speed = 50; // ms between navigations while holding
+								let delay = coverflowDelay; // Initial delay before rapid navigation
+								let speed = coverflowSpeed; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2897,8 +2900,8 @@
 								
 								// Navigation interval reference
 								let intervalId;
-								let delay = 300; // Initial delay before rapid navigation
-								let speed = 50; // ms between navigations while holding
+								let delay = coverflowDelay; // Initial delay before rapid navigation
+								let speed = coverflowSpeed; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2929,8 +2932,8 @@
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
-								let delay = 300; // Initial delay before rapid navigation
-								let speed = 50; // ms between navigations while holding
+								let delay = coverflowDelay; // Initial delay before rapid navigation
+								let speed = coverflowSpeed; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
