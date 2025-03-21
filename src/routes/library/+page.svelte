@@ -26,6 +26,7 @@
 	}
 
 	let bookshelf: HTMLElement;
+	let emptyBookshelf: HTMLElement;
 	let isLibraryLoaded = false;
 	let libraryBooks: any[] = [];
 	let selectedBookIndex = 0;
@@ -38,9 +39,11 @@
 	let importType: typeof ImportType[keyof typeof ImportType] = ImportType.Book;
 	let similarityThreshold: number = 0.7; // Default 70% similarity
 
-	// Define the three dummy books
+	// Define the three dummy books with different colors and ribbons
 	const dummyBooks: DummyBook[] = [
-		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'SAMPLE', color: 'grey' }
+		{ id: 'dummy-1', title: 'EMPTY LIBRARY', ribbon: 'ADD', color: 'green' },
+		{ id: 'dummy-2', title: 'EMPTY LIBRARY', ribbon: 'BOOKS', color: 'blue' },
+		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'HERE', color: 'red' }
 	];
 
 	// Database constants - using only BOOKS_STORE
@@ -1277,6 +1280,45 @@ book.style.webkitTransformStyle = 'preserve-3d';
 		}
 	}
 
+	// Initialize empty library coverflow
+	function initEmptyCoverflow() {
+		if (!browser || !emptyBookshelf) return;
+
+		console.log('[DEBUG] Initializing empty library Coverflow');
+
+		// Clear existing content
+		emptyBookshelf.innerHTML = '';
+
+		try {
+			// Create a container for the 3D dummy books
+			const alignContainer = document.createElement('ul');
+			alignContainer.className = 'align';
+			alignContainer.id = 'empty-book-container';
+			emptyBookshelf.appendChild(alignContainer);
+
+			// Create coverflow instance for dummy books
+			const emptyCoverflow = new Coverflow(alignContainer, dummyBooks);
+			emptyCoverflow.initialize();
+			
+			// Apply custom styling to empty library books
+			alignContainer.querySelectorAll('li').forEach((bookElement, index) => {
+				const dummyBook = dummyBooks[index];
+				
+				// Get the cover design element
+				const coverDesign = bookElement.querySelector('.coverDesign');
+
+				// Apply a distinct rotation and offset to each book
+				const offset = (index - 1) * 250; // Spread books apart
+				const rotation = (index - 1) * 25; // Add some rotation
+				
+				bookElement.style.transform = `translate3d(${offset}px, 0, 20px) rotateY(${rotation}deg)`;
+				bookElement.style.zIndex = (3 - Math.abs(index - 1)).toString(); // Set z-index based on position
+			});
+		} catch (error) {
+			console.error('[ERROR] Failed to initialize empty library coverflow:', error);
+		}
+	}
+
 	// Initialize coverflow
 	function initCoverflow() {
 		if (!browser || !bookshelf) return;
@@ -2441,6 +2483,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			if (libraryLoaded) {
 				// Initialize coverflow with the loaded books (longer timeout for better positioning)
 				setTimeout(initCoverflow, 300);
+			} else {
+				// Initialize the empty library view with properly positioned dummy books
+				setTimeout(initEmptyCoverflow, 300);
 			}
 
 			// Setup file input element for file browsing
@@ -2805,7 +2850,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 								// Navigation interval reference
 								let intervalId;
 								let delay = 500; // Initial delay before rapid navigation
-								let speed = 250; // ms between navigations while holding
+								let speed = 50; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2917,9 +2962,9 @@ book.style.webkitTransformStyle = 'preserve-3d';
 		{:else}
 			<!-- Empty library placeholder -->
 			<div class="coverflow-container fade-in">
-				<ul class="align">
+				<ul class="align" style="display: flex; justify-content: center; transform-style: preserve-3d;">
 					{#each dummyBooks as dummy, index}
-						<li tabindex="0" data-index={index}>
+						<li tabindex="0" data-index={index} style="transform: translate3d({(index-1)*200}px, 0, {(index === 1) ? 60 : 0}px) rotateY({(index-1)*5}deg) scale({(index === 1) ? 1.05 : 0.9}); z-index: {3-Math.abs(index-1)}; position: absolute;">
 							<figure class="book">
 								<ul class="hardcover_front">
 									<li>
