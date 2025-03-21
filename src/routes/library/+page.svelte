@@ -2822,8 +2822,8 @@
 								
 								// Navigation interval reference
 								let intervalId;
-								let delay = 500; // Initial delay before rapid navigation
-								let speed = 250; // ms between navigations while holding
+								let delay = 300; // Initial delay before rapid navigation
+								let speed = 50; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2854,7 +2854,7 @@
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
-								let delay = 500; // Initial delay before rapid navigation
+								let delay = 300; // Initial delay before rapid navigation
 								let speed = 50; // ms between navigations while holding
 								
 								// Start navigation after short delay
@@ -2897,8 +2897,8 @@
 								
 								// Navigation interval reference
 								let intervalId;
-								let delay = 500; // Initial delay before rapid navigation 
-								let speed = 250; // ms between navigations while holding
+								let delay = 300; // Initial delay before rapid navigation
+								let speed = 50; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
@@ -2929,8 +2929,8 @@
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
-								let delay = 500; // Initial delay before rapid navigation
-								let speed = 250; // ms between navigations while holding
+								let delay = 300; // Initial delay before rapid navigation
+								let speed = 50; // ms between navigations while holding
 								
 								// Start navigation after short delay
 								const timeoutId = setTimeout(() => {
