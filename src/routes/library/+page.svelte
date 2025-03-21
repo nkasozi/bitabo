@@ -45,7 +45,7 @@
 		{ id: 'dummy-2', title: 'EMPTY LIBRARY', ribbon: 'BOOKS', color: 'blue' },
 		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'HERE', color: 'red' }
 	];
-	
+
 	// Variable to track the centered dummy book
 	let selectedDummyIndex = 1;
 
@@ -264,7 +264,7 @@
 					// Check if we need to add the fileName index to an existing store
 					const transaction = event.target.transaction;
 					const bookStore = transaction.objectStore(BOOKS_STORE);
-					
+
 					// Check if the fileName index exists and add it if it doesn't
 					if (!bookStore.indexNames.contains('fileName')) {
 						console.log('Adding missing fileName index to books store');
@@ -695,8 +695,8 @@
 					// Save to database immediately
 					await saveBook(bookData);
 
-					bookData.ribbonData = "NEW";
-						bookData.ribbonExpiry = Date.now() + 60000; // 60 seconds from now
+					bookData.ribbonData = 'NEW';
+					bookData.ribbonExpiry = Date.now() + 60000; // 60 seconds from now
 
 					// Get the newly added books
 					lastImportedBooks = [...lastImportedBooks, bookData];
@@ -1158,36 +1158,34 @@
 		 * @param {number} activeIndex - Index of the active book
 		 */
 		positionBooks(activeIndex) {
-			// First pass: Set global stacking order
 			this.books.forEach(book => {
 				const index = parseInt(book.dataset.index, 10);
-				const offset = index - activeIndex;
-				const distance = Math.abs(offset);
 
-				// Base z-index calculation with exponential falloff
-				if (offset === 0) {
-					book.style.zIndex = 1000; // Active book gets highest z-index
-				} else {
-					book.style.zIndex = Math.max(1, 800 - (distance * distance * 20));
-				}
-			});
-
-			// Second pass: Set transforms and component z-indexes
-			this.books.forEach(book => {
-				const index = parseInt(book.dataset.index, 10);
-				const offset = index - activeIndex;
-
+				// Clear previous active state
 				book.classList.remove('active-book');
 
-				if (offset === 0) {
-					// Center book - keep as is
-					// Use translate3d for better iOS performance
-book.style.transform = `translate3d(0, 0, 60px) rotateY(0deg) scale(${this.params.scale.active})`;
-// For iOS, explicitly set transform style for child elements
-book.style.webkitTransformStyle = 'preserve-3d';
-					book.classList.add('active-book');
-					//book.style.filter = 'drop-shadow(0 10px 15px rgba(0,0,0,0.6))';
+				// Calculate z-index using the formula from the dummy template
+				// 3-Math.abs(index-selectedDummyIndex)
+				book.style.zIndex = 3 - Math.abs(index - activeIndex);
 
+				// Set transform similar to the dummy template
+				// translate3d({(index-selectedIndex)*200}px, 0, {(index === selectedIndex) ? 60 : 0}px)
+				// rotateY({(index-selectedIndex)*15}deg) scale({(index === selectedIndex) ? 1.05 : 0.9})
+				const xTranslate = (index - activeIndex) * 200;
+				const zTranslate = (index === activeIndex) ? 60 : 0;
+				const rotateY = (index - activeIndex) * 15;
+				const scale = (index === activeIndex) ? 2 : 0.9;
+
+				book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${scale})`;
+				book.style.position = 'absolute';
+				book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
+				book.style.webkitTransformStyle = 'preserve-3d';
+
+				// Add active class to the selected book
+				if (index === activeIndex) {
+					book.classList.add('active-book');
+
+					// Set component z-indexes for the active book
 					this.setComponentZIndexes(book, {
 						frontCover: 30,
 						spine: 20,
@@ -1195,37 +1193,12 @@ book.style.webkitTransformStyle = 'preserve-3d';
 						pages: 15
 					});
 				} else {
-					const distance = Math.abs(offset * 1.1);
-					const shadowOpacity = Math.max(0.1, 0.4 - (distance * 0.1));
-					//book.style.filter = `drop-shadow(0 5px 10px rgba(0,0,0,${shadowOpacity}))`;
-					const direction = offset < 0 ? -1 : 1;
+					// Determine direction for component z-indexes
+					const direction = index - activeIndex < 0 ? -1 : 1;
 
-					// Calculate positions
-					const xPosition = direction * (distance * this.params.xOffset);
-					const zPosition = -55 - (distance * 20);
-
-					// KEY CHANGE: Dynamic rotation based on quadratic curve
-					// For books on right (direction > 0), use diminishing rotation
-					let rotationAngle;
+					// Set component z-indexes based on direction
 					if (direction < 0) {
-						// Books to the left - increasing negative rotation (showing more spine)
-						rotationAngle = direction * (this.params.rotation + (distance * 5));
-					} else {
-						// Books to the right - diminishing positive rotation (showing less spine)
-						// The further away, the closer to 0 degrees (showing front cover)
-						rotationAngle = Math.max(0, this.params.rotation - (distance * 60));
-					}
-
-					const scaleValue = this.params.scale.inactive - (distance * 0.05);
-
-					// Apply transform using translate3d for iOS performance
-					book.style.transform = `translate3d(${xPosition}px, 0, ${zPosition}px) rotateY(${rotationAngle}deg) scale(${scaleValue})`;
-					// Explicitly set webkit styles for iOS
-					book.style.webkitTransformStyle = 'preserve-3d';
-
-					// Adjust z-indexes based on new rotation approach
-					if (direction < 0) {
-						// Left side books (showing spine more)
+						// Left side books
 						this.setComponentZIndexes(book, {
 							frontCover: 20,
 							spine: 30,
@@ -1233,7 +1206,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 							pages: 15
 						});
 					} else {
-						// Right side books (showing front cover)
+						// Right side books
 						this.setComponentZIndexes(book, {
 							frontCover: 30,
 							spine: 10,
@@ -1244,6 +1217,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 				}
 			});
 		}
+
 
 		/**
 		 * Set z-index values for individual book components
@@ -1302,18 +1276,18 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			// Create coverflow instance for dummy books
 			const emptyCoverflow = new Coverflow(alignContainer, dummyBooks);
 			emptyCoverflow.initialize();
-			
+
 			// Apply custom styling to empty library books
 			alignContainer.querySelectorAll('li').forEach((bookElement, index) => {
 				const dummyBook = dummyBooks[index];
-				
+
 				// Get the cover design element
 				const coverDesign = bookElement.querySelector('.coverDesign');
 
 				// Apply a distinct rotation and offset to each book
 				const offset = (index - 1) * 250; // Spread books apart
 				const rotation = (index - 1) * 25; // Add some rotation
-				
+
 				bookElement.style.transform = `translate3d(${offset}px, 0, 20px) rotateY(${rotation}deg)`;
 				bookElement.style.zIndex = (3 - Math.abs(index - 1)).toString(); // Set z-index based on position
 			});
@@ -1321,22 +1295,22 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			console.error('[ERROR] Failed to initialize empty library coverflow:', error);
 		}
 	}
-	
+
 	// Function to handle selecting a dummy book in the empty library
 	function selectDummyBook(index) {
 		if (index >= 0 && index < dummyBooks.length) {
 			selectedDummyIndex = index;
 		}
 	}
-	
+
 	// Variables to track touch events for swipe support
 	let touchStartX = 0;
 	let touchEndX = 0;
-	
+
 	// Function to handle swipe on empty library
 	function handleEmptyLibrarySwipe() {
 		const swipeThreshold = 50; // Minimum distance to trigger a swipe
-		
+
 		if (touchEndX < touchStartX - swipeThreshold) {
 			// Swipe left - go to next book
 			if (selectedDummyIndex < dummyBooks.length - 1) {
@@ -2057,14 +2031,14 @@ book.style.webkitTransformStyle = 'preserve-3d';
 	let lastImportedBooks = [];
 	let showCrossPlatformDialog = false;
 	let ribbonCheckInterval; // Timer for checking expired ribbons
-	
+
 	// Check for temporary ribbons that have expired
 	function checkExpiredRibbons() {
 		if (!libraryBooks || libraryBooks.length === 0) return;
-		
+
 		const now = Date.now();
 		let ribbonsExpired = false;
-		
+
 		// Loop through all books and check for expired ribbons
 		libraryBooks.forEach(book => {
 			// Only check books with temporary ribbon types (NEW, UPDATED) that have an expiry
@@ -2075,13 +2049,13 @@ book.style.webkitTransformStyle = 'preserve-3d';
 					book.ribbonData = null;
 					book.ribbonExpiry = null;
 					ribbonsExpired = true;
-					
+
 					// Update the book in the database silently (don't need to await)
 					saveBook(book);
 				}
 			}
 		});
-		
+
 		// If any ribbons expired, refresh the coverflow to update the UI
 		if (ribbonsExpired && coverflow) {
 			console.log('Refreshing coverflow due to expired ribbons');
@@ -2492,10 +2466,10 @@ book.style.webkitTransformStyle = 'preserve-3d';
 
 	onMount(async () => {
 			if (!browser) return;
-			
+
 			// Set up timer to check for expired ribbons every 10 seconds
 			ribbonCheckInterval = setInterval(checkExpiredRibbons, 10000);
-			
+
 			// Also check once immediately to handle any ribbons that may have expired while away
 			setTimeout(checkExpiredRibbons, 1000);
 
@@ -2546,7 +2520,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 
 	onDestroy(() => {
 		if (!browser) return;
-		
+
 		// Clear the ribbon check interval
 		if (ribbonCheckInterval) {
 			clearInterval(ribbonCheckInterval);
@@ -2834,8 +2808,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
 				{#if isMobile}
 					Swipe left and right to navigate through your books
 					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
-						<button 
-							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;" 
+						<button
+							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
 							on:click={() => {
 								if (selectedBookIndex > 0) {
 									selectedBookIndex--;
@@ -2876,7 +2850,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 								window.addEventListener('mouseup', stopNavigation);
 								e.target.addEventListener('mouseout', stopNavigation);
 							}}
-							
+
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
@@ -2909,8 +2883,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
 								window.addEventListener('touchcancel', stopNavigation);
 							}}
 						><span class="keyboard-arrow">←</span></button>
-						<button 
-							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;" 
+						<button
+							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
 							on:click={() => {
 								if (selectedBookIndex < libraryBooks.length - 1) {
 									selectedBookIndex++;
@@ -2951,7 +2925,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
 								window.addEventListener('mouseup', stopNavigation);
 								e.target.addEventListener('mouseout', stopNavigation);
 							}}
-							
+
 							on:touchstart={(e) => {
 								// Navigation interval reference
 								let intervalId;
@@ -2992,18 +2966,18 @@ book.style.webkitTransformStyle = 'preserve-3d';
 			</div>
 		{:else}
 			<!-- Empty library placeholder -->
-			<div class="coverflow-container fade-in" 
-				on:touchstart={(e) => { touchStartX = e.touches[0].screenX; }}
-				on:touchend={(e) => { 
+			<div class="coverflow-container fade-in"
+					 on:touchstart={(e) => { touchStartX = e.touches[0].screenX; }}
+					 on:touchend={(e) => {
 					touchEndX = e.changedTouches[0].screenX; 
 					handleEmptyLibrarySwipe();
 				}}
 			>
 				<ul class="align" style="display: flex; justify-content: center; transform-style: preserve-3d;">
 					{#each dummyBooks as dummy, index}
-						<li 
-							tabindex="0" 
-							data-index={index} 
+						<li
+							tabindex="0"
+							data-index={index}
 							on:click={() => selectDummyBook(index)}
 							on:keydown={(e) => e.key === 'Enter' && selectDummyBook(index)}
 							style="transform: translate3d({(index-selectedDummyIndex)*200}px, 0, {(index === selectedDummyIndex) ? 60 : 0}px) rotateY({(index-selectedDummyIndex)*15}deg) scale({(index === selectedDummyIndex) ? 1.05 : 0.9}); z-index: {3-Math.abs(index-selectedDummyIndex)}; position: absolute; transition: transform 0.5s ease, z-index 0.5s ease;">
@@ -3051,7 +3025,8 @@ book.style.webkitTransformStyle = 'preserve-3d';
 				<p>This is your FREE online ebook library and reader</p>
 				<p>One place to store all your books and read them</p>
 				<p>Cross platform support for EPUB, PDF, MOBI, AZW3, CBZ books</p>
-				<p>Premium version supports time bound controlled sharing <br/> of your ebooks with friends AND more Ebook formats</p>
+				<p>Premium version supports time bound controlled sharing <br /> of your ebooks with friends AND more Ebook
+					formats</p>
 			</div>
 		{/if}
 
@@ -3317,6 +3292,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transform: rotateY(-35deg) translateZ(8px);
         -moz-transform: rotateY(-35deg) translateZ(8px);
         transform: rotateY(-35deg) translateZ(8px);
+
     }
 
     :global(.hardcover_back) {
@@ -3427,6 +3403,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-transform: translateZ(2px);
         transform: translateZ(2px);
         border-radius: 5px;
+        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0), rgba(0, 0, 0, 0.4));
     }
 
     :global(.hardcover_front li:last-child) {
@@ -3434,6 +3411,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-transform: rotateY(180deg) translateZ(2px);
         transform: rotateY(180deg) translateZ(2px);
         border-radius: 5px;
+        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0), rgba(0, 0, 0, 0.4));
     }
 
     :global(.hardcover_back li:first-child) {
@@ -3441,6 +3419,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-transform: translateZ(2px);
         transform: translateZ(-2px) translateX(-2px);
         border-radius: 5px;
+
     }
 
     :global(.hardcover_back li:last-child) {
@@ -3449,6 +3428,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         background: #666;
         transform: translateZ(-2px) translateX(-2px);
         border-radius: 5px;
+        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0), rgba(0, 0, 0, 0.4));
     }
 
     /* Thickness details */
@@ -3539,6 +3519,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -moz-transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
         transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
         width: 26px;
+        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0), rgba(0, 0, 0, 0.4));
     }
 
     :global(.book_spine li:first-child) {
@@ -3600,6 +3581,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transform-style: preserve-3d;
         -moz-transform-style: preserve-3d;
         transform-style: preserve-3d;
+
     }
 
     :global(.page) {
@@ -3621,6 +3603,7 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transition-timing-function: ease;
         -moz-transition-timing-function: ease;
         transition-timing-function: ease;
+        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0), rgba(0, 0, 0, 0.4));
     }
 
     /* Cover Design */
@@ -3705,19 +3688,19 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transform: translate3d(0, 0, 0);
         transform: translate3d(0, 0, 0);
         will-change: transform;
-        
+
         /* Improved backface visibility for iOS */
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
         backface-visibility: hidden;
-        
+
         /* Simplify transform to reduce iOS shakiness */
         -webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
         transform: rotate(45deg) translate3d(40px, -100px, 0);
         /* Keep transform origin consistent */
         -webkit-transform-origin: top left;
         transform-origin: top left;
-        
+
         /* Reduce shadow complexity for performance */
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         z-index: 10; /* Make sure it sits above other elements */
@@ -3743,19 +3726,19 @@ book.style.webkitTransformStyle = 'preserve-3d';
         -webkit-transform: translate3d(0, 0, 0);
         transform: translate3d(0, 0, 0);
         will-change: transform;
-        
+
         /* Improved backface visibility for iOS */
         -webkit-backface-visibility: hidden;
         -moz-backface-visibility: hidden;
         backface-visibility: hidden;
-        
+
         /* Simplify transform to reduce iOS shakiness - using same transform as regular ribbon */
         -webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
         transform: rotate(45deg) translate3d(40px, -100px, 0);
         /* Keep transform origin consistent */
         -webkit-transform-origin: top left;
         transform-origin: top left;
-        
+
         /* Reduce shadow complexity for performance */
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         z-index: 10; /* Make sure it sits above other elements */
