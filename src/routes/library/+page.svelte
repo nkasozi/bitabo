@@ -34,7 +34,7 @@
 	let isUploadModalOpen = false;
 	let coverflow: Coverflow;
 	let coverflowSpeed = 15;  // ms between navigations while holding
-	let coverflowDelay = 150; // Initial delay before rapid navigation
+	let coverflowDelay = 50; // Initial delay before rapid navigation
 	let coverflowSwipeThreshold = 25;
 	let isMobile: boolean = false;
 
