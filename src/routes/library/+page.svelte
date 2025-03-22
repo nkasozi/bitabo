@@ -4474,7 +4474,7 @@
         :global(.hardcover_back li:last-child),
         :global(.book_spine),
         :global(.page > li) {
-            -webkit-box-reflect: below 0 linear-gradient(transparent, transparent);
+            -webkit-box-reflect: initial;
         }
 
     }
