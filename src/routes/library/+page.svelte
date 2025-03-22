@@ -4468,6 +4468,15 @@
         .crossplatform-buttons {
             flex-direction: column-reverse;
         }
+
+        :global(.hardcover_front li:first-child),
+        :global(.hardcover_front li:last-child),
+        :global(.hardcover_back li:last-child),
+        :global(.book_spine),
+        :global(.page > li) {
+            -webkit-box-reflect: below 0 linear-gradient(transparent, transparent);
+        }
+
     }
 
 
