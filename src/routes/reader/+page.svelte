@@ -1249,9 +1249,9 @@
     /* Book content container */
     .reader-container {
         width: 100%;
-        height: calc(100vh - 96px); /* 48px for header + 48px for nav bar */
+        height: calc(100dvh - 96px); /* 48px for header + 48px for nav bar */
         overflow: hidden;
-				padding-top: 4rem;
+				margin-top: 3rem;
         position: relative;
     }
 
