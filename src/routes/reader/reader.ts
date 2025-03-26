@@ -7,6 +7,7 @@ declare global {
 		createTOCView: any;
 		createMenu: any;
 		Overlayer: any;
+		readerStore: any; // Add readerStore to the window object
 	}
 }
 
@@ -920,6 +921,39 @@ class EbookReader {
 	}
 
 	private async loadCoverImage(book: any): Promise<void> {
+		// First, check if readerStore already has a cover URL we should use
+		let coverUrl: string | null = null;
+		try {
+			if (typeof window.readerStore !== 'undefined' && 
+				window.readerStore.subscribe && 
+				typeof window.readerStore.subscribe === 'function') {
+				
+				// Get the current cover URL from the store (if available)
+				const unsubscribe = window.readerStore.subscribe((state: any) => {
+					if (state.bookCover && state.bookCover !== '/placeholder-cover.png') {
+						coverUrl = state.bookCover;
+						console.log('[DEBUG] Using existing cover URL from store:', coverUrl);
+					}
+				});
+				
+				// Clean up the subscription immediately
+				unsubscribe();
+			}
+		} catch (e) {
+			console.warn('[DEBUG] Error checking readerStore for cover:', e);
+		}
+		
+		// If we already have a cover URL from the store, use it
+		if (coverUrl) {
+			const coverImage = this.getElement<HTMLImageElement>('sidebar.cover');
+			if (coverImage) {
+				coverImage.src = coverUrl;
+				console.log('[DEBUG] Set cover image from store URL:', coverUrl);
+			}
+			return;
+		}
+		
+		// Otherwise, extract cover from the book
 		const coverBlob = await book.getCover?.();
 		if (coverBlob) {
 			const coverImage = this.getElement<HTMLImageElement>('sidebar.cover');
@@ -927,7 +961,23 @@ class EbookReader {
 				console.warn('loadCoverImage: sidebar cover image element not found.');
 				return;
 			}
-			coverImage.src = URL.createObjectURL(coverBlob);
+			
+			// Create URL for the cover image blob
+			coverUrl = URL.createObjectURL(coverBlob);
+			
+			// Update the image in the sidebar
+			coverImage.src = coverUrl;
+			
+			// Update the reader store with the cover URL if available
+			try {
+				// Check if readerStore is available in the global scope
+				if (typeof window.readerStore !== 'undefined' && typeof window.readerStore.updateBookCover === 'function') {
+					window.readerStore.updateBookCover(coverUrl);
+					console.log('[DEBUG] Updated reader store with extracted cover URL:', coverUrl);
+				}
+			} catch (e) {
+				console.warn('[DEBUG] Could not update reader store with cover URL:', e);
+			}
 		}
 	}
 

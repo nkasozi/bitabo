@@ -8,16 +8,20 @@ export interface ReaderState {
 	bookAuthor: string;
 	currentLocation: string;
 	fontSize: number; // Added font size property
+	bookCover: string; // URL to book cover image
+	bookId: string; // Book ID for identification
 }
 
 const createInitialReaderState = (): ReaderState => ({
 	bookLoaded: false,
 	currentPage: 0,
 	totalPages: 0,
-	bookTitle: '',
+	bookTitle: 'Loading Book...',
 	bookAuthor: '',
 	currentLocation: '',
-	fontSize: 18 // Default font size (18px)
+	fontSize: 18, // Default font size (18px)
+	bookCover: '/placeholder-cover.png', // Default placeholder cover
+	bookId: ''
 });
 
 function createReaderStore() {
@@ -30,14 +34,16 @@ function createReaderStore() {
 			update((state) => ({ ...state, bookLoaded: isLoaded }));
 		},
 
-		updateBookMetadata: (metadata: { title: string; author: string; totalPages: number; fontSize?: number }): void => {
+		updateBookMetadata: (metadata: { title: string; author: string; totalPages?: number; fontSize?: number; cover?: string; bookId?: string }): void => {
 			update((state) => ({
 				...state,
 				bookTitle: metadata.title,
 				bookAuthor: metadata.author,
-				totalPages: metadata.totalPages,
-				// Use provided fontSize or keep existing value
-				...(metadata.fontSize !== undefined ? { fontSize: metadata.fontSize } : {})
+				// Only update these if they're provided
+				...(metadata.totalPages !== undefined ? { totalPages: metadata.totalPages } : {}),
+				...(metadata.fontSize !== undefined ? { fontSize: metadata.fontSize } : {}),
+				...(metadata.cover !== undefined ? { bookCover: metadata.cover } : {}),
+				...(metadata.bookId !== undefined ? { bookId: metadata.bookId } : {})
 			}));
 		},
 
@@ -51,6 +57,10 @@ function createReaderStore() {
 
 		updateFontSize: (fontSize: number): void => {
 			update((state) => ({ ...state, fontSize }));
+		},
+		
+		updateBookCover: (cover: string): void => {
+			update((state) => ({ ...state, bookCover: cover }));
 		},
 
 		resetStore: (): void => {

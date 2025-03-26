@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
+	import { darkMode } from '$lib/stores/darkMode';
+	import { readerStore } from '$lib/stores/reader-store';
 
 	// Constants for database - only using BOOKS_STORE now
 	const DB_NAME = 'ebitabo-books';
@@ -17,6 +19,14 @@
 		id: '',
 		progress: 0
 	};
+	
+	// Make readerStore globally available in onMount
+	onMount(() => {
+		if (browser) {
+			window.readerStore = readerStore;
+			console.log('[DEBUG] Made readerStore globally available');
+		}
+	});
 
 	// Import our reader functionality
 	import { createReader } from './reader';
@@ -24,22 +34,6 @@
 
 	// Reader instance reference
 	let reader: any;
-
-	// Navigate back to library
-	function returnToLibrary() {
-		// Save progress before returning if reader is active
-		if (reader) {
-			const progressSlider = document.getElementById('progress-slider') as HTMLInputElement;
-			if (progressSlider) {
-				const progress = parseFloat(progressSlider.value);
-				if (!isNaN(progress)) {
-					saveReadingProgress(progress, true);
-					return; // saveReadingProgress will handle navigation
-				}
-			}
-		}
-		window.location.href = '/library';
-	}
 
 	// Import service worker utilities
 	import { registerServiceWorker, saveReadingProgress as swSaveProgress } from '$lib/serviceWorker';
@@ -55,6 +49,10 @@
 			console.log('[DEBUG] Service worker registered:', isServiceWorkerRegistered);
 		}
 	}
+
+
+	
+	// Note: UI interactions are now handled by the Header component in the layout
 	
 	// Get reading progress and font size from service worker
 	async function getBookProgress(bookId: string): Promise<{ progress: number | null; fontSize: number | null }> {
@@ -320,6 +318,10 @@
 				${bookId ? `<p>Book ID: ${bookId}</p>` : ''}
 				<p>Returning to library in 5 seconds...</p>
 			</div>
+	<!-- Emergency button (no longer needed with new layout) -->
+	<button id="emergency-toc-button" class="emergency-toc-button">
+		Table of Contents
+	</button>
 			<button class="close-button" aria-label="Close notification">×</button>
 		`;
 
@@ -541,28 +543,6 @@
 			});
 		}
 
-		// Setup sidebar toggle functionality
-		const sidebarButton = document.getElementById('side-bar-button');
-		const sidebar = document.getElementById('side-bar');
-		const overlay = document.getElementById('dimming-overlay');
-
-		if (sidebarButton && sidebar && overlay) {
-			// Show sidebar function
-			const showSidebar = () => {
-				sidebar.classList.add('show');
-				overlay.classList.add('show');
-			};
-
-			// Hide sidebar function
-			const hideSidebar = () => {
-				sidebar.classList.remove('show');
-				overlay.classList.remove('show');
-			};
-
-			// Add event listeners
-			sidebarButton.addEventListener('click', showSidebar);
-			overlay.addEventListener('click', hideSidebar);
-		}
 	}
 
 	// Function to load a book directly into the reader with retry capability
@@ -733,6 +713,33 @@
 						id: bookId,
 						progress: bookData.progress || 0
 					};
+					
+					// Generate cover URL from coverBlob if available
+					let coverUrl = '/placeholder-cover.png';
+					if (bookData.coverBlob) {
+						try {
+							// Create a new blob URL from the stored blob
+							coverUrl = URL.createObjectURL(bookData.coverBlob);
+							console.log(`[DEBUG] Generated cover URL from blob for "${bookData.title}": ${coverUrl}`);
+						} catch (error) {
+							console.error(`[DEBUG] Error generating cover URL from blob: ${error}`);
+						}
+					} else if (bookData.coverUrl) {
+						// Use the existing cover URL if available
+						coverUrl = bookData.coverUrl;
+						console.log(`[DEBUG] Using existing cover URL: ${coverUrl}`);
+					}
+					
+					// Update the reader store with book info
+					readerStore.updateBookMetadata({
+						title: bookData.title || 'Unknown Title',
+						author: bookData.author || 'Unknown Author',
+						bookId: bookId,
+						cover: coverUrl
+					});
+					
+					// Also set book loaded state
+					readerStore.setBookLoaded(true);
 
 					// Determine which progress value to use
 					let initialProgress = null;
@@ -801,13 +808,27 @@
 
 						// Set title in the UI
 						document.title = `${bookInfo.title} | Ebitabo Reader`;
-
-						// Update sidebar details
-						const titleEl = document.getElementById('side-bar-title');
-						const authorEl = document.getElementById('side-bar-author');
-
-						if (titleEl) titleEl.textContent = bookInfo.title;
-						if (authorEl) authorEl.textContent = bookInfo.author;
+						
+						// If we have a book cover blob, create a URL for it
+						let coverUrl = null;
+						if (bookData.coverBlob) {
+							try {
+								coverUrl = URL.createObjectURL(bookData.coverBlob);
+								console.log(`[DEBUG] Generated blob URL for book cover: ${coverUrl}`);
+							} catch (error) {
+								console.error(`[DEBUG] Error creating blob URL for cover:`, error);
+							}
+						} else if (bookData.coverUrl) {
+							coverUrl = bookData.coverUrl;
+							console.log(`[DEBUG] Using existing cover URL: ${coverUrl}`);
+						}
+						
+						// Update the store with the title and cover to refresh the header and TOC
+						readerStore.updateBookMetadata({
+							title: bookInfo.title,
+							author: bookInfo.author,
+							cover: coverUrl || '/placeholder-cover.png'
+						});
 
 						// Set initial progress if available
 						if (initialProgress !== null) {
@@ -917,16 +938,79 @@
 		}
 	}
 
+	// Helper function to diagnose TOC DOM elements
+	function diagnoseTocElements() {
+		if (browser) {
+			console.log('[DEBUG] TOC DIAGNOSIS: Checking TOC elements');
+			
+			// Check different possible selectors for title element
+			const titleSelectors = [
+				'#toc-dropdown-title',
+				'#side-bar-title'
+			];
+			
+			// Check different possible selectors for author element
+			const authorSelectors = [
+				'#toc-dropdown-author',
+				'#side-bar-author'
+			];
+			
+			// Check different possible selectors for cover element
+			const coverSelectors = [
+				'#toc-dropdown-cover',
+				'#side-bar-cover'
+			];
+			
+			// Check toc container
+			const containerSelectors = [
+				'#toc-dropdown',
+				'#side-bar'
+			];
+			
+			// Log which elements are found
+			console.log('[DEBUG] TOC DIAGNOSIS: Title elements found:', 
+				titleSelectors.map(s => ({selector: s, found: !!document.querySelector(s)})));
+			console.log('[DEBUG] TOC DIAGNOSIS: Author elements found:', 
+				authorSelectors.map(s => ({selector: s, found: !!document.querySelector(s)})));
+			console.log('[DEBUG] TOC DIAGNOSIS: Cover elements found:', 
+				coverSelectors.map(s => ({selector: s, found: !!document.querySelector(s)})));
+			console.log('[DEBUG] TOC DIAGNOSIS: Container elements found:', 
+				containerSelectors.map(s => ({selector: s, found: !!document.querySelector(s)})));
+		}
+	}
+
 	onMount(async () => {
 		try {
 			console.log('[DEBUG] Reader component mounting');
 
 			// Start preloading Foliate components right away
 			const preloadPromise = preloadFoliateComponents();
+			
+			// Run TOC element diagnosis after mount
+			setTimeout(() => {
+				diagnoseTocElements();
+			}, 1000);
 
 			// Initialize service worker first for background operations
 			if (browser) {
 				await initServiceWorker();
+	// Subscribe to darkMode changes to apply them immediately
+	const unsubDarkMode = darkMode.subscribe(isDark => {
+		console.log('[DEBUG] Dark mode changed:', isDark);
+		if (isDark) {
+			document.documentElement.classList.add('dark-mode');
+		} else {
+			document.documentElement.classList.remove('dark-mode');
+		}
+	});
+	
+	// Apply dark mode immediately
+	if ($darkMode) {
+		document.documentElement.classList.add('dark-mode');
+		console.log('[DEBUG] Initial dark mode set to true');
+	} else {
+		console.log('[DEBUG] Initial dark mode set to false');
+	}
 
 				// Also make sure Foliate components are loaded
 				await preloadPromise;
@@ -937,11 +1021,11 @@
 					elements: {
 						dropTarget: '#reader-drop-target',
 						sidebar: {
-							container: '#side-bar',
-							button: '#side-bar-button',
-							title: '#side-bar-title',
-							author: '#side-bar-author',
-							cover: '#side-bar-cover',
+							container: '#toc-dropdown',
+							button: '#header-book-title',
+							title: '#toc-dropdown-title',
+							author: '#toc-dropdown-author',
+							cover: '#toc-dropdown-cover',
 							tocView: '#toc-view'
 						},
 						navigation: {
@@ -970,8 +1054,20 @@
 
 				// Create the reader instance
 				try {
+					// Log reader configuration for debugging
+					console.log('[DEBUG] Creating reader with config:', {
+						sidebar: readerConfig.elements.sidebar
+					});
+					
+					// Run diagnosis before reader creation
+					diagnoseTocElements();
+					
 					reader = await createReader(readerConfig);
 					isReaderReady = true;
+					
+					// Run diagnosis after reader creation
+					console.log('[DEBUG] Reader created successfully, running element diagnosis');
+					diagnoseTocElements();
 
 					// Once the reader is ready, load the book
 					await loadBookIntoReader();
@@ -997,21 +1093,20 @@
 
 	onDestroy(() => {
 		// Clean up any resources
+			// Cleanup subscription
+			return () => {
+				if (unsubDarkMode) {
+					unsubDarkMode();
+					console.log('[DEBUG] Cleaned up dark mode subscription');
+				}
+			};
 		console.log('[DEBUG] Reader component destroyed');
 
 		// No need to remove any reader.view event listeners since we're not using them
 	});
 </script>
 
-<svelte:head>
-	<title>Ebitabo Reader</title>
-	<!-- Load Foliate Reader scripts -->
-	<script src="/foliate-js/view.js" defer></script>
-	<script src="/foliate-js/ui/menu.js" defer></script>
-	<script src="/foliate-js/ui/tree.js" defer></script>
-	<script src="/foliate-js/overlayer.js" defer></script>
-	<script src="/foliate-js/epubcfi.js" defer></script>
-</svelte:head>
+<!-- No need for svelte:head here as scripts are loaded in the +layout.svelte file -->
 
 {#if hasError}
 	<div class="error-container">
@@ -1024,10 +1119,8 @@
 	</div>
 {/if}
 
-<div class="reader-page-layout">
-	<!-- Book content container -->
-	<div id="ebook-container" class="reader-container"></div>
-</div>
+<!-- Book content container -->
+<div id="ebook-container" class="reader-container"></div>
 
 <!-- Navigation bar with progress slider and font size controls -->
 <div id="nav-bar" class="toolbar nav-bar">
@@ -1153,42 +1246,32 @@
         color: #ff0000;
     }
 
-    /* Overall layout of the reader page */
-    .reader-page-layout {
-        display: flex;
-        flex-direction: column;
-        height: 80dvh;
-        width: 100%;
-        overflow: hidden;
-    }
-
-    /* Header toolbar */
-    .header-bar {
-        flex: 0 0 48px;
-        display: flex;
-        align-items: center;
-        padding: 6px 12px;
-        background-color: var(--color-bg-1, #ffffff);
-        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-    }
-
     /* Book content container */
     .reader-container {
-        flex: 1;
         width: 100%;
+        height: calc(100vh - 96px); /* 48px for header + 48px for nav bar */
         overflow: hidden;
+				padding-top: 4rem;
         position: relative;
     }
 
     /* Navigation bar */
     .nav-bar {
-        flex: 0 0 48px;
+        box-sizing: border-box;
+        position: fixed;
+        z-index: 10;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 48px;
         display: flex;
         align-items: center;
         padding: 6px 12px;
         gap: 12px;
         background-color: var(--color-bg-1, #ffffff);
         border-top: 1px solid rgba(0, 0, 0, 0.1);
+        visibility: visible;
+        opacity: 0.95;
     }
 
     /* Dark mode support */
@@ -1328,70 +1411,6 @@
         fill: currentcolor;
         stroke: none;
     }
+    
 
-    /* Menu container */
-    .menu-container {
-        position: relative;
-    }
-
-    /* Sidebar styles */
-    .sidebar {
-        box-sizing: border-box;
-        position: absolute;
-        z-index: 2;
-        top: 0;
-        left: 0;
-        height: 100%;
-        width: 320px;
-        transform: translateX(-320px);
-        display: flex;
-        flex-direction: column;
-        background: Canvas;
-        border-right: 1px solid ThreeDShadow;
-        transition: transform 250ms ease;
-    }
-
-    .sidebar.show {
-        transform: none;
-    }
-
-    /* Dimming overlay for sidebar */
-    #dimming-overlay {
-        position: fixed;
-        z-index: 1;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.3);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 250ms ease;
-    }
-
-    #dimming-overlay.show {
-        opacity: 1;
-        pointer-events: auto;
-    }
-
-    /* Sidebar header styles */
-    .sidebar-header {
-        padding: 1em;
-        border-bottom: 1px solid ThreeDShadow;
-    }
-
-    #side-bar-title {
-        font-size: 1.2em;
-        font-weight: bold;
-        margin-bottom: 0.5em;
-    }
-
-    #side-bar-author {
-        color: GrayText;
-    }
-
-    /* Back to library button styling */
-    #back-to-library-button {
-        margin-right: auto;
-    }
 </style>

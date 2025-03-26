@@ -1,16 +1,24 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import Header from './Header.svelte';
+	import ReaderHeader from './components/ReaderHeader.svelte';
 	import '../app.css';
 	import { registerServiceWorker } from '$lib/serviceWorker';
 	import { injectSpeedInsights } from '@vercel/speed-insights/sveltekit';
-	import { injectAnalytics } from '@vercel/analytics/sveltekit'
+	import { injectAnalytics } from '@vercel/analytics/sveltekit';
+	import { readerStore } from '$lib/stores/reader-store';
 
 	injectSpeedInsights();
 	injectAnalytics();
 	
 	let { children } = $props();
+	
+	// Check if we're on the reader page to show appropriate header
+	let isReaderPage = $derived(
+		page?.url?.pathname?.startsWith('/reader') || false
+	);
 	
 	// Register service worker on app load
 	onMount(async () => {
@@ -18,6 +26,17 @@
 			try {
 				const registered = await registerServiceWorker();
 				console.log('Service worker registered from layout:', registered);
+
+				if (isReaderPage && page.data?.bookInfo) {
+					readerStore.updateBookMetadata({
+						title: page.data.bookInfo.title,
+						author: page.data.bookInfo.author,
+						bookId: page.data.bookInfo.id
+					});
+
+					console.log('Updated Book Metadata for ReaderHeader:', isReaderPage);
+				}
+
 			} catch (error) {
 				console.error('Error registering service worker:', error);
 			}
@@ -35,25 +54,41 @@
 		<link rel="modulepreload" href="/foliate-js/overlayer.js">
 		<link rel="modulepreload" href="/foliate-js/epubcfi.js">
 	{/if}
+	
+	<!-- Load reader scripts when on reader page -->
+	{#if isReaderPage}
+		<script src="/foliate-js/view.js" defer></script>
+		<script src="/foliate-js/ui/menu.js" defer></script>
+		<script src="/foliate-js/ui/tree.js" defer></script>
+		<script src="/foliate-js/overlayer.js" defer></script>
+		<script src="/foliate-js/epubcfi.js" defer></script>
+	{/if}
 </svelte:head>
 
 <div class="app">
-	<Header />
-
-	<main>
-		{@render children()}
-	</main>
-
-	<footer>
-		<p>© {new Date().getFullYear()} Ebitabo E-book Reader</p>
-		<div class="footer-links">
-			<a href="/privacy">Privacy Policy</a>
-			<span class="separator">|</span>
-			<a href="/tos">Terms of Service</a>
-			<span class="separator">|</span>
-			<a href="mailto:mwooyogwajanzi@gmail.com">Contact Us</a>
-		</div>
-	</footer>
+	{#if isReaderPage}
+		<!-- Reader-specific header and layout -->
+		<ReaderHeader bookInfo={page.data?.bookInfo || {title: 'Loading Book...', author: '', id: '', progress: 0}} />
+		<main class="reader-main">
+			{@render children()}
+		</main>
+	{:else}
+		<!-- Standard site header and layout -->
+		<Header />
+		<main>
+			{@render children()}
+		</main>
+		<footer>
+			<p>© {new Date().getFullYear()} Ebitabo E-book Reader</p>
+			<div class="footer-links">
+				<a href="/privacy">Privacy Policy</a>
+				<span class="separator">|</span>
+				<a href="/tos">Terms of Service</a>
+				<span class="separator">|</span>
+				<a href="mailto:mwooyogwajanzi@gmail.com">Contact Us</a>
+			</div>
+		</footer>
+	{/if}
 </div>
 
 <style>
@@ -70,6 +105,14 @@
 		width: 100%;
 		margin: 0 auto;
 		box-sizing: border-box;
+	}
+	
+	.reader-main {
+		padding: 0 !important;
+		margin: 0 !important;
+		max-width: 100% !important;
+		width: 100% !important;
+		height: 100vh !important;
 	}
 
 	footer {
@@ -109,5 +152,12 @@
 		footer {
 			padding: 12px 0;
 		}
+	}
+	
+	/* Reader page styles */
+	:global(body.reader-page) {
+		min-height: 100vh;
+		max-height: 100vh;
+		overflow: hidden;
 	}
 </style>
