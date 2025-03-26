@@ -30,7 +30,7 @@
 <header>
 	<div class="corner">
 		<a href="/library">
-			<h1 class="logo">Ebitabo</h1>
+			<h1 class="logo">ReadStash</h1>
 		</a>
 	</div>
 
@@ -87,7 +87,7 @@
 	}
 
 	.corner {
-		width: 8em;
+		width: 9em;
 		height: 3em;
 		display: flex;
 		align-items: center;
@@ -185,7 +185,7 @@
 		}
 
 		.corner {
-			width: 6em;
+			width: 8em;
 		}
 
 		nav a {

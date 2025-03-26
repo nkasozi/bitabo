@@ -2564,8 +2564,10 @@
 	<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
 
 	<div class="epic-quote text-center mb-4">
-		<p>One place to store your books, One shelf to hold them,</p>
-		<p>One search to find them, And with knowledge organise them</p>
+		<p>One place to store your books,</p>
+		<p>One shelf to hold your books,</p>
+		<p>One search to find your books,</p>
+		<p>And in your browser read them all</p>
 	</div>
 
 	<div class="flex flex-col justify-center mb-4">

@@ -79,7 +79,7 @@
 			{@render children()}
 		</main>
 		<footer>
-			<p>© {new Date().getFullYear()} Ebitabo E-book Reader</p>
+			<p>© {new Date().getFullYear()} ReadStash E-book Library & Reader</p>
 			<div class="footer-links">
 				<a href="/privacy">Privacy Policy</a>
 				<span class="separator">|</span>
