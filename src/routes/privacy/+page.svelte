@@ -10,8 +10,8 @@
 </script>
 
 <svelte:head>
-  <title>Privacy Policy | Ebitabo</title>
-  <meta name="description" content="Privacy policy for Ebitabo e-reader application" />
+  <title>Privacy Policy | ReadStash</title>
+  <meta name="description" content="Privacy policy for ReadStash e-reader application" />
 </svelte:head>
 
 <div class="privacy-container">
@@ -21,7 +21,7 @@
   <section>
     <h2>Introduction</h2>
     <p>
-      Welcome to Ebitabo ("we," "our," or "us"). We respect your privacy and are committed to protecting your personal data.
+      Welcome to ReadStash ("we," "our," or "us"). We respect your privacy and are committed to protecting your personal data.
       This privacy policy explains how your data is handled when you use our e-reader application.
     </p>
   </section>
@@ -29,7 +29,7 @@
   <section>
     <h2>Data Collection and Processing</h2>
     <p>
-      <strong>Ebitabo operates entirely within your browser.</strong> This means that:
+      <strong>ReadStash operates entirely within your browser.</strong> This means that:
     </p>
     <ul>
       <li>Your e-books and reading materials remain on your device</li>
@@ -42,7 +42,7 @@
   <section>
     <h2>Local Storage</h2>
     <p>
-      Ebitabo uses your browser's IndexedDB to store:
+      ReadStash uses your browser's IndexedDB to store:
     </p>
     <ul>
       <li>Your uploaded e-books</li>
@@ -58,14 +58,14 @@
   <section>
     <h2>Service Workers</h2>
     <p>
-      Ebitabo uses service workers to enable offline functionality. Service workers store application assets locally to improve performance and allow the application to work without an internet connection.
+      ReadStash uses service workers to enable offline functionality. Service workers store application assets locally to improve performance and allow the application to work without an internet connection.
     </p>
   </section>
 
   <section>
     <h2>Third-Party Services</h2>
     <p>
-      Ebitabo does not integrate with any third-party analytics, tracking, or advertising services. We do not use cookies for tracking purposes.
+      ReadStash does not integrate with any third-party analytics, tracking, or advertising services. We do not use cookies for tracking purposes.
     </p>
   </section>
 
@@ -109,7 +109,7 @@
   </section>
 
   <footer>
-    <p class="copyright">© {currentYear} Ebitabo E-Reader. All rights reserved.</p>
+    <p class="copyright">© {currentYear} ReadStash E-Reader. All rights reserved.</p>
     <p class="links">
       <a href="/">Home</a> | 
       <a href="/tos">Terms of Service</a>

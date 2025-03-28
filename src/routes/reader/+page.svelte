@@ -388,7 +388,7 @@
 				if (!isNaN(progress)) {
 					// Update book metadata and save progress
 					if (bookInfo.title) {
-						document.title = `${bookInfo.title} | Ebitabo Reader`;
+						document.title = `${bookInfo.title} | ReadStash Reader`;
 					}
 
 					// Save progress periodically - use current font size
@@ -807,7 +807,7 @@
 						isBookLoaded = true;
 
 						// Set title in the UI
-						document.title = `${bookInfo.title} | Ebitabo Reader`;
+						document.title = `${bookInfo.title} | ReadStash Reader`;
 						
 						// If we have a book cover blob, create a URL for it
 						let coverUrl = null;

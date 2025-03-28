@@ -1,4 +1,4 @@
-// Ebitabo Service Worker for Background Tasks
+// ReadStash Service Worker for Background Tasks
 // Handles book storage, progress tracking, and other background operations
 
 const SW_VERSION = '1.1.0';

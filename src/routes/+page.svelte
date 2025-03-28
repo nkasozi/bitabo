@@ -9,7 +9,7 @@
 </script>
 
 <svelte:head>
-	<title>Ebitabo E-book Reader</title>
+	<title>ReadStash E-book library and Reader</title>
 	<meta name="description" content="A client-side e-book reader and library manager" />
 </svelte:head>
 
