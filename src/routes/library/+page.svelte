@@ -343,7 +343,7 @@
 		return preparedBooks;
 	}
 
-	// Save individual book to IndexedDB
+	// Save individual book to IndexedDB with improved mobile compatibility
 	async function saveBook(book) {
 		if (!browser) return false;
 
@@ -378,28 +378,78 @@
 			// Always ensure lastAccessed is present
 			preparedBook.lastAccessed = preparedBook.lastAccessed || Date.now();
 
+			// Special handling for file field to ensure proper storage on mobile devices
+			if (preparedBook.file) {
+				try {
+					// Create a FileData object to store file metadata separately
+					// This helps with serialization issues on mobile browsers
+					preparedBook.fileData = {
+						name: preparedBook.file.name,
+						type: preparedBook.file.type,
+						size: preparedBook.file.size,
+						lastModified: preparedBook.file.lastModified
+					};
+					
+					// Store file content as a separate blob
+					// This approach prevents issues with file handles being lost on mobile
+					if (!preparedBook.fileBlob) {
+						console.log(`Creating fileBlob for "${preparedBook.title}" to ensure mobile compatibility`);
+						preparedBook.fileBlob = preparedBook.file.slice(
+							0, 
+							preparedBook.file.size, 
+							preparedBook.file.type
+						);
+					}
+					
+					console.log(`Book "${preparedBook.title}" prepared with fileBlob: ${!!preparedBook.fileBlob}`);
+				} catch (fileError) {
+					console.error(`Error processing file for "${preparedBook.title}":`, fileError);
+					// Keep original file if processing fails
+				}
+			}
+
 			const db = await openDatabase();
 
 			// Start a transaction to save the book
 			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
 			const store = transaction.objectStore(BOOKS_STORE);
 
-			// Save the book
-			await new Promise<void>((resolve, reject) => {
-				const request = store.put(preparedBook);
+			// Save the book with retries for mobile devices that may have timeout issues
+			const MAX_RETRIES = 2;
+			let retries = 0;
+			
+			while (retries <= MAX_RETRIES) {
+				try {
+					await new Promise<void>((resolve, reject) => {
+						const request = store.put(preparedBook);
 
-				request.onsuccess = function() {
-					console.log(`Book "${preparedBook.title}" saved to IndexedDB successfully`);
-					resolve();
-				};
+						request.onsuccess = function() {
+							console.log(`Book "${preparedBook.title}" saved to IndexedDB successfully`);
+							resolve();
+						};
 
-				request.onerror = function(event) {
-					console.error(`Error saving book "${preparedBook.title}":`, event.target.error);
-					reject(event.target.error);
-				};
-			});
+						request.onerror = function(event) {
+							console.error(`Error saving book "${preparedBook.title}" (attempt ${retries+1}):`, event.target.error);
+							reject(event.target.error);
+						};
+					});
+					
+					// If we get here, the save was successful
+					return true;
+				} catch (saveError) {
+					retries++;
+					if (retries <= MAX_RETRIES) {
+						console.log(`Retrying save for "${preparedBook.title}" (attempt ${retries+1} of ${MAX_RETRIES+1})`);
+						// Wait before retrying
+						await new Promise(r => setTimeout(r, 500 * retries));
+					} else {
+						console.error(`Failed to save book "${preparedBook.title}" after ${MAX_RETRIES+1} attempts`);
+						throw saveError;
+					}
+				}
+			}
 
-			return true;
+			return false; // Should not reach here due to return true or throw above
 		} catch (error) {
 			console.error('Error saving book:', error);
 			return false;

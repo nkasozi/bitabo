@@ -924,7 +924,7 @@ class EbookReader {
 		// First, check if readerStore already has a cover URL we should use
 		let coverUrl: string | null = null;
 		try {
-			if (typeof window.readerStore !== 'undefined' && 
+			if (typeof window.readerStore !== 'undefined' &&
 				window.readerStore.subscribe && 
 				typeof window.readerStore.subscribe === 'function') {
 				
@@ -1273,11 +1273,21 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 	// Enhanced reader with additional method for cover extraction
 	const enhancedReader = {
 		...reader,
-		openBook: async (file: File | string, options: Record<string, any> = {}) => {
+		openBook: async (file: File | string | Blob, options: Record<string, any> = {}) => {
 			// If extractCoverOnly is true, just extract the cover
 			if (options.extractCoverOnly) {
-				// Support for EPUB and CBZ files
-				if (file instanceof File && (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.cbz'))) {
+				// Support for EPUB and CBZ files with defensive type checking
+				const fileName = file instanceof File && file.name ? file.name : '';
+				const fileType = file instanceof Blob ? file.type : '';
+				const isEpubFile = fileName && fileName.toLowerCase().endsWith('.epub');
+				const isCbzFile = fileName && fileName.toLowerCase().endsWith('.cbz');
+				const isEpubByType = fileType === 'application/epub+zip';
+				const isCbzByType = fileType === 'application/x-cbz';
+				const isGenericBinary = fileType === 'application/octet-stream';
+				
+				// Check all possible ways to identify a valid file
+				if ((file instanceof File && (isEpubFile || isCbzFile)) || 
+					(file instanceof Blob && (isEpubByType || isCbzByType || isGenericBinary))) {
 					try {
 						// Make sure components are loaded - preload again if needed
 						if (!isFoliateViewRegistered()) {
@@ -1332,7 +1342,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 							const metadata = book.metadata || {};
 							const title = metadata.title ? 
 								(typeof metadata.title === 'string' ? metadata.title : Object.values(metadata.title)[0]) :
-								file.name.replace(/\.[^/.]+$/, "");
+								(fileName || "Unknown Title");
 								
 							const author = metadata.author ? 
 								(Array.isArray(metadata.author) ? 
@@ -1386,7 +1396,7 @@ export const createReader = async (config?: Partial<ReaderConfig>): Promise<any>
 								
 								if (inlineStyle) {
 									// Parse the px value, e.g., "18px" -> 18
-									const match = inlineStyle.match(/(\d+)px/);
+									const match = inlineStyle.match(/(d+)px/);
 									if (match && match[1]) {
 										const inlineFontSize = parseInt(match[1], 10);
 										if (!isNaN(inlineFontSize) && inlineFontSize > 0) {

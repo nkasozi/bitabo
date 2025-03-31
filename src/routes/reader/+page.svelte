@@ -545,6 +545,53 @@
 
 	}
 
+	// Prepare a safe file wrapper to avoid "endsWith is undefined" errors when opening books
+	function prepareSafeFileForReader(fileObj: any, bookData: any): any {
+		console.log(`[DEBUG] Preparing safe file wrapper for book: ${bookData.title}`);
+		
+		try {
+			// If it's already a valid File with name property, use it directly
+			if (fileObj instanceof File && fileObj.name) {
+				console.log(`[DEBUG] Already a valid File object with name: ${fileObj.name}`);
+				return fileObj;
+			}
+			
+			// Handle Blob objects that might not have name property
+			if (fileObj instanceof Blob) {
+				// Create a new File object from the Blob
+				const fileName = bookData.fileData?.name || bookData.fileName || `book_${bookData.id}.epub`;
+				const fileType = fileObj.type || bookData.fileData?.type || 'application/epub+zip';
+				
+				console.log(`[DEBUG] Creating File object from Blob with name: ${fileName} and type: ${fileType}`);
+				
+				// Create a new File with the blob's content and proper metadata
+				try {
+					return new File([fileObj], fileName, { type: fileType });
+				} catch (fileError) {
+					console.warn(`[DEBUG] Error creating File object: ${fileError}. Trying alternative approach.`);
+					
+					// Alternative approach: use the blob but add a name property
+					// This works because the reader just needs to see the name property
+					const safeBlob = fileObj.slice(0, fileObj.size, fileType);
+					Object.defineProperty(safeBlob, 'name', {
+						value: fileName,
+						writable: false
+					});
+					console.log(`[DEBUG] Created safe blob with name property: ${safeBlob.name}`);
+					return safeBlob;
+				}
+			}
+			
+			// Fallback: something unexpected, just return the original
+			console.warn(`[DEBUG] Unknown file type, returning original`);
+			return fileObj;
+		} catch (error) {
+			console.error(`[DEBUG] Error preparing safe file: ${error}`);
+			// Return original to avoid breaking completely
+			return fileObj;
+		}
+	}
+	
 	// Function to load a book directly into the reader with retry capability
 	async function loadBookIntoReader(retryCount = 0) {
 		try {
@@ -702,7 +749,7 @@
 				}
 			}
 
-			if (bookData && bookData.file) {
+			if (bookData) {
 				try {
 					console.log(`[DEBUG] Found book in database: ${bookData.title} by ${bookData.author}`);
 
@@ -750,6 +797,62 @@
 						}
 					} else if (bookData.progress) {
 						initialProgress = bookData.progress;
+					}
+					
+					// Determine which file blob to use - prioritize dedicated fileBlob for better mobile support
+					let fileToOpen;
+					if (bookData.fileBlob) {
+						console.log(`[DEBUG] Using dedicated fileBlob for better mobile compatibility`);
+						fileToOpen = bookData.fileBlob;
+						
+						// Ensure the blob has the correct type
+						if (bookData.fileData && bookData.fileData.type) {
+							// Create a new blob with the correct type if needed
+							if (fileToOpen.type !== bookData.fileData.type) {
+								fileToOpen = fileToOpen.slice(0, fileToOpen.size, bookData.fileData.type);
+								console.log(`[DEBUG] Created properly typed blob with type: ${fileToOpen.type}`);
+							}
+						}
+						
+						// Add a name property to the blob to help with file extension detection
+						// This helps prevent the "Cannot read properties of undefined (reading 'endsWith')" error
+						try {
+							const fileName = bookData.fileData?.name || bookData.fileName || `book_${bookId}.epub`;
+							Object.defineProperty(fileToOpen, 'name', {
+								value: fileName,
+								writable: false
+							});
+							console.log(`[DEBUG] Added name property to blob: ${fileName}`);
+						} catch (nameError) {
+							console.warn(`[DEBUG] Failed to add name property to blob: ${nameError}`);
+						}
+					} else if (bookData.file) {
+						console.log(`[DEBUG] Using original file object`);
+						fileToOpen = bookData.file;
+						
+						// Verify the file has a valid name property to avoid endsWith errors
+						if (!fileToOpen.name) {
+							try {
+								const fileName = bookData.fileName || `book_${bookId}.epub`;
+								console.log(`[DEBUG] File missing name property, adding name: ${fileName}`);
+								Object.defineProperty(fileToOpen, 'name', {
+									value: fileName,
+									writable: false
+								});
+							} catch (nameError) {
+								console.warn(`[DEBUG] Failed to add name to file object: ${nameError}`);
+							}
+						} else {
+							console.log(`[DEBUG] File has name property: ${fileToOpen.name}`);
+						}
+					} else {
+						console.error(`[DEBUG] No file or fileBlob found for book: ${bookData.title}`);
+						showErrorNotification(
+							'Book file data is missing',
+							bookId,
+							`The book was found but the file data is corrupted or missing`
+						);
+						return;
 					}
 
 					// Open the book with our reader
@@ -802,7 +905,12 @@
 						
 						console.log(`[DEBUG] Final font size to be applied: ${fontSize}px (${typeof fontSize})`);
 						
-						await reader.openBook(bookData.file);
+						// Prepare a safe file wrapper before opening the book
+						const safeFile = prepareSafeFileForReader(fileToOpen, bookData);
+						console.log(`[DEBUG] Using safe file wrapper for opening book`);
+						
+						// Open the book with our reader using the safe file wrapper
+						await reader.openBook(safeFile);
 						
 						isBookLoaded = true;
 
