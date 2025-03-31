@@ -1180,29 +1180,167 @@
 				});
 			});
 
-			// Touch swipe support
+			// Enhanced touch swipe support with momentum
 			let touchStartX = 0;
 			let touchEndX = 0;
+			let touchStartTime = 0;
+			let touchEndTime = 0;
+			let isSwiping = false;
+			let swipeVelocity = 0;
+			let swipeDistance = 0;
+			let animationFrameId = null;
 
 			this.container.addEventListener('touchstart', (e) => {
+				// Cancel any ongoing momentum scrolling
+				if (animationFrameId) {
+					cancelAnimationFrame(animationFrameId);
+					animationFrameId = null;
+				}
+				
 				touchStartX = e.changedTouches[0].screenX;
+				touchStartTime = Date.now();
+				isSwiping = true;
+				swipeVelocity = 0;
+				swipeDistance = 0;
+			});
+
+			this.container.addEventListener('touchmove', (e) => {
+				if (!isSwiping) return;
+				
+				// Prevent scrolling the page while swiping the coverflow
+				e.preventDefault();
+				
+				// Track current position for visual feedback during swipe
+				const currentX = e.changedTouches[0].screenX;
+				swipeDistance = currentX - touchStartX;
+				
+				// Apply a slight visual transform during swipe for feedback
+				// This gives the effect of the books moving slightly with your finger
+				const movePercent = Math.min(Math.abs(swipeDistance) / 150, 0.5);
+				const direction = swipeDistance < 0 ? 1 : -1;
+				
+				// Apply temporary transforms to show movement
+				this.books.forEach((book, i) => {
+					if (i === this.currentIndex) {
+						book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
+					}
+				});
 			});
 
 			this.container.addEventListener('touchend', (e) => {
 				touchEndX = e.changedTouches[0].screenX;
-				this.handleSwipe();
+				touchEndTime = Date.now();
+				
+				swipeDistance = touchEndX - touchStartX;
+				const swipeDuration = Math.max(1, touchEndTime - touchStartTime); // Prevent division by zero
+				
+				// Calculate velocity in pixels per millisecond
+				swipeVelocity = swipeDistance / swipeDuration;
+				
+				this.handleSwipeWithMomentum();
+				isSwiping = false;
 			});
 
-			// Helper function to handle swipe
-			this.handleSwipe = () => {
+			this.container.addEventListener('touchcancel', () => {
+				// Reset swipe state if touch is cancelled
+				isSwiping = false;
+				
+				// Reset any temporary transforms
+				this.books.forEach(book => {
+					book.style.transform = '';
+				});
+				
+				this.positionBooks(this.currentIndex);
+			});
+
+			// Helper function to handle swipe with momentum
+			this.handleSwipeWithMomentum = () => {
+				// Reset any temporary transforms from touchmove
+				this.books.forEach(book => {
+					book.style.transform = '';
+				});
+				
 				const swipeThreshold = coverflowSwipeThreshold;
-				if (touchEndX < touchStartX - swipeThreshold && this.currentIndex < this.bookData.length - 1) {
-					// Swipe left
-					this.select(this.currentIndex + 1);
-				} else if (touchEndX > touchStartX + swipeThreshold && this.currentIndex > 0) {
-					// Swipe right
-					this.select(this.currentIndex - 1);
+				const velocityThreshold = 0.3; // pixels per millisecond
+				const absVelocity = Math.abs(swipeVelocity);
+				
+				// Calculate how many positions to move based on velocity and distance
+				let positionsToMove = 0;
+				
+				// Fast swipe with enough distance - move multiple positions
+				if (absVelocity > velocityThreshold && Math.abs(swipeDistance) > swipeThreshold) {
+					// Calculate positions to move based on velocity
+					// Higher velocity = more positions moved
+					positionsToMove = Math.min(
+						Math.floor(absVelocity * 6), // Scale factor for velocity
+						Math.floor(Math.abs(swipeDistance) / 60) // Scale factor for distance
+					);
+					positionsToMove = Math.max(1, positionsToMove); // At least move 1
+					positionsToMove = Math.min(positionsToMove, 3); // Cap at 3 to prevent too much movement
+				} 
+				// Regular swipe with enough distance - move one position
+				else if (Math.abs(swipeDistance) > swipeThreshold) {
+					positionsToMove = 1;
 				}
+				
+				// Apply the movement with direction
+				if (positionsToMove > 0) {
+					if (swipeDistance < 0 && this.currentIndex < this.bookData.length - 1) {
+						// Swipe left - animated across multiple frames if velocity is high
+						this.animateBookSelection(this.currentIndex, Math.min(this.bookData.length - 1, this.currentIndex + positionsToMove));
+					} else if (swipeDistance > 0 && this.currentIndex > 0) {
+						// Swipe right - animated across multiple frames if velocity is high
+						this.animateBookSelection(this.currentIndex, Math.max(0, this.currentIndex - positionsToMove));
+					} else {
+						// Snap back to current position if we can't move further
+						this.positionBooks(this.currentIndex);
+					}
+				} else {
+					// Not enough movement to trigger a swipe, reset position
+					this.positionBooks(this.currentIndex);
+				}
+			};
+			
+			// Animate selection between books with momentum effect
+			this.animateBookSelection = (startIndex, targetIndex) => {
+				// Ensure target is within bounds
+				targetIndex = Math.max(0, Math.min(this.bookData.length - 1, targetIndex));
+				
+				if (startIndex === targetIndex) {
+					this.positionBooks(startIndex);
+					return;
+				}
+				
+				let currentPosition = startIndex;
+				const totalSteps = Math.abs(targetIndex - startIndex);
+				let step = 0;
+				const direction = targetIndex > startIndex ? 1 : -1;
+				
+				// Duration variables - faster for first frame to give immediate feedback
+				const initialDelay = 100; // ms for first movement
+				const subsequentDelay = 150; // ms for each additional movement
+				
+				const animate = () => {
+					if (step < totalSteps) {
+						// Calculate next position
+						currentPosition += direction;
+						
+						// Select the book (this.select handles bounds checking)
+						this.select(currentPosition);
+						
+						// Increment step
+						step++;
+						
+						// Schedule next animation frame
+						const delay = step === 1 ? initialDelay : subsequentDelay;
+						animationFrameId = setTimeout(() => {
+							animationFrameId = requestAnimationFrame(animate);
+						}, delay);
+					}
+				};
+				
+				// Start animation
+				animationFrameId = requestAnimationFrame(animate);
 			};
 		}
 
@@ -1356,25 +1494,102 @@
 		}
 	}
 
-	// Variables to track touch events for swipe support
+	// Variables to track touch events for swipe support on empty library
 	let touchStartX = 0;
 	let touchEndX = 0;
-
-	// Function to handle swipe on empty library
+	let touchStartTime = 0;
+	let touchEndTime = 0;
+	let emptySwipeVelocity = 0;
+	let emptySwipeDistance = 0;
+	let emptyAnimationId = null;
+	let emptyDragTransform = '';
+	
+	// Enhanced function to handle swipe with momentum on empty library
 	function handleEmptyLibrarySwipe() {
 		const swipeThreshold = coverflowSwipeThreshold; // Minimum distance to trigger a swipe
-
-		if (touchEndX < touchStartX - swipeThreshold) {
-			// Swipe left - go to next book
-			if (selectedDummyIndex < dummyBooks.length - 1) {
-				selectDummyBook(selectedDummyIndex + 1);
-			}
-		} else if (touchEndX > touchStartX + swipeThreshold) {
-			// Swipe right - go to previous book
-			if (selectedDummyIndex > 0) {
-				selectDummyBook(selectedDummyIndex - 1);
+		const velocityThreshold = 0.3; // pixels per millisecond
+		
+		// Calculate the duration and velocity
+		const swipeDuration = Math.max(1, touchEndTime - touchStartTime); // Prevent division by zero
+		emptySwipeVelocity = emptySwipeDistance / swipeDuration;
+		const absVelocity = Math.abs(emptySwipeVelocity);
+		
+		// Reset any ongoing animations
+		if (emptyAnimationId) {
+			cancelAnimationFrame(emptyAnimationId);
+			emptyAnimationId = null;
+		}
+		
+		// Reset any visual transforms applied during dragging
+		emptyDragTransform = '';
+		
+		// Calculate positions to move based on velocity and distance
+		let positionsToMove = 0;
+		
+		// Fast swipe with enough distance - potential multi-position move
+		if (absVelocity > velocityThreshold && Math.abs(emptySwipeDistance) > swipeThreshold) {
+			// Calculate positions to move based on velocity
+			positionsToMove = Math.min(
+				Math.floor(absVelocity * 5), // Scale factor for velocity
+				Math.floor(Math.abs(emptySwipeDistance) / 80) // Scale factor for distance
+			);
+			positionsToMove = Math.max(1, positionsToMove); // At least move 1
+			positionsToMove = Math.min(positionsToMove, dummyBooks.length - 1); // Cap at max books - 1
+		}
+		// Regular swipe with enough distance - move one position
+		else if (Math.abs(emptySwipeDistance) > swipeThreshold) {
+			positionsToMove = 1;
+		}
+		
+		// Apply the movement with direction
+		if (positionsToMove > 0) {
+			if (emptySwipeDistance < 0) {
+				// Swipe left - go forward with momentum if possible
+				const targetIndex = Math.min(dummyBooks.length - 1, selectedDummyIndex + positionsToMove);
+				animateEmptyLibrarySelection(selectedDummyIndex, targetIndex);
+			} else {
+				// Swipe right - go backward with momentum if possible
+				const targetIndex = Math.max(0, selectedDummyIndex - positionsToMove);
+				animateEmptyLibrarySelection(selectedDummyIndex, targetIndex);
 			}
 		}
+	}
+	
+	// Animate between positions in empty library with momentum effect
+	function animateEmptyLibrarySelection(startIndex, targetIndex) {
+		// Validate indices
+		startIndex = Math.max(0, Math.min(dummyBooks.length - 1, startIndex));
+		targetIndex = Math.max(0, Math.min(dummyBooks.length - 1, targetIndex));
+		
+		// No need to animate if already at target
+		if (startIndex === targetIndex) return;
+		
+		let currentIndex = startIndex;
+		const steps = Math.abs(targetIndex - startIndex);
+		let currentStep = 0;
+		const direction = targetIndex > startIndex ? 1 : -1;
+		
+		// Duration settings
+		const initialDelay = 80; // ms
+		const subsequentDelay = 130; // ms
+		
+		// Animation function
+		const animate = () => {
+			if (currentStep < steps) {
+				currentIndex += direction;
+				selectDummyBook(currentIndex);
+				currentStep++;
+				
+				// Schedule next step with appropriate delay
+				const delay = currentStep === 1 ? initialDelay : subsequentDelay;
+				emptyAnimationId = setTimeout(() => {
+					emptyAnimationId = requestAnimationFrame(animate);
+				}, delay);
+			}
+		};
+		
+		// Start animation
+		emptyAnimationId = requestAnimationFrame(animate);
 	}
 
 	// Initialize coverflow
@@ -3020,13 +3235,51 @@
 				{/if}
 			</div>
 		{:else}
-			<!-- Empty library placeholder -->
+			<!-- Empty library placeholder with enhanced momentum swipe -->
 			<div class="coverflow-container fade-in"
-					 on:touchstart={(e) => { touchStartX = e.touches[0].screenX; }}
+					 on:touchstart={(e) => { 
+						 // Clear any ongoing animation
+						 if (emptyAnimationId) {
+							 cancelAnimationFrame(emptyAnimationId);
+							 emptyAnimationId = null;
+						 }
+						 
+						 // Record start position and time
+						 touchStartX = e.touches[0].screenX;
+						 touchStartTime = Date.now();
+						 emptySwipeDistance = 0;
+						 emptySwipeVelocity = 0;
+					 }}
+					 on:touchmove={(e) => {
+						 // Track distance for visual feedback
+						 const currentX = e.touches[0].screenX;
+						 emptySwipeDistance = currentX - touchStartX;
+						 
+						 // Apply visual feedback during drag
+						 const dragElement = e.currentTarget.querySelector('.align');
+						 if (dragElement) {
+							 // Apply a subtle transform to show movement
+							 const movePercent = Math.min(Math.abs(emptySwipeDistance) / 200, 0.3);
+							 const direction = emptySwipeDistance < 0 ? -1 : 1;
+							 emptyDragTransform = `translateX(${direction * movePercent * 30}px)`;
+							 dragElement.style.transform = emptyDragTransform;
+						 }
+					 }}
 					 on:touchend={(e) => {
-					touchEndX = e.changedTouches[0].screenX; 
-					handleEmptyLibrarySwipe();
-				}}
+						 // Record end position and time
+						 touchEndX = e.changedTouches[0].screenX;
+						 touchEndTime = Date.now();
+						 emptySwipeDistance = touchEndX - touchStartX;
+						 
+						 // Reset any drag transform
+						 const dragElement = e.currentTarget.querySelector('.align');
+						 if (dragElement) {
+							 dragElement.style.transform = '';
+						 }
+						 
+						 // Handle the swipe with momentum
+						 handleEmptyLibrarySwipe();
+					 }}
 			>
 				<ul class="align" style="display: flex; justify-content: center; transform-style: preserve-3d;">
 					{#each dummyBooks as dummy, index}
