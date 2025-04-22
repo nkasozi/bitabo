@@ -39,8 +39,9 @@ export async function processFiles(
 
 	console.log(`[FileProc] Processing ${files.length} files. Type: ${importTypeValue}`);
 
-	const libraryBooks = getCurrentLibraryBooks(); // Get current library state
-	const newlyImportedBooks: Book[] = [];
+	const originalLibraryBooks = getCurrentLibraryBooks(); // Get initial library state
+	const newlyProcessedBooks: Book[] = []; // Accumulate new books here
+	const updatedBooksMap = new Map<string, Book>(); // Track updated books for cover import
 	let internalProgressId = progressId; // Use existing or create new one
 
 	// Filter files based on import type
@@ -68,17 +69,14 @@ export async function processFiles(
 			console.log(`[FileProc] Processing book ${i + 1}/${filteredFiles.length}: ${file.name}`);
 
 			try {
-				// Check if book already exists (by filename and size maybe?) - Simple check for now
-				const existingBookIndex = libraryBooks.findIndex(b => b.fileName === file.name && b.fileSize === file.size);
+				// Check against original library + newly processed ones in this batch
+				const combinedCheckList = [...originalLibraryBooks, ...newlyProcessedBooks];
+				const existingBookIndex = combinedCheckList.findIndex(b => b.fileName === file.name && b.fileSize === file.size);
 				if (existingBookIndex !== -1) {
-					console.log(`[FileProc] Book "${file.name}" already exists. Skipping.`);
+					console.log(`[FileProc] Book "${file.name}" already exists or was just added. Skipping.`);
 					importSummary.skipped++;
-					// Optionally update lastAccessed?
-					// libraryBooks[existingBookIndex].lastAccessed = Date.now();
-					// await saveBook(libraryBooks[existingBookIndex]);
-					continue; // Skip to next file
+					continue;
 				}
-
 
 				// Extract cover and metadata
 				const { url: coverUrl, title, author } = await extractCover(file);
@@ -102,7 +100,9 @@ export async function processFiles(
 					coverUrl: coverUrl, // This might be a blob URL
 					progress: 0,
 					lastAccessed: Date.now(), // Mark as recently accessed/added
-					dateAdded: Date.now()
+					dateAdded: Date.now(),
+					ribbonData: 'NEW', // Add ribbon immediately
+					ribbonExpiry: Date.now() + 60000 // Expires in 60 seconds
 				};
 
 				// Save to database immediately
@@ -111,20 +111,8 @@ export async function processFiles(
 					throw new Error("Failed to save book to database.");
 				}
 
-
-				// Add ribbon for visual feedback
-				bookData.ribbonData = 'NEW';
-				bookData.ribbonExpiry = Date.now() + 60000; // Expires in 60 seconds
-
-				// Add to the list of newly imported books for potential cross-platform upload
-				newlyImportedBooks.push(bookData);
-
-				// Update library state in the component immediately
-				const updatedLibrary = [...libraryBooks, bookData];
-				updatedLibrary.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); // Keep sorted
-				const newBookIndex = updatedLibrary.findIndex(b => b.id === bookData.id);
-
-				updateLibraryState(updatedLibrary, newBookIndex, true); // Update state, select new book, mark as loaded
+				// Add to the list of newly processed books for this batch
+				newlyProcessedBooks.push(bookData);
 
 				importSummary.succeeded++;
 				importSummary.new++;
@@ -144,6 +132,7 @@ export async function processFiles(
 	}
 	// --- Process Book Covers ---
 	else if (importTypeValue === ImportType.BookCover) {
+		const currentLibraryBooks = getCurrentLibraryBooks(); // Get current books for matching
 		for (let i = 0; i < filteredFiles.length; i++) {
 			const file = filteredFiles[i];
 			updateProgressNotification(`Processing cover ${i + 1}/${filteredFiles.length}: ${file.name}`, i, filteredFiles.length, internalProgressId);
@@ -166,7 +155,7 @@ export async function processFiles(
 
 				// Find the best matching book in the current library
 				let bestMatch: { book: Book; score: number } | null = null;
-				for (const book of libraryBooks) {
+				for (const book of currentLibraryBooks) {
 					if (!book.title) continue; // Skip books without titles
 					const similarity = calculateTitleSimilarity(book.title, possibleTitle);
 					console.log(`[FileProc] Similarity score for "${book.title}" vs "${possibleTitle}": ${similarity}`);
@@ -194,34 +183,32 @@ export async function processFiles(
 						fileReader.readAsArrayBuffer(file);
 					});
 
-					// Update book data
-					matchedBook.coverUrl = coverUrl; // Use temporary blob URL for immediate display
-					matchedBook.coverBlob = coverBlob; // Store the actual blob
-					matchedBook.lastAccessed = Date.now(); // Mark as updated
+					// Create an updated book object based on the matched one
+					const updatedBookData: Book = {
+						...matchedBook,
+						coverUrl: coverUrl,
+						coverBlob: coverBlob,
+						lastAccessed: Date.now(),
+						ribbonData: 'UPDATED',
+						ribbonExpiry: Date.now() + 60000
+					};
 
 					// Save the updated book to the database
-					const saved = await saveBook(matchedBook);
+					const saved = await saveBook(updatedBookData);
 					if (!saved) {
 						throw new Error("Failed to save updated book cover to database.");
 					}
-
 
 					// Revoke the old temporary URL if it was a blob URL
 					if (oldCoverUrl && oldCoverUrl.startsWith('blob:')) {
 						URL.revokeObjectURL(oldCoverUrl);
 					}
 
-					// Add ribbon for visual feedback
-					matchedBook.ribbonData = 'UPDATED';
-					matchedBook.ribbonExpiry = Date.now() + 60000; // 60 seconds
+					// Store the updated book data in the map for the final update
+					updatedBooksMap.set(updatedBookData.id, updatedBookData);
 
 					importSummary.succeeded++;
 					importSummary.updated++;
-
-					// Update library state in the component immediately
-					const updatedLibrary = [...libraryBooks]; // Create new array reference
-					const matchedBookIndex = updatedLibrary.findIndex(b => b.id === matchedBook!.id);
-					updateLibraryState(updatedLibrary, matchedBookIndex, true); // Update state, select updated book
 
 				} else {
 					console.log(`[FileProc] No matching book found for cover "${possibleTitle}" (Threshold: ${similarityThresholdValue})`);
@@ -245,9 +232,44 @@ export async function processFiles(
 		}
 	}
 
-	// --- Finalize ---
+	// --- Final State Update (After Loop) ---
 	if (internalProgressId) {
 		closeNotification(internalProgressId);
+	}
+
+	let finalLibraryBooks = [...originalLibraryBooks];
+	let needsStateUpdate = false;
+	let firstNewBookId: string | null = null;
+
+	if (importTypeValue === ImportType.Book && newlyProcessedBooks.length > 0) {
+		finalLibraryBooks = [...finalLibraryBooks, ...newlyProcessedBooks];
+		firstNewBookId = newlyProcessedBooks[0].id; // Get ID of the first new book
+		needsStateUpdate = true;
+		console.log(`[FileProc] Added ${newlyProcessedBooks.length} new books to the final list.`);
+	} else if (importTypeValue === ImportType.BookCover && updatedBooksMap.size > 0) {
+		// Replace original books with updated versions from the map
+		finalLibraryBooks = finalLibraryBooks.map(book => updatedBooksMap.get(book.id) || book);
+		firstNewBookId = Array.from(updatedBooksMap.keys())[0]; // Get ID of the first updated book
+		needsStateUpdate = true;
+		console.log(`[FileProc] Updated ${updatedBooksMap.size} books with new covers in the final list.`);
+	}
+
+	if (needsStateUpdate) {
+		// Sort the final list by lastAccessed (most recent first)
+		finalLibraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+		console.log('[FileProc] Sorted final library list.');
+
+		// Find the index of the first new/updated book in the sorted list
+		let newIndex = 0;
+		if (firstNewBookId) {
+			newIndex = finalLibraryBooks.findIndex(b => b.id === firstNewBookId);
+			if (newIndex === -1) newIndex = 0; // Fallback to first book if ID not found (shouldn't happen)
+		}
+		console.log(`[FileProc] Calculated new index for selection: ${newIndex}`);
+
+		// Call the state update function ONCE with the complete list
+		updateLibraryState(finalLibraryBooks, newIndex, true);
+		console.log('[FileProc] Called updateLibraryState with the final combined list.');
 	}
 
 	// Show summary notification
@@ -265,11 +287,10 @@ export async function processFiles(
 		showNotification(summaryMessage, 'info'); // e.g., only skipped or failed
 	}
 
-
 	// If books were imported and it wasn't from Google Drive, ask about cross-platform sync
-	if (importTypeValue === ImportType.Book && newlyImportedBooks.length > 0 && !isFromGoogleDrive) {
+	if (importTypeValue === ImportType.Book && newlyProcessedBooks.length > 0 && !isFromGoogleDrive) {
 		console.log('[FileProc] Triggering cross-platform dialog for newly imported books.');
-		showCrossPlatformDialogCallback(newlyImportedBooks);
+		showCrossPlatformDialogCallback(newlyProcessedBooks);
 	}
 }
 
