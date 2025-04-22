@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import type { Book, ImportSummary } from './types';
-import { GOOGLE_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_APP_ID, GOOGLE_DRIVE_SCOPES, GOOGLE_DISCOVERY_DOCS, SUPPORTED_FORMATS } from './constants';
+import { GOOGLE_CLIENT_ID, SUPPORTED_FORMATS } from './constants';
 import { showNotification,showProgressNotification, updateProgressNotification, closeNotification, showErrorNotification } from './ui';
 import { processFiles } from './fileProcessing'; // Assuming processFiles handles adding to library
 
@@ -196,37 +196,29 @@ async function loadGoogleScripts(): Promise<boolean> {
 }
 
 /**
- * Initializes the GAPI client.
+ * Initializes the GAPI client by loading the 'picker' feature.
  * @returns Promise<boolean> True if initialized successfully, false otherwise.
  */
-async function initializeGapiClient(): Promise<boolean> {
-	return new Promise((resolve) => { // No reject needed, handle errors internally
+async function initializeGapiPicker(): Promise<boolean> {
+	return new Promise((resolve) => {
 		if (!window.gapi) {
 			console.error('[GDrive] GAPI script not loaded before initialization.');
 			resolve(false);
 			return;
 		}
-		window.gapi.load('client:picker', {
-			callback: async () => {
-				try {
-					await window.gapi.client.init({
-						apiKey: GOOGLE_API_KEY,
-						discoveryDocs: GOOGLE_DISCOVERY_DOCS,
-					});
-					console.log('[GDrive] GAPI client initialized.');
-					resolve(true);
-				} catch (error) {
-					console.error('[GDrive] Error initializing GAPI client:', error);
-					resolve(false);
-				}
+		// Use the simpler 'picker' load, as in the older working version
+		window.gapi.load('picker', {
+			callback: () => {
+				console.log('[GDrive] GAPI picker feature loaded.');
+				resolve(true);
 			},
 			onerror: (error: any) => {
-				console.error('[GDrive] Error loading GAPI client/picker:', error);
+				console.error('[GDrive] Error loading GAPI picker feature:', error);
 				resolve(false);
 			},
 			timeout: 5000, // 5 seconds
 			ontimeout: () => {
-				console.error('[GDrive] Timeout loading GAPI client/picker.');
+				console.error('[GDrive] Timeout loading GAPI picker feature.');
 				resolve(false);
 			}
 		});
@@ -234,37 +226,57 @@ async function initializeGapiClient(): Promise<boolean> {
 }
 
 /**
- * Initializes the Google Identity Services (GIS) token client.
+ * Initializes the Google Identity Services (GIS) token client with specific scopes.
+ * @param scope The specific OAuth scope(s) required (e.g., 'https://www.googleapis.com/auth/drive.readonly').
  * @param callback Function to handle the token response.
  * @returns boolean True if initialization was attempted, false if GIS object not found.
  */
-function initializeGisClient(callback: (tokenResponse: GoogleTokenResponse) => void): boolean {
+function initializeGisClient(scope: string, callback: (tokenResponse: GoogleTokenResponse) => void): boolean {
 	if (!window.google?.accounts?.oauth2) {
 		console.error('[GDrive] Google GIS object not found. Scripts might not be loaded.');
 		showErrorNotification('Google Authentication Error', 'Initialization', 'Could not find Google Sign-In components.');
 		return false;
 	}
-	if (window.tokenClient) {
-		console.log('[GDrive] Token client already initialized.');
-		// Potentially re-assign callback if needed, but usually init once
-		return true;
-	}
+	// Avoid re-initializing if already present, but ensure the callback is current
+	// Note: Re-initializing might be necessary if scopes change, but let's try without first.
+	// If issues persist, we might need to manage the tokenClient instance more carefully.
+	// if (window.tokenClient) {
+	// 	console.log('[GDrive] Token client already initialized.');
+	// 	// TODO: Check if scope matches? Re-init if different? For now, assume it's okay.
+	// 	// Update callback reference if necessary (might not be needed if callback context is stable)
+	// 	return true;
+	// }
+
 	try {
+		// Initialize with the specific scope provided
 		window.tokenClient = window.google.accounts.oauth2.initTokenClient({
-			client_id: GOOGLE_CLIENT_ID,
-			scope: GOOGLE_DRIVE_SCOPES,
+			client_id: GOOGLE_CLIENT_ID, // Use constant from import
+			scope: scope, // Use the specific scope passed in
 			callback: callback, // Handle the token response
 			error_callback: (error: GoogleError) => {
 				console.error('[GDrive] GIS Error:', error);
-				showErrorNotification('Google Authentication Error', 'Token Client', error?.message || 'Failed to initialize authentication.');
-				// Consider how to signal this failure back up the chain if needed
+				// Check for specific error types if needed
+				let message = 'Failed to initialize authentication.';
+				if (error?.type === 'popup_closed_by_user') {
+					message = 'Sign-in popup closed before completion.';
+				} else if (error?.type === 'access_denied') {
+					message = 'Permission denied to access Google Drive.';
+				} else if (error?.message) {
+					message = error.message;
+				} else if (typeof error === 'object' && error !== null) {
+					// Attempt to stringify unknown errors
+					try { message = JSON.stringify(error); } catch { /* ignore */ }
+				}
+				showErrorNotification('Google Authentication Error', 'Token Client', message);
+				// Potentially close loading notifications here if needed
 			}
 		});
-		console.log('[GDrive] GIS Token Client initialized.');
+		console.log(`[GDrive] GIS Token Client initialized with scope: ${scope}`);
 		return true;
 	} catch (error) {
-		console.error('[GDrive] Error initializing GIS client:', error);
-		showErrorNotification('Google Authentication Error', 'Initialization', 'Could not initialize Google Sign-In.');
+		// Catch potential synchronous errors during initTokenClient itself
+		console.error('[GDrive] Error initializing GIS client synchronously:', error);
+		showErrorNotification('Google Authentication Error', 'Initialization', `Could not initialize Google Sign-In: ${(error as Error).message}`);
 		return false;
 	}
 }
@@ -273,8 +285,9 @@ function initializeGisClient(callback: (tokenResponse: GoogleTokenResponse) => v
 // --- Main Functions ---
 
 /**
- * Initializes the Google Drive Picker for selecting files.
+ * Initializes the Google Drive Picker for selecting files (Import).
  * Handles loading scripts, authentication, and picker creation.
+ * Uses 'drive.readonly' scope.
  *
  * @param processDriveFiles Function to call with downloaded files.
  * @param updateLibraryState Function to update the main library state.
@@ -286,7 +299,7 @@ export async function initGoogleDrivePicker(
 	processDriveFiles: (files: File[], summary: ImportSummary, isFromGoogleDrive: boolean) => Promise<void>,
 	updateLibraryState: (newBooks: Book[], newIndex?: number, loaded?: boolean) => void,
 	getCurrentLibraryBooks: () => Book[],
-	showCrossPlatformDialogCallback: (books: Book[]) => void // Added
+	showCrossPlatformDialogCallback: (books: Book[]) => void
 ): Promise<boolean> {
 	if (!browser) return false;
 	const notificationId = showNotification('Loading Google Drive Picker...', 'info', 0); // Indefinite
@@ -295,44 +308,52 @@ export async function initGoogleDrivePicker(
 		const scriptsLoaded = await loadGoogleScripts();
 		if (!scriptsLoaded) throw new Error("Google scripts failed to load.");
 
-		const gapiInitialized = await initializeGapiClient();
-		if (!gapiInitialized) throw new Error("GAPI client failed to initialize.");
+		// Use the simplified GAPI picker initialization
+		const gapiInitialized = await initializeGapiPicker();
+		if (!gapiInitialized) throw new Error("GAPI picker feature failed to load.");
 
 		let gisInitialized = false; // Flag to track GIS init status
+		const readOnlyScope = 'https://www.googleapis.com/auth/drive.readonly';
 
 		const tokenCallback = (tokenResponse: GoogleTokenResponse) => {
 			if (tokenResponse && tokenResponse.access_token) {
-				console.log('[GDrive] Received OAuth token.');
+				console.log('[GDrive Import] Received OAuth token.');
 				closeNotification(notificationId); // Close loading notification
+
+				// Store token (optional, but can be useful for direct API calls if needed later)
+				// localStorage.setItem('google_drive_token_readonly', tokenResponse.access_token);
+
 				const pickerCreated = createPicker(
 					tokenResponse.access_token,
 					processDriveFiles,
 					updateLibraryState,
 					getCurrentLibraryBooks,
-					showCrossPlatformDialogCallback // Added
+					showCrossPlatformDialogCallback
 				);
 				if (!pickerCreated) {
-					// Handle picker creation failure if needed
 					showErrorNotification('Google Drive Picker Error', 'Creation', 'Failed to create the picker interface.');
 				}
 			} else {
-				console.error('[GDrive] Invalid token response:', tokenResponse);
-				closeNotification(notificationId);
-				showErrorNotification('Google Authentication Failed', 'Token Response', 'Did not receive a valid access token.');
+				// This case should be handled by error_callback in initializeGisClient now
+				console.error('[GDrive Import] Invalid or missing token response received in tokenCallback:', tokenResponse);
+				closeNotification(notificationId); // Ensure loading notification is closed
+				// showErrorNotification('Google Authentication Failed', 'Token Response', 'Did not receive a valid access token.'); // Redundant if error_callback works
 			}
 		};
 
-		gisInitialized = initializeGisClient(tokenCallback);
+		// Initialize GIS client with the specific readonly scope
+		gisInitialized = initializeGisClient(readOnlyScope, tokenCallback);
 		if (!gisInitialized) throw new Error("GIS client failed to initialize.");
 
-
 		// Request token immediately only if GIS was initialized
-		console.log('[GDrive] Requesting OAuth token...');
-		window.tokenClient.requestAccessToken({ prompt: 'consent' }); // Use 'consent' to ensure user sees permissions
+		console.log('[GDrive Import] Requesting OAuth token...');
+		// Add prompt: 'consent' if you *always* want the user to see the consent screen,
+		// otherwise leave it out to allow automatic token retrieval if already granted.
+		window.tokenClient.requestAccessToken({ prompt: 'consent' });
 		return true; // Picker process initiated
 
 	} catch (error) {
-		console.error('[GDrive] Error initializing Google Drive Picker:', error);
+		console.error('[GDrive Import] Error initializing Google Drive Picker:', error);
 		closeNotification(notificationId); // Ensure notification is closed on error
 		showErrorNotification('Google Drive Picker Error', 'Initialization', `Failed to load or initialize Google Drive integration: ${(error as Error).message}`);
 		return false; // Indicate failure
@@ -340,7 +361,7 @@ export async function initGoogleDrivePicker(
 }
 
 /**
- * Creates and displays the Google Picker UI.
+ * Creates and displays the Google Picker UI for importing files.
  *
  * @param oauthToken The access token for authentication.
  * @param processDriveFiles Function to process selected files.
@@ -354,25 +375,36 @@ function createPicker(
 	processDriveFiles: (files: File[], summary: ImportSummary, isFromGoogleDrive: boolean) => Promise<void>,
 	updateLibraryState: (newBooks: Book[], newIndex?: number, loaded?: boolean) => void,
 	getCurrentLibraryBooks: () => Book[],
-	showCrossPlatformDialogCallback: (books: Book[]) => void // Added
+	showCrossPlatformDialogCallback: (books: Book[]) => void
 ): boolean {
 	try {
 		if (!window.google?.picker) {
-			console.error('[GDrive] Google Picker component not available.');
+			console.error('[GDrive Import] Google Picker component not available.');
 			throw new Error('Google Picker component not loaded.');
 		}
+		// Combine supported file types and folder type for the view
+		const supportedMimeTypes = [
+			...SUPPORTED_FORMATS.map(format => {
+				// Map common extensions to potential mime types if needed, or use known ones
+				if (format === '.epub') return 'application/epub+zip';
+				if (format === '.pdf') return 'application/pdf';
+				if (format === '.mobi') return 'application/x-mobipocket-ebook';
+				if (format === '.cbz') return 'application/vnd.comicbook+zip';
+				// Add more mappings if necessary
+				return format; // Fallback for formats that might be mime types already
+			}),
+			'application/vnd.google-apps.folder' // Add folder type
+		].join(',');
+
 		const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
 			.setIncludeFolders(true) // Allow folder selection
 			.setSelectFolderEnabled(true) // Enable folder selection button
-			.setMimeTypes('application/epub+zip,application/pdf,application/x-mobipocket-ebook,application/vnd.comicbook+zip,application/vnd.google-apps.folder'); // Supported file types + folders
+			.setMimeTypes(supportedMimeTypes); // Use combined list
 
 		const picker = new window.google.picker.PickerBuilder()
 			.enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-			.setAppId(GOOGLE_APP_ID)
 			.setOAuthToken(oauthToken)
 			.addView(view)
-			// .addView(new window.google.picker.DocsUploadView()) // Optional: Allow direct upload
-			.setDeveloperKey(GOOGLE_API_KEY)
 			.setCallback((data: PickerCallbackData) => {
 				// Wrap async logic in a void function for the callback
 				void pickerCallback( // Use void to explicitly ignore the promise return in the callback signature
@@ -381,17 +413,17 @@ function createPicker(
 					processDriveFiles,
 					updateLibraryState,
 					getCurrentLibraryBooks,
-					showCrossPlatformDialogCallback // Added
+					showCrossPlatformDialogCallback
 				);
 			})
 			.build();
 
 		picker.setVisible(true);
-		console.log('[GDrive] Picker displayed.');
+		console.log('[GDrive Import] Picker displayed.');
 		return true;
 
 	} catch (error) {
-		console.error('[GDrive] Error creating picker:', error);
+		console.error('[GDrive Import] Error creating picker:', error);
 		showErrorNotification('Google Drive Picker Error', 'Creation', 'Could not create the file picker interface.');
 		return false;
 	}
@@ -639,6 +671,7 @@ async function pickerCallback(
 
 /**
  * Initializes Google Drive folder picker specifically for uploading books.
+ * Uses 'drive.file' scope.
  * @param booksToUpload Array of Book objects to upload.
  * @returns Promise<boolean> True if the folder picker process was initiated successfully.
  */
@@ -656,31 +689,39 @@ export async function initGoogleDriveFolderPicker(booksToUpload: Book[]): Promis
 		const scriptsLoaded = await loadGoogleScripts();
 		if (!scriptsLoaded) throw new Error("Google scripts failed to load.");
 
-		const gapiInitialized = await initializeGapiClient();
-		if (!gapiInitialized) throw new Error("GAPI client failed to initialize.");
+		// Use the simplified GAPI picker initialization
+		const gapiInitialized = await initializeGapiPicker();
+		if (!gapiInitialized) throw new Error("GAPI picker feature failed to load.");
 
 		let gisInitialized = false;
+		const fileScope = 'https://www.googleapis.com/auth/drive.file'; // Scope for upload
 
 		const tokenCallback = (tokenResponse: GoogleTokenResponse) => {
 			if (tokenResponse && tokenResponse.access_token) {
 				console.log('[GDrive Upload] Received OAuth token.');
 				closeNotification(notificationId);
+
+				// Store token (optional)
+				// localStorage.setItem('google_drive_token_file', tokenResponse.access_token);
+
 				const pickerCreated = createFolderPickerForUpload(tokenResponse.access_token, booksToUpload);
 				if (!pickerCreated) {
 					showErrorNotification('Google Drive Upload Error', 'Folder Picker', 'Failed to create the folder picker interface.');
 				}
-				// We don't know the final upload result here, just that the picker was shown
 			} else {
-				console.error('[GDrive Upload] Invalid token response:', tokenResponse);
-				closeNotification(notificationId);
-				showErrorNotification('Google Authentication Failed', 'Upload Token', 'Did not receive a valid access token for upload.');
+				// This case should be handled by error_callback in initializeGisClient now
+				console.error('[GDrive Upload] Invalid or missing token response received in tokenCallback:', tokenResponse);
+				closeNotification(notificationId); // Ensure loading notification is closed
+				// showErrorNotification('Google Authentication Failed', 'Upload Token', 'Did not receive a valid access token for upload.'); // Redundant
 			}
 		};
 
-		gisInitialized = initializeGisClient(tokenCallback);
+		// Initialize GIS client with the specific file scope
+		gisInitialized = initializeGisClient(fileScope, tokenCallback);
 		if (!gisInitialized) throw new Error("GIS client failed to initialize.");
 
 		console.log('[GDrive Upload] Requesting OAuth token for upload...');
+		// Add prompt: 'consent' if you *always* want the user to see the consent screen
 		window.tokenClient.requestAccessToken({ prompt: 'consent' });
 		return true; // Folder picker process initiated
 
@@ -711,12 +752,10 @@ function createFolderPickerForUpload(oauthToken: string, booksToUpload: Book[]):
 			.setMimeTypes('application/vnd.google-apps.folder'); // Only show folders
 
 		const picker = new window.google.picker.PickerBuilder()
-			.enableFeature(window.google.picker.Feature.NAV_HIDDEN) // Optional: hide navigation
-			.setAppId(GOOGLE_APP_ID)
+			.enableFeature(window.google.picker.Feature.NAV_HIDDEN) 
 			.setOAuthToken(oauthToken)
 			.addView(view)
 			.setTitle('Select Folder to Upload Books')
-			.setDeveloperKey(GOOGLE_API_KEY)
 			.setCallback((data: PickerCallbackData) => {
 				// Wrap async logic
 				void uploadFolderPickerCallback(data, oauthToken, booksToUpload);

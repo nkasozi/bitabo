@@ -17,8 +17,6 @@ export const BOOKS_STORE = 'books';
 export const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
 
 // Google Drive API constants
-export const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-export const GOOGLE_APP_ID = import.meta.env.VITE_GOOGLE_APP_ID;
+export const GOOGLE_CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com'; //import.meta.env.VITE_GOOGLE_CLIENT_ID;
 export const GOOGLE_DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
 export const GOOGLE_DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
