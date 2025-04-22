@@ -2,7 +2,9 @@ import { browser } from '$app/environment';
 import type { Book, ImportSummary } from './types';
 import { GOOGLE_CLIENT_ID, SUPPORTED_FORMATS } from './constants';
 import { showNotification,showProgressNotification, updateProgressNotification, closeNotification, showErrorNotification } from './ui';
-import { processFiles } from './fileProcessing'; // Assuming processFiles handles adding to library
+import { extractCover } from './coverExtractor'; // Needed for single file processing
+import { saveBook, type BookWithOptionalFile } from './database'; // Import BookWithOptionalFile if needed by saveBook
+import { hashString } from './utils'; // Needed for single file processing
 
 // --- Google Drive Types ---
 // Define more specific types for Google APIs to avoid 'any'
@@ -208,7 +210,7 @@ async function initializeGapiPicker(): Promise<boolean> {
 		}
 		// Use the simpler 'picker' load, as in the older working version
 		window.gapi.load('picker', {
-			callback: () => {
+			callback: async () => { // Make the callback async
 				console.log('[GDrive] GAPI picker feature loaded.');
 				resolve(true);
 			},
@@ -482,84 +484,128 @@ async function scanDriveFolders(
 }
 
 /**
- * Downloads files from Google Drive based on PickerDocument info.
- * @param filesToDownload Array of PickerDocument objects.
+ * Downloads a single file from Google Drive.
+ * @param doc The PickerDocument representing the file.
  * @param token OAuth token.
- * @param progressId ID for the progress notification.
- * @param currentProgress Current progress count (after folder scans).
- * @param totalItems Total items including folders and files.
- * @returns Promise<{ downloadedFiles: File[], summary: ImportSummary }> Downloaded files and summary of download success/failures.
+ * @returns Promise<File | null> The downloaded File object or null if download failed.
  */
-async function downloadDriveFiles(
-	filesToDownload: PickerDocument[],
-	token: string,
-	progressId: string,
-	currentProgress: number,
-	totalItems: number // This should be the *final* total including files found in folders
-): Promise<{ downloadedFiles: File[], summary: ImportSummary }> {
-	const downloadedFiles: File[] = [];
-	const importSummary: ImportSummary = { succeeded: 0, failed: 0, new: 0, updated: 0, skipped: 0, failedBooks: [] };
-	const totalFilesToDownload = filesToDownload.length;
-	let downloadedCount = 0;
+async function downloadSingleDriveFile(doc: PickerDocument, token: string): Promise<File | null> {
+	console.log(`[GDrive] Attempting download: ${doc.name} (ID: ${doc.id})`);
+	try {
+		const response = await fetch(
+			`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`,
+			{ headers: { 'Authorization': `Bearer ${token}` } }
+		);
 
-	if (totalFilesToDownload > 0) {
-		updateProgressNotification(`Downloading ${totalFilesToDownload} file(s)...`, currentProgress, totalItems, progressId);
-
-		for (const doc of filesToDownload) {
-			downloadedCount++;
-			const overallProgress = currentProgress + downloadedCount;
-			updateProgressNotification(`Downloading ${downloadedCount}/${totalFilesToDownload}: ${doc.name}`, overallProgress, totalItems, progressId);
-			console.log('[GDrive] Downloading file:', doc.name, 'ID:', doc.id);
-
-			try {
-				const response = await fetch(
-					`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`,
-					{ headers: { 'Authorization': `Bearer ${token}` } }
-				);
-
-				if (!response.ok) throw new Error(`Download failed: ${response.status} - ${await response.text()}`);
-
-				const blob = await response.blob();
-				const file = new File([blob], doc.name, { type: doc.mimeType || 'application/octet-stream' });
-				downloadedFiles.push(file);
-				// Note: Success/failure counts for the *import* process happen later in processFiles
-			} catch (downloadError) {
-				console.error(`[GDrive] Error downloading file ${doc.name}:`, downloadError);
-				showErrorNotification('Error Downloading File', doc.name, (downloadError as Error).message);
-				importSummary.failed++; // Count download failure as a failed import
-				importSummary.failedBooks.push(doc.name);
-				// Continue with other files
-			}
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Download failed: ${response.status} - ${errorText}`);
 		}
+
+		const blob = await response.blob();
+		const file = new File([blob], doc.name, { type: doc.mimeType || 'application/octet-stream' });
+		console.log(`[GDrive] Successfully downloaded: ${doc.name}`);
+		return file;
+
+	} catch (downloadError) {
+		console.error(`[GDrive] Error downloading file ${doc.name}:`, downloadError);
+		showErrorNotification('Error Downloading File', doc.name, (downloadError as Error).message);
+		return null;
 	}
-	return { downloadedFiles, summary: importSummary };
+}
+
+/**
+ * Processes a single downloaded file: checks duplicates, extracts metadata, saves to DB.
+ * Does NOT update component state directly.
+ * @param downloadedFile The File object downloaded from Drive.
+ * @param currentLibraryBooks The current list of books in the library (for duplicate check).
+ * @returns Promise<{ book: Book | null; skipped: boolean; error: string | null }> Result of processing.
+ */
+async function processSingleDownloadedFile(
+	downloadedFile: File,
+	currentLibraryBooks: Book[] // Changed parameter name for clarity
+): Promise<{ book: Book | null; skipped: boolean; error: string | null }> {
+	console.log(`[GDrive] Processing downloaded file: ${downloadedFile.name}`);
+	try {
+		// Check for duplicates against the current library state
+		const isDuplicate = currentLibraryBooks.some(b => b.fileName === downloadedFile.name && b.fileSize === downloadedFile.size);
+
+		if (isDuplicate) {
+			console.log(`[GDrive] Book "${downloadedFile.name}" already exists in the library. Skipping.`);
+			return { book: null, skipped: true, error: null };
+		}
+
+		// Extract cover and metadata
+		const { url: coverUrl, title, author } = await extractCover(downloadedFile);
+		console.log('[GDrive] Extracted metadata:', { title, author, coverUrl });
+
+		// Create hash ID
+		const hashSource = `${title}-${author}-${downloadedFile.name}-${downloadedFile.size}`;
+		const uniqueId = hashString(hashSource);
+
+		// Create book data object
+		const bookData: BookWithOptionalFile = { // Use type that includes optional file for saveBook
+			id: uniqueId,
+			title: title || downloadedFile.name.replace(/\.[^/.]+$/, ''),
+			author: author || 'Unknown Author',
+			fileName: downloadedFile.name,
+			fileType: downloadedFile.type,
+			fileSize: downloadedFile.size,
+			lastModified: downloadedFile.lastModified,
+			coverUrl: coverUrl,
+			progress: 0,
+			lastAccessed: Date.now(), // Set access time to now so it appears first
+			dateAdded: Date.now(),
+			ribbonData: 'NEW',
+			ribbonExpiry: Date.now() + 60000, // Expires in 60 seconds
+			file: downloadedFile // Pass file object to saveBook
+		};
+
+		// Save to database
+		const saved = await saveBook(bookData);
+
+		if (!saved) {
+			throw new Error("Failed to save book to database.");
+		}
+
+		console.log(`[GDrive] Successfully processed and saved: ${bookData.fileName}`);
+		// Return the book *without* the file object, as it's now in the DB
+		const { file, ...bookToReturn } = bookData;
+		return { book: bookToReturn as Book, skipped: false, error: null };
+
+	} catch (processingError) {
+		console.error(`[GDrive] Error processing file ${downloadedFile.name}:`, processingError);
+		showErrorNotification('Error Importing Book', downloadedFile.name, (processingError as Error).message);
+		return { book: null, skipped: false, error: (processingError as Error).message };
+	}
 }
 
 
 /**
  * Handles the response from the Google Picker.
- * Downloads selected files or lists files within selected folders.
+ * Downloads and processes selected files/folders sequentially, updating UI after each successful import.
  *
  * @param data The data returned from the picker.
  * @param token The OAuth token.
- * @param processDriveFiles Function to process downloaded files.
- * @param updateLibraryState Function to update library state.
+ * @param _processDriveFiles // Deprecated parameter
+ * @param updateLibraryState Function to update library state (called after each successful import).
  * @param getCurrentLibraryBooks Function to get current books.
- * @param showCrossPlatformDialogCallback Function to show cross-platform dialog.
+ * @param showCrossPlatformDialogCallback Function to show cross-platform dialog (called at the end).
  * @returns Promise<PickerResult> An object indicating success and import summary.
  */
 async function pickerCallback(
 	data: PickerCallbackData,
 	token: string,
-	processDriveFiles: (files: File[], summary: ImportSummary, isFromGoogleDrive: boolean) => Promise<void>,
+	_processDriveFiles: any, // Placeholder for removed param
 	updateLibraryState: (newBooks: Book[], newIndex?: number, loaded?: boolean) => void,
 	getCurrentLibraryBooks: () => Book[],
-	showCrossPlatformDialogCallback: (books: Book[]) => void // Added
+	showCrossPlatformDialogCallback: (books: Book[]) => void
 ): Promise<PickerResult> {
+	// ... (Initial checks for CANCEL, PICKED action, document parsing remain the same) ...
 	if (data.action === window.google.picker.Action.CANCEL) {
 		console.log('[GDrive] Picker cancelled by user.');
 		showNotification('Google Drive import cancelled.', 'info');
-		return { success: true, message: 'Picker cancelled' }; // Considered success from the picker's perspective
+		return { success: true, message: 'Picker cancelled' };
 	}
 
 	if (data.action !== window.google.picker.Action.PICKED) {
@@ -574,8 +620,7 @@ async function pickerCallback(
 	documents.forEach(doc => {
 		if (doc.mimeType === 'application/vnd.google-apps.folder') {
 			folderIds.push(doc.id);
-		} else if (SUPPORTED_FORMATS.some(f => doc.mimeType === f || doc.name.toLowerCase().endsWith(`.${f.split('/').pop()}`))) {
-			// Basic check if it's a supported type or extension
+		} else if (SUPPORTED_FORMATS.some(f => doc.mimeType === f || doc.name.toLowerCase().endsWith(f))) {
 			initialFileItems.push(doc);
 		} else {
 			console.log(`[GDrive] Skipping unsupported file type: ${doc.name} (${doc.mimeType})`);
@@ -590,80 +635,138 @@ async function pickerCallback(
 		return { success: true, message: 'No items selected' };
 	}
 
-	const progressId = showProgressNotification(`Starting Google Drive import...`, totalInitialItems); // Initial total
-	let overallSummary: ImportSummary = { succeeded: 0, failed: 0, new: 0, updated: 0, skipped: 0, failedBooks: [] };
+	// --- Start Processing ---
+	const progressId = showProgressNotification(`Starting Google Drive import...`, 0);
+	const overallSummary: ImportSummary = { succeeded: 0, failed: 0, new: 0, updated: 0, skipped: 0, failedBooks: [] };
+	const booksAddedThisSession: Book[] = []; // Track all books added in this run
+	let currentLibraryBooks = getCurrentLibraryBooks(); // Get initial state
+
 	let allFilesToProcess: PickerDocument[] = [...initialFileItems];
+	let folderScanErrors: string[] = [];
 
 	try {
-		// 1. Process selected folders
-		const { foundFiles: filesFromFolders, errors: folderErrors } = await scanDriveFolders(
-			folderIds,
-			token,
-			progressId,
-			0, // Start progress count at 0
-			totalInitialItems // Pass initial total for early progress updates
-		);
-		overallSummary.failed += folderErrors.length; // Count folder scan errors as failures if needed
-		// Add files found in folders to the list, avoiding duplicates based on ID
-		const existingIds = new Set(allFilesToProcess.map(f => f.id));
-		filesFromFolders.forEach(ff => {
-			if (!existingIds.has(ff.id)) {
-				allFilesToProcess.push(ff);
-				existingIds.add(ff.id);
-			}
-		});
-
-
-		// 2. Download all relevant files (initial + from folders)
-		const finalTotalItems = folderIds.length + allFilesToProcess.length; // Update total for download progress
-		const { downloadedFiles, summary: downloadSummary } = await downloadDriveFiles(
-			allFilesToProcess,
-			token,
-			progressId,
-			folderIds.length, // Progress count after folders are scanned
-			finalTotalItems
-		);
-
-		// Merge download failures into the overall summary
-		overallSummary.failed += downloadSummary.failed;
-		overallSummary.failedBooks.push(...downloadSummary.failedBooks);
-
-		// 3. Process downloaded files
-		if (downloadedFiles.length > 0) {
-			console.log(`[GDrive] Processing ${downloadedFiles.length} downloaded files...`);
-			// Pass the *overallSummary* to be updated by processFiles
-			await processFiles(
-				downloadedFiles,
-				overallSummary, // Pass summary to be updated
-				true, // isFromGoogleDrive
-				progressId, // Pass progressId for updates within processFiles
-				updateLibraryState,
-				getCurrentLibraryBooks,
-				undefined, // importTypeValue (use default)
-				undefined, // similarityThresholdValue (use default)
-				showCrossPlatformDialogCallback // Pass the required callback
+		// 1. Scan Folders (if any)
+		// ... (Folder scanning logic remains the same) ...
+		if (folderIds.length > 0) {
+			updateProgressNotification(`Scanning ${folderIds.length} folder(s)...`, 0, totalInitialItems, progressId);
+			const { foundFiles: filesFromFolders, errors } = await scanDriveFolders(
+				folderIds,
+				token,
+				progressId,
+				0,
+				totalInitialItems
 			);
-			// processFiles should handle the final success/summary notification and closing the progress
-			return { success: true, summary: overallSummary };
-		} else {
-			// If no files were successfully downloaded (maybe only folders selected and they were empty, or all downloads failed)
-			closeNotification(progressId);
-			if (overallSummary.failed > 0) {
-				showErrorNotification('Google Drive Import Failed', 'Processing', `Could not download or process any files. Failures: ${overallSummary.failed}`);
-			} else if (folderErrors.length > 0) {
-                 showErrorNotification('Google Drive Import Issue', 'Folder Scan', `Scanned folders but found no supported files or encountered errors.`);
-            }
-            else {
-				showNotification('No supported book files found in the selected Google Drive items.', 'info');
-			}
-			return { success: folderErrors.length === 0 && overallSummary.failed === 0, summary: overallSummary }; // Success if no errors occurred
+			folderScanErrors = errors;
+			overallSummary.failed += folderScanErrors.length;
+
+			const existingIds = new Set(allFilesToProcess.map(f => f.id));
+			filesFromFolders.forEach(ff => {
+				if (!existingIds.has(ff.id)) {
+					allFilesToProcess.push(ff);
+					existingIds.add(ff.id);
+				}
+			});
+			console.log(`[GDrive] Found ${filesFromFolders.length} files in folders. Total files to process: ${allFilesToProcess.length}`);
 		}
 
+
+		// 2. Process Files Sequentially with Incremental UI Updates
+		const finalTotalFiles = allFilesToProcess.length;
+		if (finalTotalFiles === 0 && folderScanErrors.length === 0) {
+			showNotification('No supported book files found in the selected Google Drive items.', 'info');
+			closeNotification(progressId);
+			return { success: true, message: 'No supported files found' };
+		}
+
+		updateProgressNotification(`Preparing to process ${finalTotalFiles} file(s)...`, 0, finalTotalFiles, progressId);
+
+		for (let i = 0; i < finalTotalFiles; i++) {
+			const doc = allFilesToProcess[i];
+			const currentProgressCount = i + 1;
+			updateProgressNotification(`Processing ${currentProgressCount}/${finalTotalFiles}: ${doc.name}`, i, finalTotalFiles, progressId);
+
+			// a. Download single file
+			const downloadedFile = await downloadSingleDriveFile(doc, token);
+
+			if (downloadedFile) {
+				// b. Process single downloaded file (DB save, etc.)
+				// Pass the *current* state of the library for duplicate check
+				const processResult = await processSingleDownloadedFile(
+					downloadedFile,
+					currentLibraryBooks
+				);
+
+				if (processResult.book) {
+					const newlyAddedBook = processResult.book;
+					booksAddedThisSession.push(newlyAddedBook); // Track for final summary/dialog
+					overallSummary.succeeded++;
+					overallSummary.new++;
+
+					// --- Incremental UI Update ---
+					console.log(`[GDrive] Updating UI for newly added book: ${newlyAddedBook.fileName}`);
+					// Prepend new book and re-sort (most recent first)
+					let updatedLibrary = [newlyAddedBook, ...currentLibraryBooks];
+					updatedLibrary.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+
+					// Find index (should be 0 if sorted correctly by lastAccessed)
+					const newIndex = updatedLibrary.findIndex(b => b.id === newlyAddedBook.id);
+
+					// Call updateLibraryState to refresh UI
+					updateLibraryState(updatedLibrary, newIndex >= 0 ? newIndex : 0, true);
+
+					// Update the loop's view of the library state for the next iteration's duplicate check
+					currentLibraryBooks = updatedLibrary;
+					// --- End Incremental UI Update ---
+
+				} else if (processResult.skipped) {
+					overallSummary.skipped++;
+				} else {
+					overallSummary.failed++;
+					overallSummary.failedBooks.push(downloadedFile.name);
+				}
+			} else {
+				overallSummary.failed++;
+				overallSummary.failedBooks.push(doc.name);
+			}
+			updateProgressNotification(`Processed ${currentProgressCount}/${finalTotalFiles}: ${doc.name}`, currentProgressCount, finalTotalFiles, progressId);
+		}
+
+		// 3. Post-Processing (No final bulk updateLibraryState needed)
+		closeNotification(progressId);
+		console.log(`[GDrive] Finished processing loop. Total added this session: ${booksAddedThisSession.length}`);
+
+		// Trigger cross-platform dialog if any books were added
+		if (booksAddedThisSession.length > 0) {
+			console.log('[GDrive] Triggering cross-platform dialog check.');
+			showCrossPlatformDialogCallback(booksAddedThisSession);
+		} else {
+			console.log('[GDrive] No new books were successfully added in this session.');
+		}
+
+		// 4. Show Summary Notification
+		// ... (Summary notification logic remains the same) ...
+		let summaryMessage = `Import finished. Succeeded: ${overallSummary.succeeded}`;
+		if (overallSummary.new > 0) summaryMessage += `, New: ${overallSummary.new}`;
+		if (overallSummary.skipped > 0) summaryMessage += `, Skipped: ${overallSummary.skipped}`;
+		if (overallSummary.failed > 0) summaryMessage += `, Failed: ${overallSummary.failed}`;
+
+		if (overallSummary.failed > 0) {
+			const failedDetails = overallSummary.failedBooks.length > 0 ? ` Failed files: ${overallSummary.failedBooks.join(', ')}` : '';
+			showErrorNotification('Import Complete with Errors', summaryMessage, failedDetails);
+		} else if (overallSummary.succeeded > 0) {
+			showNotification(summaryMessage, 'success');
+		} else {
+			showNotification(summaryMessage, 'info');
+		}
+
+		return { success: overallSummary.failed === 0, summary: overallSummary };
+
+
 	} catch (error) {
-		console.error('[GDrive] Error during picker callback processing:', error);
+		console.error('[GDrive] Unhandled error during picker callback processing:', error);
 		closeNotification(progressId);
 		showErrorNotification('Google Drive Import Error', 'Processing', (error as Error).message);
-		overallSummary.failed++; // Count this general error as a failure
+		overallSummary.failed++;
 		return { success: false, summary: overallSummary, message: (error as Error).message };
 	}
 }

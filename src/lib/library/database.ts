@@ -2,6 +2,9 @@ import { browser } from '$app/environment';
 import type { Book } from './types';
 import { DB_NAME, BOOKS_STORE } from './constants';
 
+// Define the type that includes the optional file property for saving
+export type BookWithOptionalFile = Book & { file?: File };
+
 // Simple database open function - using only BOOKS_STORE
 export function openDatabase(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
@@ -112,7 +115,7 @@ async function prepareBookForStorage(bookData: Book): Promise<Omit<Book, 'file'>
 
 // Save a single book to IndexedDB
 export async function saveBook(
-	bookData: Book,
+	bookData: BookWithOptionalFile,
 	openDBFunc: () => Promise<IDBDatabase> = openDatabase
 ): Promise<boolean> {
 	if (!browser) return false;
