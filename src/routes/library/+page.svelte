@@ -1,2833 +1,846 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	// console.log('[Script Start] +page.svelte script executing...'); // Removed log
+
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { browser } from '$app/environment';
+	import { debounce } from '$lib/library/utils'; // Import debounce
 
-	// Import service worker utilities
-	import {
-		registerServiceWorker, deleteBook, migrateData,
-		sendMessageToSW
-	} from '$lib/serviceWorker';
+	// Import types and constants
+	import type { Book, DummyBook, CoverflowInstance, ImportSummary } from '$lib/library/types';
+	import { ImportType, SUPPORTED_FORMATS, SUPPORTED_COVER_FORMATS, DEFAULT_SIMILARITY_THRESHOLD } from '$lib/library/constants';
 
-	// Import type constants - define at the top to avoid reference errors
-	const ImportType = {
-		Book: 'book',
-		BookCover: 'bookCover'
-	} as const;
+	// Import modularized functions
+	// import { initServiceWorker } from '$lib/library/serviceWorkerUtils'; // <-- REMOVED IMPORT
+	import { saveBook, loadLibraryStateFromDB, saveAllBooks } from '$lib/library/database';
+	import { initCoverflow, initEmptyCoverflow } from '$lib/library/coverflow';
+	import { findCoverflowIndex } from '$lib/library/coverflowUtils'; // Import findCoverflowIndex
+	import { calculateNewLibraryState, type LibraryStateUpdate } from '$lib/library/stateUtils'; // Import state calculation and type
+	import { performSearch as performSearchUtil, clearSearchState } from '$lib/library/searchUtils'; // Import search utils
+	import { showNotification, checkExpiredRibbons } from '$lib/library/ui';
+	import { initGoogleDrivePicker, initGoogleDriveFolderPicker } from '$lib/library/googleDrive';
+	import { processFiles, handleDrop, handleDragOver, handleDragLeave } from '$lib/library/fileProcessing';
+	import { handleOpenBook, handleRemoveBook, handleClearLibrary } from '$lib/library/bookActions'; // Import book actions
+	import { startEditingTitleAction, startEditingAuthorAction, saveEditedTitleAction, saveEditedAuthorAction, cancelEditingAction, handleEditKeydownAction } from '$lib/library/editActions'; // Import edit actions
 
-	// Supported e-book formats
-	const SUPPORTED_FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.cbz'];
 
-	// Dummy book interface (for empty libraries)
-	interface DummyBook {
-		id: string;
-		title: string;
-		ribbon: string;
-		color: string;
-	}
+	// --- Component State ---
 
-	let bookshelf: HTMLElement;
-	let emptyBookshelf: HTMLElement;
+	// DOM Element References
+	let bookshelf: HTMLElement | null = null;
+	let emptyBookshelf: HTMLElement | null = null;
+	// let fileInputElement: HTMLInputElement | null = null; // Removed global variable
+	let searchInputElement: HTMLInputElement | null = null;
+
+	// Library State
 	let isLibraryLoaded = false;
-	let libraryBooks: any[] = [];
+	let libraryBooks: Book[] = [];
 	let selectedBookIndex = 0;
-	let fileInputElement: HTMLInputElement;
+	let coverflow: CoverflowInstance | null = null;
+	let ribbonCheckInterval: number | undefined;
+
+	// Search State
+	let searchQuery = '';
+	let debouncedSearchQuery = '';
+	let searchResults: Book[] = [];
+	let isSearching = false;
+
+	// UI State
 	let isUploadModalOpen = false;
-	let coverflow: Coverflow;
-	let coverflowSpeed = 15;  // ms between navigations while holding
-	let coverflowDelay = 50; // Initial delay before rapid navigation
-	let coverflowSwipeThreshold = 25;
+	let isEditingTitle = false;
+	let editedTitle = '';
+	let isEditingAuthor = false;
+	let editedAuthor = '';
+	let showCrossPlatformDialog = false;
+	let lastImportedBooks: Book[] = []; // Store books from the last import for potential upload
+
+	// Interaction State
 	let isMobile: boolean = false;
+	let coverflowSpeed = 150; // Adjusted speed for smoother rapid nav
+	let coverflowDelay = 300; // Adjusted delay for rapid nav start
 
-	// Import settings
+	// Import Settings
 	let importType: typeof ImportType[keyof typeof ImportType] = ImportType.Book;
-	let similarityThreshold: number = 0.7; // Default 70% similarity
+	let similarityThreshold: number = DEFAULT_SIMILARITY_THRESHOLD;
 
-	// Define the three dummy books with different colors and ribbons
+	// Empty Library State
 	const dummyBooks: DummyBook[] = [
 		{ id: 'dummy-1', title: 'EMPTY LIBRARY', ribbon: 'ADD', color: 'green' },
 		{ id: 'dummy-2', title: 'EMPTY LIBRARY', ribbon: 'BOOKS', color: 'blue' },
 		{ id: 'dummy-3', title: 'EMPTY LIBRARY', ribbon: 'HERE', color: 'red' }
 	];
+	let selectedDummyIndex = 1; // Center dummy book
 
-	// Variable to track the centered dummy book
-	let selectedDummyIndex = 1;
+	// --- Lifecycle Functions ---
 
-	// Database constants - using only BOOKS_STORE
-	const DB_NAME = 'ebitabo-books';
-	const BOOKS_STORE = 'books';
-
-	// Title similarity scoring function - computes similarity between two strings from 0 to 1
-	function calculateTitleSimilarity(title1: string, title2: string): number {
-		// Normalize strings: lowercase, remove non-alphanumeric characters, trim
-		const normalize = (str: string): string => {
-			return str.toLowerCase()
-				.replace(/[^\w\s]/g, '') // Remove punctuation
-				.replace(/\s+/g, ' ')    // Replace multiple spaces with single space
-				.trim();
-		};
-
-		const normalizedTitle1 = normalize(title1);
-		const normalizedTitle2 = normalize(title2);
-
-		// If either string is empty after normalization, return 0
-		if (!normalizedTitle1 || !normalizedTitle2) return 0;
-
-		// If strings are identical after normalization, return 1
-		if (normalizedTitle1 === normalizedTitle2) return 1;
-
-		// Simple word-based matching
-		const words1 = normalizedTitle1.split(' ');
-		const words2 = normalizedTitle2.split(' ');
-
-		// Count matching words (case insensitive)
-		let matchCount = 0;
-		for (const word1 of words1) {
-			if (word1.length < 3) continue; // Skip very short words
-			for (const word2 of words2) {
-				if (word2.length < 3) continue; // Skip very short words
-				if (word1 === word2) {
-					matchCount++;
-					break;
-				}
-			}
-		}
-
-		// Calculate similarity as proportion of words that match
-		const totalWords = Math.max(
-			words1.filter(w => w.length >= 3).length,
-			words2.filter(w => w.length >= 3).length
-		);
-
-		return totalWords > 0 ? matchCount / totalWords : 0;
-	}
-
-	// Hash function for generating unique IDs - at module scope
-	function hashString(str) {
-		let hash = 0;
-		for (let i = 0; i < str.length; i++) {
-			const char = str.charCodeAt(i);
-			hash = ((hash << 5) - hash) + char;
-			hash = hash & hash; // Convert to 32bit integer
-		}
-		return Math.abs(hash).toString(16); // Convert to hex string
-	}
-
-	// Flag to track service worker registration
-	let isServiceWorkerRegistered = false;
-
-	// Editing state variables
-	let isEditingTitle = false;
-	let isEditingAuthor = false;
-	let editedTitle = '';
-	let editedAuthor = '';
-
-	// Search functionality
-	let searchQuery = '';
-	let debouncedSearchQuery = '';
-	let searchResults = [];
-	let searchTimeout: any;
-	let isSearching = false;
-
-	// Initialize service worker
-	async function initServiceWorker() {
-		if (browser) {
-			console.log('[DEBUG] Registering service worker');
-
-			try {
-				// Try to register service worker
-				isServiceWorkerRegistered = await registerServiceWorker();
-				console.log('[DEBUG] Service worker registered status:', isServiceWorkerRegistered);
-
-				// If service worker is registered, make a test call to verify it's working
-				if (isServiceWorkerRegistered) {
-					try {
-						const response = await sendMessageToSW({ type: 'ping' });
-
-						// Check response type to handle different service worker states
-						if (response && response.type === 'pong') {
-							console.log('[DEBUG] Service worker communication verified!');
-
-							// Try to migrate old data if present
-							console.log('[DEBUG] Checking for data to migrate...');
-							const migrated = await migrateData();
-							console.log('[DEBUG] Data migration status:', migrated);
-						} else if (response && ['sw-not-supported', 'sw-not-controlling-yet',
-							'sw-registration-failed', 'message-error', 'sw-timeout'].includes(response.type)) {
-							// These are expected conditions when the service worker is not fully ready
-							console.info('[DEBUG] Service worker not fully ready yet:', response.type);
-							// Still consider it registered - it will be available after page refresh
-							isServiceWorkerRegistered = true;
-						} else {
-							console.warn('[DEBUG] Service worker responded with unexpected format:', response);
-							// Still consider it registered but log a warning
-							isServiceWorkerRegistered = true;
-						}
-					} catch (error) {
-						// This should rarely happen now with the improved error handling
-						console.warn('[DEBUG] Service worker communication exception:', error);
-						// We'll still consider it registered since the actual registration succeeded
-						isServiceWorkerRegistered = true;
-					}
-				}
-
-				return isServiceWorkerRegistered;
-			} catch (error) {
-				console.error('[DEBUG] Service worker initialization failed:', error);
-				isServiceWorkerRegistered = false;
-				return false;
-			}
-		}
-	}
-
-	// Function to extract cover from e-book file
-	async function extractCover(file: File): Promise<{ url: string, title: string, author: string }> {
-		console.log('Extracting cover for file:', file.name);
-
-		try {
-			// For EPUB and CBZ files, we can extract the cover
-			if (file.name.toLowerCase().endsWith('.epub') || file.name.toLowerCase().endsWith('.cbz')) {
-				console.log(`File is ${file.name.toLowerCase().endsWith('.cbz') ? 'CBZ' : 'EPUB'}, attempting to extract cover`);
-
-				// Use the reader module to extract the cover
-				try {
-					// Import modules
-					const [{ createReader }, { preloadFoliateComponents }] = await Promise.all([
-						import('../reader/reader'),
-						import('../reader/preload-foliate')
-					]);
-					console.log('Reader module imported');
-
-					// Preload Foliate components first
-					await preloadFoliateComponents();
-					console.log('Foliate components preloaded');
-
-					const tempReader = await createReader({});
-					console.log('Temp reader created');
-
-					const book = await tempReader.openBook(file, { extractCoverOnly: true });
-					console.log('Book opened with extractCoverOnly:', book);
-
-					if (book && book.cover) {
-						console.log('Cover found, returning data');
-						return {
-							url: book.cover,
-							title: book.title || file.name.replace(/\.[^/.]+$/, ''),
-							author: book.author || 'Unknown Author'
-						};
-					} else {
-						console.log('No cover found, using placeholder');
-					}
-				} catch (importError) {
-					console.error('Error importing or using reader module:', importError);
-				}
-			} else {
-				console.log('File is not EPUB or CBZ, using placeholder');
-			}
-
-			// For other formats or if cover extraction failed, use placeholder
-			console.log('Using placeholder cover for', file.name);
-			return {
-				url: '/placeholder-cover.png',
-				title: file.name.replace(/\.[^/.]+$/, ''),
-				author: 'Unknown Author'
-			};
-		} catch (error) {
-			console.error('Unexpected error extracting cover:', error);
-			return {
-				url: '/placeholder-cover.png',
-				title: file.name.replace(/\.[^/.]+$/, ''),
-				author: 'Unknown Author'
-			};
-		}
-	}
-
-	// Simple database open function - using only BOOKS_STORE
-	function openDatabase(): Promise<IDBDatabase> {
-		return new Promise((resolve, reject) => {
-			console.log(`Opening database ${DB_NAME}`);
-			const request = indexedDB.open(DB_NAME);
-
-			request.onupgradeneeded = function(event) {
-				const db = event.target.result;
-				console.log(`Creating database stores if needed`);
-
-				// Create books store if it doesn't exist
-				if (!db.objectStoreNames.contains(BOOKS_STORE)) {
-					console.log('Creating books store');
-					const bookStore = db.createObjectStore(BOOKS_STORE, { keyPath: 'id' });
-
-					// Add useful indexes
-					bookStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-					bookStore.createIndex('title', 'title', { unique: false });
-					bookStore.createIndex('author', 'author', { unique: false });
-					bookStore.createIndex('fileName', 'fileName', { unique: false });
-
-					console.log('Created books store with indexes');
-				} else {
-					// Check if we need to add the fileName index to an existing store
-					const transaction = event.target.transaction;
-					const bookStore = transaction.objectStore(BOOKS_STORE);
-
-					// Check if the fileName index exists and add it if it doesn't
-					if (!bookStore.indexNames.contains('fileName')) {
-						console.log('Adding missing fileName index to books store');
-						bookStore.createIndex('fileName', 'fileName', { unique: false });
-					}
-				}
-			};
-
-			request.onerror = function(event) {
-				const error = event.target.error;
-				console.error('Error opening database:', error);
-				reject(error);
-			};
-
-			request.onsuccess = function(event) {
-				const db = event.target.result;
-				console.log(`Successfully opened database`);
-				resolve(db);
-			};
-		});
-	}
-
-	// Prepare library books for storage by fetching cover blobs
-	async function prepareLibraryBooksForStorage() {
-		const preparedBooks = [];
-
-		// Process books sequentially to avoid transaction timeout
-		for (let i = 0; i < libraryBooks.length; i++) {
-			const book = libraryBooks[i];
-
-			// For books with blob URLs, store the actual cover blob
-			let coverBlob = null;
-			if (book.coverUrl && book.coverUrl.startsWith('blob:')) {
-				try {
-					// Fetch the actual blob data from the URL
-					const response = await fetch(book.coverUrl);
-					coverBlob = await response.blob();
-					console.log(`Successfully fetched cover blob for "${book.title}"`);
-				} catch (error) {
-					console.error(`Error fetching cover blob for "${book.title}":`, error);
-					// If we can't fetch the blob, we'll use null and a placeholder will be used later
-				}
-			} else if (book.coverUrl === '/placeholder-cover.png') {
-				// Leave coverBlob as null for placeholder images
-				console.log(`Using placeholder for "${book.title}"`);
-			}
-
-			// Generate a unique hash ID by combining book attributes
-			// Using hashString function defined at module scope
-
-			// Create a unique book identifier from its attributes
-			const hashSource = `${book.title}-${book.author}-${book.file.name}-${book.file.size}`;
-			const uniqueId = hashString(hashSource);
-
-			// Create a serializable book entry
-			const serializedBook = {
-				id: uniqueId, // Use hash as permanent unique ID
-				title: book.title,
-				author: book.author,
-				fileName: book.file.name,
-				fileType: book.file.type,
-				fileSize: book.file.size,
-				coverUrl: book.coverUrl.startsWith('blob:') ? null : book.coverUrl, // Only store non-blob URLs
-				coverBlob: coverBlob, // Store the actual blob data instead of URL
-				file: book.file,
-				lastAccessed: Date.now()
-			};
-
-			console.log(`Prepared book "${book.title}" with coverBlob: ${!!coverBlob}`);
-			preparedBooks.push(serializedBook);
-		}
-
-		return preparedBooks;
-	}
-
-	// Save individual book to IndexedDB with improved mobile compatibility
-	async function saveBook(book) {
-		if (!browser) return false;
-
-		try {
-			// Ensure book has all required fields
-			if (!book.id) {
-				console.error('Cannot save book without ID', book);
-				return false;
-			}
-
-			// Prepare book data for storage - handle any blob data
-			let preparedBook = { ...book };
-
-			// If book has a coverUrl that's a blob and no coverBlob yet, convert it
-			if (book.coverUrl && book.coverUrl.startsWith('blob:') && !book.coverBlob) {
-				try {
-					// Fetch the blob data
-					const response = await fetch(book.coverUrl);
-					const coverBlob = await response.blob();
-
-					// Add the blob data
-					preparedBook.coverBlob = coverBlob;
-					// Don't store the blob URL directly as it's temporary
-					preparedBook.coverUrl = null;
-					console.log(`Fetched cover blob for book "${book.title}"`);
-				} catch (error) {
-					console.error(`Error fetching cover blob for book "${book.title}":`, error);
-					// Keep the original book data without the blob
-				}
-			}
-
-			// Always ensure lastAccessed is present
-			preparedBook.lastAccessed = preparedBook.lastAccessed || Date.now();
-
-			// Special handling for file field to ensure proper storage on mobile devices
-			if (preparedBook.file) {
-				try {
-					// Create a FileData object to store file metadata separately
-					// This helps with serialization issues on mobile browsers
-					preparedBook.fileData = {
-						name: preparedBook.file.name,
-						type: preparedBook.file.type,
-						size: preparedBook.file.size,
-						lastModified: preparedBook.file.lastModified
-					};
-					
-					// Store file content as a separate blob
-					// This approach prevents issues with file handles being lost on mobile
-					if (!preparedBook.fileBlob) {
-						console.log(`Creating fileBlob for "${preparedBook.title}" to ensure mobile compatibility`);
-						preparedBook.fileBlob = preparedBook.file.slice(
-							0, 
-							preparedBook.file.size, 
-							preparedBook.file.type
-						);
-					}
-					
-					console.log(`Book "${preparedBook.title}" prepared with fileBlob: ${!!preparedBook.fileBlob}`);
-				} catch (fileError) {
-					console.error(`Error processing file for "${preparedBook.title}":`, fileError);
-					// Keep original file if processing fails
-				}
-			}
-
-			const db = await openDatabase();
-
-			// Start a transaction to save the book
-			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
-			const store = transaction.objectStore(BOOKS_STORE);
-
-			// Save the book with retries for mobile devices that may have timeout issues
-			const MAX_RETRIES = 2;
-			let retries = 0;
-			
-			while (retries <= MAX_RETRIES) {
-				try {
-					await new Promise<void>((resolve, reject) => {
-						const request = store.put(preparedBook);
-
-						request.onsuccess = function() {
-							console.log(`Book "${preparedBook.title}" saved to IndexedDB successfully`);
-							resolve();
-						};
-
-						request.onerror = function(event) {
-							console.error(`Error saving book "${preparedBook.title}" (attempt ${retries+1}):`, event.target.error);
-							reject(event.target.error);
-						};
-					});
-					
-					// If we get here, the save was successful
-					return true;
-				} catch (saveError) {
-					retries++;
-					if (retries <= MAX_RETRIES) {
-						console.log(`Retrying save for "${preparedBook.title}" (attempt ${retries+1} of ${MAX_RETRIES+1})`);
-						// Wait before retrying
-						await new Promise(r => setTimeout(r, 500 * retries));
-					} else {
-						console.error(`Failed to save book "${preparedBook.title}" after ${MAX_RETRIES+1} attempts`);
-						throw saveError;
-					}
-				}
-			}
-
-			return false; // Should not reach here due to return true or throw above
-		} catch (error) {
-			console.error('Error saving book:', error);
-			return false;
-		}
-	}
-
-	// Save all books in the library
-	async function saveAllBooks() {
-		if (!browser || libraryBooks.length === 0) return false;
-
-		console.log(`Saving ${libraryBooks.length} books to IndexedDB`);
-
-		try {
-			// Save each book individually
-			for (const book of libraryBooks) {
-				await saveBook(book);
-			}
-
-			console.log('All books saved successfully');
-			return true;
-		} catch (error) {
-			console.error('Error saving all books:', error);
-			return false;
-		}
-	}
-
-	// Delete a book from the database by ID
-	async function removeBookFromDB(bookId) {
-		if (!browser || !bookId) return false;
-
-		try {
-			const db = await openDatabase();
-			const transaction = db.transaction([BOOKS_STORE], 'readwrite');
-			const store = transaction.objectStore(BOOKS_STORE);
-
-			await new Promise<void>((resolve, reject) => {
-				const request = store.delete(bookId);
-
-				request.onsuccess = function() {
-					console.log(`Book with ID ${bookId} deleted successfully`);
-					resolve();
-				};
-
-				request.onerror = function(event) {
-					console.error(`Error deleting book with ID ${bookId}:`, event.target.error);
-					reject(event.target.error);
-				};
-			});
-
-			return true;
-		} catch (error) {
-			console.error(`Error deleting book with ID ${bookId}:`, error);
-			return false;
-		}
-	}
-
-	// Load all books directly from IndexedDB
-	async function loadLibraryState(): Promise<boolean> {
-		if (!browser) return false;
-
-		try {
-			console.log('[DEBUG] Loading books directly from IndexedDB');
-
-			// Ensure service worker is registered for background operations
-			if (!isServiceWorkerRegistered) {
-				console.log('[DEBUG] Service worker not registered, initializing');
-				await initServiceWorker();
-			}
-
-			// Initialize an empty array for books
-			let books: any[] = [];
-
-			// Use standard IndexedDB operations to get all books
-			try {
-				const db = await openDatabase();
-
-				// Check if the books store exists
-				if (db.objectStoreNames.contains(BOOKS_STORE)) {
-					console.log('[DEBUG] Using BOOKS_STORE to get all books');
-					const transaction = db.transaction([BOOKS_STORE], 'readonly');
-					const store = transaction.objectStore(BOOKS_STORE);
-
-					// Get all books using getAll()
-					const allBooks = await new Promise<any[]>((resolve) => {
-						const request = store.getAll();
-
-						request.onsuccess = function() {
-							resolve(request.result || []);
-						};
-
-						request.onerror = function() {
-							console.error('[DEBUG] Error getting books:', request.error);
-							resolve([]);
-						};
-					});
-
-					if (allBooks.length > 0) {
-						console.log('[DEBUG] Found books in books store:', allBooks.length);
-						books = allBooks;
-						selectedBookIndex = 0; // Default to first book
-					} else {
-						console.log('[DEBUG] No books found in books store');
-					}
-				} else {
-					console.log('[DEBUG] Books store not found in database');
-
-					// Try legacy approach using LIBRARY_STORE (for backward compatibility)
-					if (db.objectStoreNames.contains('library')) {
-						console.log('[DEBUG] Attempting to migrate from old library store format');
-
-						const transaction = db.transaction(['library'], 'readonly');
-						const store = transaction.objectStore('library');
-
-						const libraryEntry = await new Promise<any>((resolve) => {
-							const request = store.get('current_library');
-
-							request.onsuccess = function() {
-								resolve(request.result);
-							};
-
-							request.onerror = function() {
-								console.error('[DEBUG] Error getting library entry:', request.error);
-								resolve(null);
-							};
-						});
-
-						if (libraryEntry && libraryEntry.books && libraryEntry.books.length > 0) {
-							console.log('[DEBUG] Found books in old library store, migrating:', libraryEntry.books.length);
-							books = libraryEntry.books;
-
-							// Save these to the new format
-							for (const book of books) {
-								await saveBook(book);
-							}
-
-							console.log('[DEBUG] Migration complete');
-						}
-					}
-				}
-			} catch (dbError) {
-				console.error('[DEBUG] Error accessing IndexedDB directly:', dbError);
-			}
-
-			// Final check if we have any books to display
-			if (books.length > 0) {
-				console.log('[DEBUG] Processing', books.length, 'books for display');
-
-				// Process each book to regenerate blob URLs for stored coverBlobs
-				libraryBooks = books.map(book => {
-					console.log('[DEBUG] Processing book:', book.title,
-						'coverBlob exists:', !!book.coverBlob,
-						'coverUrl:', book.coverUrl);
-
-					let coverUrl = book.coverUrl;
-
-					// If we have a stored cover blob, create a new blob URL
-					if (book.coverBlob) {
-						try {
-							// Create a new blob URL from the stored blob
-							coverUrl = URL.createObjectURL(book.coverBlob);
-							console.log(`[DEBUG] Regenerated blob URL for book "${book.title}": ${coverUrl}`);
-						} catch (error) {
-							console.error(`[DEBUG] Error regenerating blob URL for "${book.title}":`, error);
-							// Fall back to placeholder if regeneration fails
-							coverUrl = '/placeholder-cover.png';
-						}
-					} else if (!coverUrl) {
-						// If no URL and no blob, use placeholder
-						console.log(`[DEBUG] Using placeholder for "${book.title}" as no coverUrl or coverBlob found`);
-						coverUrl = '/placeholder-cover.png';
-					}
-
-					// Ensure the book has a file object - might be missing after migration
-					if (!book.file && book.fileName) {
-						console.warn(`[DEBUG] Book "${book.title}" missing file object, creating placeholder`);
-						// Create a placeholder File object for compatibility
-						book.file = new File([''], book.fileName, {
-							type: book.fileType || 'application/octet-stream',
-							lastModified: book.lastModified || Date.now()
-						});
-					}
-
-					return {
-						...book,
-						coverUrl: coverUrl
-					};
-				});
-
-				// Sort books by last accessed
-				libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-
-				selectedBookIndex = 0; // Start with the most recently accessed book
-				isLibraryLoaded = true;
-				console.log('[DEBUG] Library loaded successfully with', libraryBooks.length, 'books');
-				return true;
-			} else {
-				console.log('[DEBUG] No books found in any storage');
-				return false;
-			}
-		} catch (error) {
-			console.error('[DEBUG] Error loading library state:', error);
-			return false;
-		}
-	}
-
-	// Process folder of e-books or book covers - one file at a time with immediate UI updates
-	async function processFolder(files: File[], isFromGoogleDrive = false) {
-		console.log('[DEBUG] Processing folder with', files.length, 'files');
-
-		// Determine file filter based on import type
-		let supportedFormats = SUPPORTED_FORMATS;
-		let filterMessage = 'No supported e-book files found. Supported formats: ' + SUPPORTED_FORMATS.join(', ');
-
-		// For book cover imports, allow image formats
-		if (importType === ImportType.BookCover) {
-			supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-			filterMessage = 'No supported image files found. Supported formats: ' + supportedFormats.join(', ');
-		}
-
-		// Filter for supported formats
-		const filteredFiles = files.filter(file =>
-			supportedFormats.some(format => file.name.toLowerCase().endsWith(format))
-		);
-
-		console.log('[DEBUG] Found', filteredFiles.length, 'supported files');
-
-		if (filteredFiles.length === 0) {
-			alert(filterMessage);
-			return;
-		}
-
-		// Ensure service worker is registered for background updates
-		if (!isServiceWorkerRegistered) {
-			console.log('[DEBUG] Service worker not registered, initializing');
-			await initServiceWorker();
-		}
-
-		// Tracking for summary dialog
-		const summary = {
-			total: filteredFiles.length,
-			succeeded: 0,
-			failed: 0,
-			new: 0,
-			updated: 0,
-			failedBooks: []
-		};
-
-		// Create appropriate progress notification message
-		const progressId = 'import-progress';
-		const progressMessage = importType === ImportType.Book
-			? 'Processing books...'
-			: 'Processing book covers...';
-
-		if (filteredFiles.length > 1) {
-			showProgressNotification(progressMessage, 0, filteredFiles.length, progressId);
-		}
-
-		// Process based on import type
-		if (importType === ImportType.Book) {
-			// Standard book import logic
-			for (let i = 0; i < filteredFiles.length; i++) {
-				const file = filteredFiles[i];
-
-				// Update progress for multi-file operations
-				if (filteredFiles.length > 1) {
-					updateProgressNotification(`Processing book ${i + 1}/${filteredFiles.length}: ${file.name}`,
-						i, filteredFiles.length, progressId);
-				}
-
-				console.log(`[DEBUG] Processing book file ${i + 1}/${filteredFiles.length}: ${file.name}`);
-
-				try {
-					// Get book metadata
-					const { url, title, author } = await extractCover(file);
-					console.log('[DEBUG] Extracted metadata:', { title, author, coverUrl: url });
-
-					// Create a unique hash ID
-					const hashSource = `${title}-${author}-${file.name}-${file.size}`;
-					const uniqueId = hashString(hashSource);
-
-					// Create book data object
-					const bookData = {
-						id: uniqueId, // Add unique ID immediately
-						title,
-						author,
-						file,
-						fileName: file.name,
-						fileType: file.type,
-						fileSize: file.size,
-						coverUrl: url,
-						progress: 0,
-						lastAccessed: Date.now(),
-						dateAdded: Date.now()
-					};
-
-					// Save to database immediately
-					await saveBook(bookData);
-
-					bookData.ribbonData = 'NEW';
-					bookData.ribbonExpiry = Date.now() + 60000; // 60 seconds from now
-
-					// Get the newly added books
-					lastImportedBooks = [...lastImportedBooks, bookData];
-
-
-					// Add the book to library immediately 
-					libraryBooks = [...libraryBooks, bookData];
-
-					// Mark library as loaded
-					isLibraryLoaded = true;
-
-					// Update tracking
-					summary.succeeded++;
-					summary.new++;
-
-					// Sort the library
-					libraryBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-
-					// Find the position of the newly added book after sorting
-					const bookIndex = libraryBooks.findIndex(book => book.id === bookData.id);
-
-					// Update UI immediately after each book
-					if (bookshelf) {
-						// Update the coverflow - wrap in a Promise to ensure it completes
-						await new Promise(resolve => {
-							setTimeout(() => {
-								initCoverflow();
-
-								// Always select the newly added book
-								if (bookIndex >= 0) {
-									selectedBookIndex = bookIndex;
-									if (coverflow) {
-										coverflow.select(bookIndex);
-									}
-								}
-								resolve(null);
-							}, 100);
-						});
-					}
-
-					// Small delay between books to allow UI to render
-					if (i < filteredFiles.length - 1) {
-						await new Promise(resolve => setTimeout(resolve, 200));
-					}
-
-				} catch (error) {
-					console.error('[DEBUG] Error processing book:', file.name, error);
-					summary.failed++;
-					summary.failedBooks.push(file.name);
-				}
-			}
-		} else {
-			// Book cover update logic
-			for (let i = 0; i < filteredFiles.length; i++) {
-				const file = filteredFiles[i];
-
-				// Update progress for multi-file operations
-				if (filteredFiles.length > 1) {
-					updateProgressNotification(`Processing cover ${i + 1}/${filteredFiles.length}: ${file.name}`,
-						i, filteredFiles.length, progressId);
-				}
-
-				console.log(`[DEBUG] Processing cover file ${i + 1}/${filteredFiles.length}: ${file.name}`);
-
-				try {
-					// Create a blob URL for the image
-					const coverUrl = URL.createObjectURL(file);
-
-					// Extract a potential title from the filename
-					const possibleTitle = file.name
-						.replace(/\.[^/.]+$/, '') // Remove file extension
-						.replace(/[_\-]/g, ' ')   // Replace underscores and hyphens with spaces
-						.trim();
-
-					console.log('[DEBUG] Extracted possible title from filename:', possibleTitle);
-
-					// Look for matching books in the library based on title similarity
-					let matchFound = false;
-					let matchedBook = null;
-
-					for (const book of libraryBooks) {
-						const similarity = calculateTitleSimilarity(book.title, possibleTitle);
-						console.log(`[DEBUG] Similarity score for "${book.title}" vs "${possibleTitle}": ${similarity}`);
-
-						if (similarity >= similarityThreshold) {
-							matchFound = true;
-							matchedBook = book;
-
-							// Update the book's cover with the new image
-							console.log(`[DEBUG] Updating cover for book "${book.title}" with file ${file.name}`);
-
-							// Store the old URL so we can revoke it later
-							const oldCoverUrl = book.coverUrl;
-
-							// Update the book's cover URL
-							book.coverUrl = coverUrl;
-
-							// Create a blob from the file
-							const fileReader = new FileReader();
-							const coverBlob = await new Promise<Blob>((resolve) => {
-								fileReader.onload = () => {
-									resolve(new Blob([fileReader.result], { type: file.type }));
-								};
-								fileReader.readAsArrayBuffer(file);
-							});
-
-							// Update the book's cover blob
-							book.coverBlob = coverBlob;
-
-							// Update lastAccessed field
-							book.lastAccessed = Date.now();
-
-							// Save the updated book to the database
-							await saveBook(book);
-
-							// Revoke the old URL to prevent memory leaks
-							if (oldCoverUrl && oldCoverUrl.startsWith('blob:')) {
-								URL.revokeObjectURL(oldCoverUrl);
-							}
-
-							// Update tracking
-							summary.succeeded++;
-							summary.updated++;
-
-							// Apply a ribbon to show it's been updated
-							book.ribbonData = 'UPDATED';
-
-							// Break after the first match (only update one book per cover file)
-							break;
-						}
-					}
-
-					if (!matchFound) {
-						console.log(`[DEBUG] No matching book found for cover "${possibleTitle}"`);
-						summary.failed++;
-						summary.failedBooks.push(file.name);
-					}
-
-					// Update UI after processing each cover
-					if (bookshelf && matchFound) {
-						// Update the coverflow - wrap in a Promise to ensure it completes
-						await new Promise(resolve => {
-							setTimeout(() => {
-								initCoverflow();
-
-								// Select the updated book
-								if (matchedBook) {
-									const bookIndex = libraryBooks.findIndex(book => book.id === matchedBook.id);
-									if (bookIndex >= 0) {
-										selectedBookIndex = bookIndex;
-										if (coverflow) {
-											coverflow.select(bookIndex);
-										}
-									}
-								}
-
-								resolve(null);
-							}, 100);
-						});
-					}
-
-					// Small delay between covers to allow UI to render
-					if (i < filteredFiles.length - 1) {
-						await new Promise(resolve => setTimeout(resolve, 200));
-					}
-				} catch (error) {
-					console.error('[DEBUG] Error processing cover:', file.name, error);
-					summary.failed++;
-					summary.failedBooks.push(file.name);
-				}
-			}
-		}
-
-		// Remove progress notification
-		if (filteredFiles.length > 1) {
-			removeNotification(progressId);
-		}
-
-		// Show summary notification
-		if (summary.total > 0) {
-			const failedList = summary.failed > 0
-				? summary.failedBooks.slice(0, 3).join(', ') +
-				(summary.failedBooks.length > 3 ? `... and ${summary.failedBooks.length - 3} more` : '')
-				: '';
-
-			if (importType === ImportType.Book) {
-				if (summary.failed > 0) {
-					showNotification(
-						`Added ${summary.succeeded} of ${summary.total} books. Failed to add: ${failedList}`,
-						summary.failed > 5 ? 'error' : 'warning'
-					);
-				} else {
-					showNotification(`Successfully added ${summary.succeeded} books to your library`, 'success');
-				}
-
-				// If books were imported locally and successfully added
-				// Store them for potential cross-platform upload
-				if (summary.succeeded > 0) {
-
-					// Show cross-platform dialog only if at least one book was added
-					// and the import wasn't already from Google Drive
-					showCrossPlatformDialog = !isFromGoogleDrive;
-				}
-			} else {
-				if (summary.failed > 0) {
-					showNotification(
-						`Updated covers for ${summary.updated} books. Failed to match: ${failedList}`,
-						summary.failed > 5 ? 'error' : 'warning'
-					);
-				} else {
-					showNotification(`Successfully updated covers for ${summary.updated} books`, 'success');
-				}
-			}
-		}
-
-		return {
-			success: summary.succeeded > 0,
-			count: summary.succeeded,
-			summary,
-			showCrossplatformOptions: summary.succeeded > 0 && importType === ImportType.Book
-		};
+	// Helper type for the result of processing URL parameters
+	interface UrlParameterProcessingResult {
+		newState: LibraryStateUpdate;
+		needsHistoryReplace: boolean;
 	}
 
 	/**
-	 * Coverflow class for managing 3D book display and interaction
+	 * Processes URL parameters like bookId and progress after returning from the reader.
+	 * Calculates the necessary state updates without directly modifying component state.
+	 * @param urlParams The URLSearchParams object.
+	 * @param currentBooks The current array of library books.
+	 * @param currentSelectedBookIndex The current selected book index.
+	 * @param isCurrentlyLoaded The current library loaded status.
+	 * @param isCurrentlySearching The current search status.
+	 * @param currentSearchQuery The current debounced search query.
+	 * @returns A promise resolving to an object with the calculated new state and a flag indicating if URL history needs cleaning, or null if no processing was needed.
 	 */
-	class Coverflow {
-		/**
-		 * Creates a new Coverflow instance
-		 * @param {Array} bookData - Array of book information objects
-		 * @param {Object} params - Configuration parameters
-		 */
-		constructor(containerEl, bookData) {
-			this.container = containerEl;
-			this.bookData = bookData;
-			this.books = [];
-			this.currentIndex = Math.min(1, this.bookData.length - 1);
-			this.visibleBooks = this.getVisibleBooksCount();
+	async function processUrlParameters(
+		urlParams: URLSearchParams,
+		currentBooks: Book[],
+		currentSelectedBookIndex: number,
+		isCurrentlyLoaded: boolean,
+		isCurrentlySearching: boolean,
+		currentSearchQuery: string
+	): Promise<UrlParameterProcessingResult | null> {
+		console.log('[URL Params] Starting processing...');
+		const bookIdParam = urlParams.get('bookId');
+		const progressParam = urlParams.get('progress');
 
-			// Configuration parameters
-			this.params = {
-				xOffset: 165,      // Horizontal distance between books
-				zDepth: 55,        // Z-axis depth for perspective
-				rotation: 55,      // Rotation angle in degrees
-				scale: {
-					active: 1.05,  // Active book scale
-					inactive: 0.9  // Inactive book scale
-				}
-			};
+		if (!bookIdParam || !isCurrentlyLoaded) {
+			console.log('[URL Params] No bookId param or library not loaded, skipping.');
+			return null; // Nothing to process
 		}
 
-		/**
-		 * Get number of visible books based on screen width
-		 */
-		getVisibleBooksCount() {
-			const width = window.innerWidth;
-			if (width <= 480) {
-				return 3; // Mobile: center + 1 on each side
-			} else if (width <= 768) {
-				return 5; // Tablet: center + 2 on each side
-			} else {
-				return this.bookData.length; // Desktop: show all books
-			}
+		const bookIndex = currentBooks.findIndex(b => b.id === bookIdParam);
+		if (bookIndex === -1) {
+			console.log(`[URL Params] Book ID ${bookIdParam} not found in current library.`);
+			// Clean URL params even if book not found, as they are now stale
+			return { newState: calculateNewLibraryState(currentBooks, currentSelectedBookIndex, isCurrentlyLoaded, isCurrentlySearching, currentSearchQuery, currentBooks, currentSelectedBookIndex, undefined), needsHistoryReplace: true };
 		}
 
-		/**
-		 * Handle window resize
-		 */
-		handleResize = () => {
-			const newVisibleCount = this.getVisibleBooksCount();
-			if (newVisibleCount !== this.visibleBooks) {
-				this.visibleBooks = newVisibleCount;
-				this.updateVisibleBooks();
-			}
-		};
+		console.log(`[URL Params] Found book from URL param: ${bookIdParam} at index ${bookIndex}`);
+		let initialIndex = bookIndex;
+		let booksToSort = [...currentBooks]; // Create a copy for potential modification and sorting
+		let bookUpdated = false;
 
-		/**
-		 * Initialize the coverflow
-		 */
-		initialize() {
-			this.createAllBooks();
-			this.setupEventListeners();
-			this.updateVisibleBooks();
-			this.positionBooks(this.currentIndex);
-
-			// Add resize event listener
-			window.addEventListener('resize', this.handleResize);
-
-			// Return the current index
-			return this.currentIndex;
-		}
-
-		/**
-		 * Create all book elements
-		 */
-		createAllBooks() {
-			// Clear container
-			this.container.innerHTML = '';
-			this.books = [];
-
-			// Create all books but set some as hidden initially
-			this.bookData.forEach((data, index) => {
-				const bookElement = this.createBookElement(index);
-				this.container.appendChild(bookElement);
-				this.books.push(bookElement);
-			});
-		}
-
-		/**
-		 * Update which books are visible based on current index
-		 */
-		updateVisibleBooks() {
-			const halfVisible = Math.floor(this.visibleBooks / 2);
-			const startIndex = Math.max(0, this.currentIndex - halfVisible);
-			const endIndex = Math.min(this.bookData.length - 1, startIndex + this.visibleBooks - 1);
-
-			// Update all books' visibility
-			this.books.forEach((book, index) => {
-				if (index >= startIndex && index <= endIndex) {
-					book.style.display = '';
-				} else {
-					book.style.display = 'none';
-				}
-			});
-		}
-
-		/**
-		 * Create a single book element
-		 * @param {number} index - Index of book in the data array
-		 * @returns {HTMLElement} - The created book element
-		 */
-		createBookElement(index) {
-			const bookData = this.bookData[index];
-			const bookElement = document.createElement('li');
-			bookElement.setAttribute('tabindex', '0');
-
-			const numericProgressAsPercent = Math.round(bookData.progress * 100);
-
-			const displayProgress = `${numericProgressAsPercent}% Read`;
-
-			const bookHTML = `
-								<figure class="book">
-									<ul class="hardcover_front">
-										<li>
-											<div class="coverDesign">
-												${
-				bookData.ribbonData
-					? `<span class="ribbon">${bookData.ribbonData}</span>`
-					: bookData.progress > 0
-						? `<span class="progress-ribbon">${displayProgress}</span>`
-						: '<span class="ribbon hidden"></span>'
-			}
-												<div class="cover-image" style="background-image: url('${bookData.coverUrl}')"></div>
-												<div class="cover-text">
-													<h1></h1>
-													<p></p>
-												</div>
-											</div>
-										</li>
-										<li></li>
-									</ul>
-									<ul class="page">
-										<li></li>
-										<li></li>
-										<li></li>
-										<li></li>
-										<li></li>
-										<li></li>
-										<li></li>
-									</ul>
-									<ul class="hardcover_back">
-										<li></li>
-										<li></li>
-									</ul>
-									<ul class="book_spine">
-										<li></li>
-										<li></li>
-									</ul>
-								</figure>
-							`;
-
-			bookElement.innerHTML = bookHTML;
-			bookElement.dataset.index = index;
-
-			return bookElement;
-		}
-
-		/**
-		 * Set up event listeners for navigation
-		 */
-		setupEventListeners() {
-			// Keyboard navigation is handled at the component level
-
-			// Click navigation
-			this.books.forEach(book => {
-				book.addEventListener('click', () => {
-					const index = parseInt(book.dataset.index, 10);
-					if (index !== this.currentIndex) {
-						this.currentIndex = index;
-						this.updateVisibleBooks(); // Update which books are visible
-						this.positionBooks(this.currentIndex);
-
-						// Dispatch a custom event for selection
-						const event = new CustomEvent('coverselect', {
-							detail: {
-								index: this.currentIndex
-							}
-						});
-						this.container.dispatchEvent(event);
-					}
-				});
-
-				book.addEventListener('focus', () => {
-					const index = parseInt(book.dataset.index, 10);
-					if (index !== this.currentIndex) {
-						this.currentIndex = index;
-						this.updateVisibleBooks(); // Update which books are visible
-						this.positionBooks(this.currentIndex);
-
-						// Dispatch a custom event for selection
-						const event = new CustomEvent('coverselect', {
-							detail: {
-								index: this.currentIndex
-							}
-						});
-						this.container.dispatchEvent(event);
-					}
-				});
-			});
-
-			// Enhanced touch swipe support with momentum
-			let touchStartX = 0;
-			let touchEndX = 0;
-			let touchStartTime = 0;
-			let touchEndTime = 0;
-			let isSwiping = false;
-			let swipeVelocity = 0;
-			let swipeDistance = 0;
-			let animationFrameId = null;
-
-			this.container.addEventListener('touchstart', (e) => {
-				// Cancel any ongoing momentum scrolling
-				if (animationFrameId) {
-					cancelAnimationFrame(animationFrameId);
-					animationFrameId = null;
-				}
-				
-				touchStartX = e.changedTouches[0].screenX;
-				touchStartTime = Date.now();
-				isSwiping = true;
-				swipeVelocity = 0;
-				swipeDistance = 0;
-			});
-
-			this.container.addEventListener('touchmove', (e) => {
-				if (!isSwiping) return;
-				
-				// Prevent scrolling the page while swiping the coverflow
-				e.preventDefault();
-				
-				// Track current position for visual feedback during swipe
-				const currentX = e.changedTouches[0].screenX;
-				swipeDistance = currentX - touchStartX;
-				
-				// Apply a slight visual transform during swipe for feedback
-				// This gives the effect of the books moving slightly with your finger
-				const movePercent = Math.min(Math.abs(swipeDistance) / 150, 0.5);
-				const direction = swipeDistance < 0 ? 1 : -1;
-				
-				// Apply temporary transforms to show movement
-				this.books.forEach((book, i) => {
-					if (i === this.currentIndex) {
-						book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
-					}
-				});
-			});
-
-			this.container.addEventListener('touchend', (e) => {
-				touchEndX = e.changedTouches[0].screenX;
-				touchEndTime = Date.now();
-				
-				swipeDistance = touchEndX - touchStartX;
-				const swipeDuration = Math.max(1, touchEndTime - touchStartTime); // Prevent division by zero
-				
-				// Calculate velocity in pixels per millisecond
-				swipeVelocity = swipeDistance / swipeDuration;
-				
-				this.handleSwipeWithMomentum();
-				isSwiping = false;
-			});
-
-			this.container.addEventListener('touchcancel', () => {
-				// Reset swipe state if touch is cancelled
-				isSwiping = false;
-				
-				// Reset any temporary transforms
-				this.books.forEach(book => {
-					book.style.transform = '';
-				});
-				
-				this.positionBooks(this.currentIndex);
-			});
-
-			// Helper function to handle swipe with momentum
-			this.handleSwipeWithMomentum = () => {
-				// Reset any temporary transforms from touchmove
-				this.books.forEach(book => {
-					book.style.transform = '';
-				});
-				
-				const swipeThreshold = coverflowSwipeThreshold;
-				const velocityThreshold = 0.3; // pixels per millisecond
-				const absVelocity = Math.abs(swipeVelocity);
-				
-				// Calculate how many positions to move based on velocity and distance
-				let positionsToMove = 0;
-				
-				// Fast swipe with enough distance - move multiple positions
-				if (absVelocity > velocityThreshold && Math.abs(swipeDistance) > swipeThreshold) {
-					// Calculate positions to move based on velocity
-					// Higher velocity = more positions moved
-					positionsToMove = Math.min(
-						Math.floor(absVelocity * 6), // Scale factor for velocity
-						Math.floor(Math.abs(swipeDistance) / 60) // Scale factor for distance
-					);
-					positionsToMove = Math.max(1, positionsToMove); // At least move 1
-					positionsToMove = Math.min(positionsToMove, 3); // Cap at 3 to prevent too much movement
-				} 
-				// Regular swipe with enough distance - move one position
-				else if (Math.abs(swipeDistance) > swipeThreshold) {
-					positionsToMove = 1;
-				}
-				
-				// Apply the movement with direction
-				if (positionsToMove > 0) {
-					if (swipeDistance < 0 && this.currentIndex < this.bookData.length - 1) {
-						// Swipe left - animated across multiple frames if velocity is high
-						this.animateBookSelection(this.currentIndex, Math.min(this.bookData.length - 1, this.currentIndex + positionsToMove));
-					} else if (swipeDistance > 0 && this.currentIndex > 0) {
-						// Swipe right - animated across multiple frames if velocity is high
-						this.animateBookSelection(this.currentIndex, Math.max(0, this.currentIndex - positionsToMove));
-					} else {
-						// Snap back to current position if we can't move further
-						this.positionBooks(this.currentIndex);
-					}
-				} else {
-					// Not enough movement to trigger a swipe, reset position
-					this.positionBooks(this.currentIndex);
-				}
-			};
-			
-			// Animate selection between books with momentum effect
-			this.animateBookSelection = (startIndex, targetIndex) => {
-				// Ensure target is within bounds
-				targetIndex = Math.max(0, Math.min(this.bookData.length - 1, targetIndex));
-				
-				if (startIndex === targetIndex) {
-					this.positionBooks(startIndex);
-					return;
-				}
-				
-				let currentPosition = startIndex;
-				const totalSteps = Math.abs(targetIndex - startIndex);
-				let step = 0;
-				const direction = targetIndex > startIndex ? 1 : -1;
-				
-				// Duration variables - faster for first frame to give immediate feedback
-				const initialDelay = 100; // ms for first movement
-				const subsequentDelay = 150; // ms for each additional movement
-				
-				const animate = () => {
-					if (step < totalSteps) {
-						// Calculate next position
-						currentPosition += direction;
-						
-						// Select the book (this.select handles bounds checking)
-						this.select(currentPosition);
-						
-						// Increment step
-						step++;
-						
-						// Schedule next animation frame
-						const delay = step === 1 ? initialDelay : subsequentDelay;
-						animationFrameId = setTimeout(() => {
-							animationFrameId = requestAnimationFrame(animate);
-						}, delay);
-					}
+		// Update progress if provided and different
+		if (progressParam) {
+			const progress = parseFloat(progressParam);
+			if (!isNaN(progress) && booksToSort[bookIndex].progress !== progress) {
+				console.log(`[URL Params] Updating progress for ${bookIdParam} to ${progress}`);
+				booksToSort[bookIndex] = {
+					...booksToSort[bookIndex],
+					progress: progress,
+					lastAccessed: Date.now() // Update last accessed
 				};
-				
-				// Start animation
-				animationFrameId = requestAnimationFrame(animate);
-			};
-		}
-
-		/**
-		 * Position all books based on the active index
-		 * @param {number} activeIndex - Index of the active book
-		 */
-		positionBooks(activeIndex) {
-			this.books.forEach(book => {
-				const index = parseInt(book.dataset.index, 10);
-
-				// Clear previous active state
-				book.classList.remove('active-book');
-
-				// Calculate z-index using the formula from the dummy template
-				// 3-Math.abs(index-selectedDummyIndex)
-				book.style.zIndex = 3 - Math.abs(index - activeIndex);
-
-				// Set transform similar to the dummy template
-				// translate3d({(index-selectedIndex)*200}px, 0, {(index === selectedIndex) ? 60 : 0}px)
-				// rotateY({(index-selectedIndex)*15}deg) scale({(index === selectedIndex) ? 1.05 : 0.9})
-				const xTranslate = (index - activeIndex) * 200;
-				const zTranslate = (index === activeIndex) ? 60 : 0;
-				const rotateY = (index - activeIndex) * 15;
-				const scale = (index === activeIndex) ? 5 : 0.8;
-
-				book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${scale})`;
-				book.style.position = 'absolute';
-				book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
-				book.style.webkitTransformStyle = 'preserve-3d';
-
-				// Add active class to the selected book
-				if (index === activeIndex) {
-					book.classList.add('active-book');
-
-					// Set component z-indexes for the active book
-					this.setComponentZIndexes(book, {
-						frontCover: 30,
-						spine: 20,
-						backCover: 10,
-						pages: 15
-					});
-				} else {
-					// Determine direction for component z-indexes
-					const direction = index - activeIndex < 0 ? -1 : 1;
-
-					// Set component z-indexes based on direction
-					if (direction < 0) {
-						// Left side books
-						this.setComponentZIndexes(book, {
-							frontCover: 20,
-							spine: 30,
-							backCover: 10,
-							pages: 15
-						});
-					} else {
-						// Right side books
-						this.setComponentZIndexes(book, {
-							frontCover: 30,
-							spine: 10,
-							backCover: 5,
-							pages: 15
-						});
-					}
+				try {
+					// Save updated book progress back to DB - awaits completion
+					await saveBook(booksToSort[bookIndex]);
+					console.log(`[URL Params] Successfully saved updated progress for ${bookIdParam}`);
+					bookUpdated = true;
+				} catch (error) {
+					console.error(`[URL Params] Failed to save updated progress for ${bookIdParam}:`, error);
+					// Continue even if save fails, UI state might still need update
 				}
-			});
+			}
 		}
 
-
-		/**
-		 * Set z-index values for individual book components
-		 * @param {HTMLElement} book - The book element
-		 * @param {Object} zIndexes - Object with z-index values for components
-		 */
-		setComponentZIndexes(book, zIndexes) {
-			const frontCover = book.querySelector('.hardcover_front');
-			const backCover = book.querySelector('.hardcover_back');
-			const spine = book.querySelector('.book_spine');
-			const pages = book.querySelector('.page');
-
-			if (frontCover) frontCover.style.zIndex = zIndexes.frontCover;
-			if (backCover) backCover.style.zIndex = zIndexes.backCover;
-			if (spine) spine.style.zIndex = zIndexes.spine;
-			if (pages) pages.style.zIndex = zIndexes.pages;
+		// Re-sort if the book was updated (lastAccessed changed)
+		if (bookUpdated) {
+			console.log('[URL Params] Re-sorting books due to update.');
+			booksToSort.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+			initialIndex = booksToSort.findIndex(b => b.id === bookIdParam); // Find new index after sort
+			console.log(`[URL Params] New index for ${bookIdParam} after sort: ${initialIndex}`);
 		}
 
-		/**
-		 * Select a specific book
-		 * @param {number} index - Index of the book to select
-		 */
-		select(index) {
-			if (index < 0 || index >= this.bookData.length) return;
+		// Calculate the new overall state based on potentially updated/sorted books
+		const newState = calculateNewLibraryState(
+			currentBooks, // Pass original books for comparison
+			currentSelectedBookIndex,
+			isCurrentlyLoaded,
+			isCurrentlySearching,
+			currentSearchQuery,
+			booksToSort, // Pass the potentially updated and sorted array
+			initialIndex, // Pass the potentially new index
+			undefined // loaded status doesn't change here
+		);
 
-			this.currentIndex = index;
-			this.updateVisibleBooks();
-			this.positionBooks(index);
-
-			// Dispatch a custom event for selection
-			const event = new CustomEvent('coverselect', {
-				detail: {
-					index: this.currentIndex
-				}
-			});
-			this.container.dispatchEvent(event);
-		}
+		console.log('[URL Params] Finished processing, returning new state calculation.');
+		return { newState, needsHistoryReplace: true };
 	}
 
-	// Initialize empty library coverflow
-	function initEmptyCoverflow() {
-		if (!browser || !emptyBookshelf) return;
+	onMount(async () => {
+		console.log('[Mount Start] +page.svelte onMount executing...'); // <-- ADDED LOG
+		if (!browser) {
+			console.log('[Mount] Exiting: Not in browser environment.'); // <-- ADDED LOG
+			return;
+		}
+		console.log('[Mount] Browser environment confirmed.'); // <-- ADDED LOG
 
-		console.log('[DEBUG] Initializing empty library Coverflow');
+		// Check mobile status
+		const checkIsMobile = () => { isMobile = window.innerWidth <= 768; };
+		checkIsMobile();
+		window.addEventListener('resize', checkIsMobile);
 
-		// Clear existing content
-		emptyBookshelf.innerHTML = '';
+		// Initialize Service Worker - REMOVED FROM HERE
+		// console.log('[Mount] Calling initServiceWorker...');
+		// try {
+		// 	await initServiceWorker();
+		// 	console.log('[Mount] initServiceWorker completed.');
+		// } catch (error) {
+		// 	console.error('[Mount] Error during initServiceWorker:', error);
+		// }
 
+		// Load library state from DB
+		let initialState: { books: Book[], loaded: boolean } = { books: [], loaded: false }; // Default state with type
 		try {
-			// Create a container for the 3D dummy books
-			const alignContainer = document.createElement('ul');
-			alignContainer.className = 'align';
-			alignContainer.id = 'empty-book-container';
-			emptyBookshelf.appendChild(alignContainer);
-
-			// Create coverflow instance for dummy books
-			const emptyCoverflow = new Coverflow(alignContainer, dummyBooks);
-			emptyCoverflow.initialize();
-
-			// Apply custom styling to empty library books
-			alignContainer.querySelectorAll('li').forEach((bookElement, index) => {
-				const dummyBook = dummyBooks[index];
-
-				// Get the cover design element
-				const coverDesign = bookElement.querySelector('.coverDesign');
-
-				// Apply a distinct rotation and offset to each book
-				const offset = (index - 1) * 250; // Spread books apart
-				const rotation = (index - 1) * 25; // Add some rotation
-
-				bookElement.style.transform = `translate3d(${offset}px, 0, 20px) rotateY(${rotation}deg)`;
-				bookElement.style.zIndex = (3 - Math.abs(index - 1)).toString(); // Set z-index based on position
-			});
+			console.log('[Mount] Calling loadLibraryStateFromDB...'); // <-- ADDED LOG
+			initialState = await loadLibraryStateFromDB();
+			console.log('[Mount] loadLibraryStateFromDB returned:', initialState); // <-- ADDED LOG
 		} catch (error) {
-			console.error('[ERROR] Failed to initialize empty library coverflow:', error);
-		}
-	}
-
-	// Function to handle selecting a dummy book in the empty library
-	function selectDummyBook(index) {
-		if (index >= 0 && index < dummyBooks.length) {
-			selectedDummyIndex = index;
-		}
-	}
-
-	// Variables to track touch events for swipe support on empty library
-	let touchStartX = 0;
-	let touchEndX = 0;
-	let touchStartTime = 0;
-	let touchEndTime = 0;
-	let emptySwipeVelocity = 0;
-	let emptySwipeDistance = 0;
-	let emptyAnimationId = null;
-	let emptyDragTransform = '';
-	
-	// Enhanced function to handle swipe with momentum on empty library
-	function handleEmptyLibrarySwipe() {
-		const swipeThreshold = coverflowSwipeThreshold; // Minimum distance to trigger a swipe
-		const velocityThreshold = 0.3; // pixels per millisecond
-		
-		// Calculate the duration and velocity
-		const swipeDuration = Math.max(1, touchEndTime - touchStartTime); // Prevent division by zero
-		emptySwipeVelocity = emptySwipeDistance / swipeDuration;
-		const absVelocity = Math.abs(emptySwipeVelocity);
-		
-		// Reset any ongoing animations
-		if (emptyAnimationId) {
-			cancelAnimationFrame(emptyAnimationId);
-			emptyAnimationId = null;
-		}
-		
-		// Reset any visual transforms applied during dragging
-		emptyDragTransform = '';
-		
-		// Calculate positions to move based on velocity and distance
-		let positionsToMove = 0;
-		
-		// Fast swipe with enough distance - potential multi-position move
-		if (absVelocity > velocityThreshold && Math.abs(emptySwipeDistance) > swipeThreshold) {
-			// Calculate positions to move based on velocity
-			positionsToMove = Math.min(
-				Math.floor(absVelocity * 5), // Scale factor for velocity
-				Math.floor(Math.abs(emptySwipeDistance) / 80) // Scale factor for distance
-			);
-			positionsToMove = Math.max(1, positionsToMove); // At least move 1
-			positionsToMove = Math.min(positionsToMove, dummyBooks.length - 1); // Cap at max books - 1
-		}
-		// Regular swipe with enough distance - move one position
-		else if (Math.abs(emptySwipeDistance) > swipeThreshold) {
-			positionsToMove = 1;
-		}
-		
-		// Apply the movement with direction
-		if (positionsToMove > 0) {
-			if (emptySwipeDistance < 0) {
-				// Swipe left - go forward with momentum if possible
-				const targetIndex = Math.min(dummyBooks.length - 1, selectedDummyIndex + positionsToMove);
-				animateEmptyLibrarySelection(selectedDummyIndex, targetIndex);
-			} else {
-				// Swipe right - go backward with momentum if possible
-				const targetIndex = Math.max(0, selectedDummyIndex - positionsToMove);
-				animateEmptyLibrarySelection(selectedDummyIndex, targetIndex);
-			}
-		}
-	}
-	
-	// Animate between positions in empty library with momentum effect
-	function animateEmptyLibrarySelection(startIndex, targetIndex) {
-		// Validate indices
-		startIndex = Math.max(0, Math.min(dummyBooks.length - 1, startIndex));
-		targetIndex = Math.max(0, Math.min(dummyBooks.length - 1, targetIndex));
-		
-		// No need to animate if already at target
-		if (startIndex === targetIndex) return;
-		
-		let currentIndex = startIndex;
-		const steps = Math.abs(targetIndex - startIndex);
-		let currentStep = 0;
-		const direction = targetIndex > startIndex ? 1 : -1;
-		
-		// Duration settings
-		const initialDelay = 80; // ms
-		const subsequentDelay = 130; // ms
-		
-		// Animation function
-		const animate = () => {
-			if (currentStep < steps) {
-				currentIndex += direction;
-				selectDummyBook(currentIndex);
-				currentStep++;
-				
-				// Schedule next step with appropriate delay
-				const delay = currentStep === 1 ? initialDelay : subsequentDelay;
-				emptyAnimationId = setTimeout(() => {
-					emptyAnimationId = requestAnimationFrame(animate);
-				}, delay);
-			}
-		};
-		
-		// Start animation
-		emptyAnimationId = requestAnimationFrame(animate);
-	}
-
-	// Initialize coverflow
-	function initCoverflow() {
-		if (!browser || !bookshelf) return;
-
-		console.log('[DEBUG] Initializing 3D Coverflow with', libraryBooks.length, 'books');
-
-		// Clear existing content
-		bookshelf.innerHTML = '';
-
-		// Determine which books to display
-		const booksToDisplay = isSearching && searchResults.length > 0
-			? searchResults
-			: libraryBooks;
-
-		if (booksToDisplay.length === 0) {
-			console.log('[DEBUG] No books to display');
-			return;
+			console.error('[Mount] CRITICAL ERROR calling loadLibraryStateFromDB:', error); // <-- ADDED CATCH
+			// Keep initialState as default empty/not loaded
 		}
 
-		try {
-			// Create a container for the 3D books
-			const alignContainer = document.createElement('ul');
-			alignContainer.className = 'align';
-			alignContainer.id = 'book-container';
-			bookshelf.appendChild(alignContainer);
+		libraryBooks = initialState.books;
+		isLibraryLoaded = initialState.loaded;
+		selectedBookIndex = isLibraryLoaded ? 0 : 0;
+		console.log(`[onMount] Initial load state applied. isLibraryLoaded: ${isLibraryLoaded}, book count: ${libraryBooks.length}`); // <-- MODIFIED LOG
 
-			// Create coverflow instance
-			coverflow = new Coverflow(alignContainer, booksToDisplay);
-			const currentIndex = coverflow.initialize();
 
-			// Set selected book index
-			if (isSearching && searchResults.length > 0) {
-				// Find the corresponding index in the original library
-				const resultBook = searchResults[currentIndex];
-				const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
-				if (libraryIndex >= 0) {
-					selectedBookIndex = libraryIndex;
-				}
-			} else {
-				selectedBookIndex = currentIndex;
-			}
+		// Initialize Coverflow (either real or empty) - Await the setup
+		if (isLibraryLoaded) {
+			console.log('[onMount] Library loaded, setting up main coverflow.');
+			await setupCoverflow();
+		} else {
+			console.log('[onMount] Library empty or load failed, setting up empty coverflow.'); // <-- MODIFIED LOG
+			await setupEmptyCoverflow();
+		}
 
-			// Add custom event listener for book selection
-			alignContainer.addEventListener('coverselect', (e) => {
-				if (e && e.detail && typeof e.detail.index === 'number') {
-					if (isSearching && searchResults.length > 0) {
-						// When searching, get the correct book from search results
-						const coverflowIndex = e.detail.index;
+		// Setup search input reference
+		searchInputElement = document.querySelector('.search-input') as HTMLInputElement;
 
-						// Make sure the index is valid
-						if (coverflowIndex >= 0 && coverflowIndex < searchResults.length) {
-							// Find the corresponding book in the full library
-							const resultBook = searchResults[coverflowIndex];
-							const libraryIndex = libraryBooks.findIndex(book => book.id === resultBook.id);
 
-							if (libraryIndex >= 0) {
-								selectedBookIndex = libraryIndex;
-							}
-						}
-					} else {
-						// Normal selection - direct mapping
-						selectedBookIndex = e.detail.index;
-					}
-				}
+		// Setup global keydown listener
+		window.addEventListener('keydown', handleGlobalKeydown);
+
+		// Start ribbon check timer
+		ribbonCheckInterval = window.setInterval(() => {
+			checkExpiredRibbons(libraryBooks, (updatedBooks) => {
+				libraryBooks = updatedBooks;
+				// No need to re-init coverflow unless ribbon presence affects display significantly
+				// If ribbons change appearance, might need a targeted update or full refresh:
+				// setupCoverflow();
 			});
+		}, 10000); // Check every 10 seconds
+		// Initial check after a short delay
+		setTimeout(() => checkExpiredRibbons(libraryBooks, (updatedBooks) => { libraryBooks = updatedBooks; }), 1000);
 
-			// Select the current book
-			coverflow.select(selectedBookIndex);
 
-			console.log('[DEBUG] Coverflow initialized with selected index', selectedBookIndex);
-		} catch (error) {
-			console.error('[DEBUG] Error initializing Coverflow:', error);
-		}
-	}
+		// Handle potential URL parameters (e.g., after returning from reader)
+		const urlParams = new URLSearchParams(window.location.search);
+		const urlProcessingResult = await processUrlParameters(
+			urlParams,
+			libraryBooks,
+			selectedBookIndex,
+			isLibraryLoaded,
+			isSearching,
+			debouncedSearchQuery
+		);
 
-	// Function to remove the selected book
-	async function removeSelectedBook() {
-		if (!browser || !coverflow || !isLibraryLoaded || libraryBooks.length === 0) return;
+		let needsCoverflowUpdateFromUrl = false;
+		if (urlProcessingResult) {
+			console.log('[Mount] Applying state updates from URL parameter processing.');
+			const { newState, needsHistoryReplace } = urlProcessingResult;
+			// Apply the calculated state changes
+			libraryBooks = newState.newLibraryBooks;
+			selectedBookIndex = newState.newSelectedBookIndex;
+			isLibraryLoaded = newState.newIsLibraryLoaded; // Should generally remain true if processing happened
+			searchResults = newState.newSearchResults ?? [];
+			isSearching = newState.newIsSearching ?? false;
+			needsCoverflowUpdateFromUrl = newState.needsCoverflowUpdate;
 
-		if (confirm(`Remove "${libraryBooks[selectedBookIndex].title}" from your library?`)) {
-			console.log('[DEBUG] Removing book at index', selectedBookIndex);
-
-			// Get book ID for service worker (if it exists)
-			const bookId = libraryBooks[selectedBookIndex].id;
-
-			// Remove book from array
-			libraryBooks.splice(selectedBookIndex, 1);
-			libraryBooks = [...libraryBooks]; // Trigger reactivity
-
-			// If library is now empty
-			if (libraryBooks.length === 0) {
-				isLibraryLoaded = false;
-				console.log('[DEBUG] Library is now empty');
-
-				// Nothing to do for clearing an empty library
-				// (Individual book was already deleted)
-
-				// Also try to remove from service worker in background
-				if (isServiceWorkerRegistered && bookId) {
-					deleteBook(bookId).catch(err => {
-						console.error('[DEBUG] Error deleting book from service worker:', err);
-					});
-				}
-
-				return;
+			if (needsHistoryReplace) {
+				console.log('[Mount] Cleaning URL parameters from history.');
+				window.history.replaceState({}, document.title, window.location.pathname);
 			}
-
-			// Adjust selected index if needed
-			if (selectedBookIndex >= libraryBooks.length) {
-				selectedBookIndex = libraryBooks.length - 1;
-			}
-
-			// Remove the book from the database
-			await removeBookFromDB(bookId);
-
-			// Re-initialize coverflow with updated books
-			initCoverflow();
-
-			// Also remove from service worker in background (if ID exists)
-			if (isServiceWorkerRegistered && bookId) {
-				deleteBook(bookId).catch(err => {
-					console.error('[DEBUG] Error deleting book from service worker:', err);
-				});
-			}
-
-			// Show notification
-			showNotification(`Book removed from library.`);
-		}
-	}
-
-	// Edit book title function
-	function startEditingTitle() {
-		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
-
-		isEditingTitle = true;
-		editedTitle = libraryBooks[selectedBookIndex].title;
-	}
-
-	// Edit book author function
-	function startEditingAuthor() {
-		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
-
-		isEditingAuthor = true;
-		editedAuthor = libraryBooks[selectedBookIndex].author;
-	}
-
-	// Save edited book title
-	async function saveEditedTitle() {
-		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
-
-		// Trim and validate title
-		const newTitle = editedTitle.trim();
-		if (!newTitle) {
-			// Don't allow empty titles, revert to original
-			editedTitle = libraryBooks[selectedBookIndex].title;
-			isEditingTitle = false;
-			return;
+			console.log(`[Mount] State after URL processing: index=${selectedBookIndex}, count=${libraryBooks.length}, needsCoverflowUpdate=${needsCoverflowUpdateFromUrl}`);
+		} else {
+			console.log('[Mount] No URL parameters processed.');
 		}
 
-		// Update title in memory
-		libraryBooks[selectedBookIndex].title = newTitle;
+	});
 
-		// Save to database
-		await saveBook(libraryBooks[selectedBookIndex]);
+	onDestroy(() => {
+		if (!browser) return;
+		console.log('[Destroy] Cleaning up library component...');
 
-		// Exit editing mode
-		isEditingTitle = false;
-
-		// Re-initialize coverflow to update book display
-		initCoverflow();
-
-		// Show notification
-		showNotification('Book title updated');
-	}
-
-	// Save edited book author
-	async function saveEditedAuthor() {
-		if (!isLibraryLoaded || !libraryBooks[selectedBookIndex]) return;
-
-		// Trim and validate author
-		const newAuthor = editedAuthor.trim();
-		if (!newAuthor) {
-			// Don't allow empty authors, revert to original or use "Unknown"
-			editedAuthor = libraryBooks[selectedBookIndex].author || 'Unknown Author';
-			isEditingAuthor = false;
-			return;
+		// Clear intervals and listeners
+		if (ribbonCheckInterval) clearInterval(ribbonCheckInterval);
+		window.removeEventListener('resize', () => { isMobile = window.innerWidth <= 768; });
+		window.removeEventListener('keydown', handleGlobalKeydown);
+		if (coverflow) {
+			coverflow.destroy(); // Clean up coverflow listeners
 		}
 
-		// Update author in memory
-		libraryBooks[selectedBookIndex].author = newAuthor;
 
-		// Save to database
-		await saveBook(libraryBooks[selectedBookIndex]);
-
-		// Exit editing mode
-		isEditingAuthor = false;
-
-		// Re-initialize coverflow to update book display
-		initCoverflow();
-
-		// Show notification
-		showNotification('Book author updated');
-	}
-
-	// Cancel editing (for escape key or cancel button)
-	function cancelEditing() {
-		isEditingTitle = false;
-		isEditingAuthor = false;
-	}
-
-	// Debounced search function
-	function handleSearch(event) {
-		const query = event.target.value;
-		searchQuery = query; // Update immediately for UI
-
-		// Clear any existing timeout
-		if (searchTimeout) {
-			clearTimeout(searchTimeout);
-		}
-
-		// Set searching state
-		isSearching = query.trim().length > 0;
-
-		// If empty query, clear results immediately
-		if (!query.trim()) {
-			debouncedSearchQuery = '';
-			searchResults = [];
-
-			// Select the first book if there are any books
-			if (libraryBooks.length > 0) {
-				selectedBookIndex = 0;
-				initCoverflow();
-			}
-			return;
-		}
-
-		// Debounce search execution (300ms delay)
-		searchTimeout = setTimeout(() => {
-			debouncedSearchQuery = query.trim().toLowerCase();
-			performSearch();
-		}, 300);
-	}
-
-	// Perform the actual search
-	function performSearch() {
-		if (!debouncedSearchQuery) {
-			searchResults = [];
-			return;
-		}
-
-		// Filter books based on title or author matching the query
-		searchResults = libraryBooks.filter(book => {
-			const title = (book.title || '').toLowerCase();
-			const author = (book.author || '').toLowerCase();
-
-			return title.includes(debouncedSearchQuery) ||
-				author.includes(debouncedSearchQuery);
+		// Save library state before unmounting
+		saveAllBooks(libraryBooks).catch(err => {
+			console.error('[Destroy] Failed to save books on destroy:', err);
 		});
 
-		// Reinitialize coverflow with search results
-		initCoverflow();
+		// Clean up any remaining object URLs (though DB layer might handle this better)
+		libraryBooks.forEach(book => {
+			if (book.coverUrl && book.coverUrl.startsWith('blob:')) {
+				// console.log(`[Destroy] Revoking object URL: ${book.coverUrl}`);
+				URL.revokeObjectURL(book.coverUrl);
+			}
+		});
+	});
 
-		// Select the first matching book if there are results
-		if (searchResults.length > 0) {
-			// Find the index of the first matching book in the original array
-			const firstMatchIndex = libraryBooks.findIndex(book =>
-				book.id === searchResults[0].id);
+	// --- Coverflow Setup ---
 
-			if (firstMatchIndex >= 0) {
-				selectedBookIndex = firstMatchIndex;
+	async function setupCoverflow() { // Make the function async
+		if (!browser) {
+			console.log('[setupCoverflow] Skipping: Not in browser.');
+			return;
+		}
 
-				// Select this book in the coverflow
-				if (coverflow) {
-					coverflow.select(0); // Select first book in search results
-				}
+		// Wait for Svelte to update the DOM after state changes
+		await tick();
+		console.log('[setupCoverflow] Tick finished, proceeding with setup.');
+
+		// Log the state *after* tick
+		console.log(`[setupCoverflow] bookshelf element after tick:`, bookshelf);
+		const booksToDisplay = isSearching ? searchResults : libraryBooks;
+		console.log(`[setupCoverflow] booksToDisplay after tick (length ${booksToDisplay.length}):`, booksToDisplay);
+
+
+		// Destroy previous instance if exists
+		if (coverflow) {
+			console.log('[setupCoverflow] Destroying previous coverflow instance.');
+			coverflow.destroy();
+			coverflow = null;
+		}
+
+		// Check if the bookshelf element is actually available now
+		if (!bookshelf) {
+			console.error('[setupCoverflow] Error: bookshelf element is still null after tick. Cannot initialize Coverflow.');
+			return; // Don't proceed if element is missing
+		}
+
+		if (booksToDisplay.length === 0) {
+			console.warn('[setupCoverflow] Warning: booksToDisplay is empty. Coverflow will be empty.');
+			// Optionally, you might want to switch back to empty coverflow here
+			// setupEmptyCoverflow();
+			// return;
+		}
+
+
+		// Use the imported utility function
+		const initialCoverflowIndex = findCoverflowIndex(selectedBookIndex, libraryBooks, booksToDisplay);
+		console.log(`[setupCoverflow] Calculated initialCoverflowIndex: ${initialCoverflowIndex}`);
+
+
+		coverflow = initCoverflow(
+			bookshelf,
+			booksToDisplay,
+			initialCoverflowIndex,
+			handleCoverflowSelect // Callback function
+		);
+		console.log('[setupCoverflow] initCoverflow called. Result:', coverflow);
+	}
+
+	async function setupEmptyCoverflow() { // Make async for consistency
+		if (!browser) return;
+		await tick(); // Ensure emptyBookshelf is potentially rendered
+		console.log('[setupEmptyCoverflow] Tick finished, proceeding with empty setup.');
+		console.log(`[setupEmptyCoverflow] emptyBookshelf element after tick:`, emptyBookshelf);
+
+		if (coverflow) {
+			coverflow.destroy();
+			coverflow = null;
+		}
+
+		if (!emptyBookshelf) {
+			console.error('[setupEmptyCoverflow] Error: emptyBookshelf element is null after tick.');
+			return;
+		}
+
+		coverflow = initEmptyCoverflow(
+			emptyBookshelf,
+			dummyBooks,
+			selectedDummyIndex,
+			(index) => { selectedDummyIndex = index; } // Simple update for dummy index
+		);
+		console.log('[setupEmptyCoverflow] initEmptyCoverflow called. Result:', coverflow);
+	}
+
+	// Find the index within the potentially filtered list used by coverflow
+	// REMOVED findCoverflowIndex function (moved to coverflowUtils.ts)
+
+
+	// Callback for when coverflow selects a new book
+	function handleCoverflowSelect(selectedIndexInCoverflow: number) {
+		if (!isLibraryLoaded) return;
+
+		const booksUsedByCoverflow = isSearching ? searchResults : libraryBooks;
+
+		if (selectedIndexInCoverflow >= 0 && selectedIndexInCoverflow < booksUsedByCoverflow.length) {
+			const selectedBookInDisplay = booksUsedByCoverflow[selectedIndexInCoverflow];
+			// Find the corresponding index in the main libraryBooks array
+			const mainLibraryIndex = libraryBooks.findIndex(book => book.id === selectedBookInDisplay.id);
+
+			if (mainLibraryIndex !== -1 && mainLibraryIndex !== selectedBookIndex) {
+				console.log(`[Coverflow Select] Coverflow selected index ${selectedIndexInCoverflow}, updating main index to ${mainLibraryIndex}`);
+				// Directly update the state variable here, as this is a direct UI interaction handler
+				selectedBookIndex = mainLibraryIndex;
+				// No need to call coverflow.select again, it originated the event
+				// No need to call updateLibraryState or setupCoverflow, just the index changed
 			}
 		}
 	}
 
-	// Clear search
+
+	// REMOVED updateLibraryState function (replaced by calculateNewLibraryState in stateUtils.ts)
+
+
+	// --- Event Handlers ---
+
+	// Search Input
+	const debouncedPerformSearch = debounce(() => {
+		// Call the utility function
+		const searchResult = performSearchUtil(libraryBooks, debouncedSearchQuery, selectedBookIndex);
+
+		// Update component state based on the result
+		searchResults = searchResult.searchResults;
+		selectedBookIndex = searchResult.newSelectedBookIndex; // Update main index
+		isSearching = searchResult.isSearching;
+
+		// Re-initialize coverflow with search results (or full list if search cleared)
+		setupCoverflow();
+
+	}, 300);
+
+	function handleSearchInput() {
+		const currentQuery = searchQuery.trim().toLowerCase();
+		if (currentQuery !== debouncedSearchQuery) {
+			debouncedSearchQuery = currentQuery;
+			if (!debouncedSearchQuery) {
+				// If query is empty, clear search immediately
+				clearSearch();
+			} else {
+				// Otherwise, trigger debounced search
+				isSearching = true; // Set searching flag immediately for UI feedback
+				debouncedPerformSearch();
+			}
+		}
+	}
+
+	// REMOVED performSearch function (logic moved to searchUtils.ts)
+
+
 	function clearSearch() {
-		searchQuery = '';
-		debouncedSearchQuery = '';
-		searchResults = [];
-		isSearching = false;
+		// Get the reset state values
+		const clearedState = clearSearchState();
 
-		// Select the first book again
-		if (libraryBooks.length > 0) {
-			selectedBookIndex = 0;
-			initCoverflow();
-		}
+		// Update component state
+		searchQuery = clearedState.searchQuery;
+		debouncedSearchQuery = clearedState.debouncedSearchQuery;
+		searchResults = clearedState.searchResults;
+		isSearching = clearedState.isSearching;
+		selectedBookIndex = clearedState.newSelectedBookIndex;
+
+		if (searchInputElement) searchInputElement.value = ''; // Clear input visually
+
+		// Re-init coverflow with full library
+		setupCoverflow();
 	}
 
-	// Handle keydown event in input fields
-	function handleEditKeydown(event, type) {
-		if (event.key === 'Enter') {
-			// Save on Enter
-			event.preventDefault();
-			if (type === 'title') {
-				saveEditedTitle();
-			} else if (type === 'author') {
-				saveEditedAuthor();
+	// Keyboard Navigation
+	function handleGlobalKeydown(event: KeyboardEvent) {
+		// Ignore keydown events if an input field is focused or modal is open
+		const target = event.target as HTMLElement;
+		if (isEditingTitle || isEditingAuthor || isUploadModalOpen || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+			// Special handling for Enter/Escape within edit inputs
+			if ((isEditingTitle || isEditingAuthor) && (event.key === 'Enter' || event.key === 'Escape')) {
+				handleEditKeydown(event, isEditingTitle ? 'title' : 'author');
 			}
-		} else if (event.key === 'Escape') {
-			// Cancel on Escape
-			event.preventDefault();
-			cancelEditing();
-		}
-	}
-
-	// Handle keyboard navigation
-	function handleKeyNavigation(event) {
-		if (!browser || !coverflow || !isLibraryLoaded) return;
-
-		// Skip navigation if we're in editing mode or if focus is in search field
-		if (isEditingTitle || isEditingAuthor ||
-			(document.activeElement && document.activeElement.classList.contains('search-input'))) {
 			return;
 		}
 
-		// Clear search on Escape key
-		if (event.key === 'Escape' && isSearching) {
-			clearSearch();
-			event.preventDefault();
-			return;
-		}
+
+		if (!isLibraryLoaded || !coverflow) return; // Ignore if library not loaded or coverflow not ready
+
+		const booksInCoverflow = isSearching ? searchResults : libraryBooks;
+		const currentCoverflowIndex = coverflow.currentIndex;
 
 		if (event.key === 'ArrowLeft') {
-			// Select previous book
-			if (isSearching && searchResults.length > 0) {
-				// When searching, navigate only through search results
-				const currentIndex = searchResults.findIndex(book => {
-					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
-				});
-
-				if (currentIndex > 0) {
-					// Move to previous search result - get library index first
-					const prevResultIndex = libraryBooks.findIndex(book =>
-						book.id === searchResults[currentIndex - 1].id);
-
-					if (prevResultIndex >= 0) {
-						// Update selected book index (in original array)
-						selectedBookIndex = prevResultIndex;
-						// But select visual index in coverflow (which is filtered)
-						coverflow.select(currentIndex - 1);
-					}
-				}
-			} else {
-				// Normal navigation
-				if (selectedBookIndex > 0) {
-					selectedBookIndex--;
-					coverflow.select(selectedBookIndex);
-				}
+			if (currentCoverflowIndex > 0) {
+				coverflow.select(currentCoverflowIndex - 1);
 			}
 			event.preventDefault();
 		} else if (event.key === 'ArrowRight') {
-			// Select next book
-			if (isSearching && searchResults.length > 0) {
-				// When searching, navigate only through search results
-				const currentIndex = searchResults.findIndex(book => {
-					return libraryBooks[selectedBookIndex] && book.id === libraryBooks[selectedBookIndex].id;
-				});
-
-				if (currentIndex >= 0 && currentIndex < searchResults.length - 1) {
-					// Move to next search result - get library index first
-					const nextResultIndex = libraryBooks.findIndex(book =>
-						book.id === searchResults[currentIndex + 1].id);
-
-					if (nextResultIndex >= 0) {
-						// Update selected book index (in original array)
-						selectedBookIndex = nextResultIndex;
-						// But select visual index in coverflow (which is filtered)
-						coverflow.select(currentIndex + 1);
-					}
-				}
-			} else {
-				// Normal navigation
-				if (selectedBookIndex < libraryBooks.length - 1) {
-					selectedBookIndex++;
-					coverflow.select(selectedBookIndex);
-				}
+			if (currentCoverflowIndex < booksInCoverflow.length - 1) {
+				coverflow.select(currentCoverflowIndex + 1);
 			}
 			event.preventDefault();
 		} else if (event.key === 'Enter') {
-			// Open selected book (async function)
-			openSelectedBook().catch(err => {
-				console.error('Error opening book:', err);
-			});
+			openSelectedBook().catch(err => console.error('Error opening book:', err));
 			event.preventDefault();
 		} else if (event.key === 'Delete') {
-			// Remove selected book (only on Delete key, not Backspace)
-			removeSelectedBook();
+			removeSelectedBook(); // This function will be updated later
 			event.preventDefault();
 		} else if (event.key === 'e' || event.key === 'E') {
-			// Edit title with E key
-			startEditingTitle();
+			startEditingTitle(); // This function will be updated later
 			event.preventDefault();
 		} else if (event.key === 'a' || event.key === 'A') {
-			// Edit author with A key
-			startEditingAuthor();
+			startEditingAuthor(); // This function will be updated later
 			event.preventDefault();
 		} else if (event.key === 'f' || event.key === 'F' || event.key === '/') {
-			// Focus search box with F or /
-			const searchInput = document.querySelector('.search-input') as HTMLInputElement;
-			if (searchInput) {
-				searchInput.focus();
-				// If there's existing search text, select it for easy replacement
-				if (searchQuery) {
-					searchInput.select();
-				}
+			if (searchInputElement) {
+				searchInputElement.focus();
+				if (searchQuery) searchInputElement.select(); // Select existing text
+				event.preventDefault();
+			}
+		} else if (event.key === 'Escape') {
+			// Use the clearSearch handler function
+			if (isSearching) {
+				clearSearch();
+				event.preventDefault();
+			} else if (isEditingTitle || isEditingAuthor) {
+				// Added Escape handling for edit mode here as well
+				cancelEditing(); // This function will be updated later
 				event.preventDefault();
 			}
 		}
 	}
 
-	// Function to clear the entire library
-	async function clearLibrary() {
-		if (!browser || !isLibraryLoaded || libraryBooks.length === 0) return;
+	// --- Centralized State Update Logic ---
+	// This function will be called by bookActions, editActions, fileProcessing etc.
+	async function updateLibraryComponentState(newBooks: Book[], newIndex?: number, loaded?: boolean) { // Make async
+		const newState = calculateNewLibraryState(
+			libraryBooks, // current books
+			selectedBookIndex, // current index
+			isLibraryLoaded, // current loaded
+			isSearching, // current searching
+			debouncedSearchQuery, // current query
+			newBooks, // new books array
+			newIndex, // new index
+			loaded // new loaded status
+		);
+		console.log('[updateLibraryComponentState] New state calculated:', newState);
 
-		if (confirm('Are you sure you want to clear your entire library? This action cannot be undone.')) {
-			console.log('[DEBUG] Clearing entire library');
 
-			// Save book IDs for service worker deletion
-			const bookIds = libraryBooks.filter(book => book.id).map(book => book.id);
+		// Apply the calculated state to the component
+		libraryBooks = newState.newLibraryBooks;
+		selectedBookIndex = newState.newSelectedBookIndex;
+		isLibraryLoaded = newState.newIsLibraryLoaded;
+		searchResults = newState.newSearchResults ?? [];
+		isSearching = newState.newIsSearching ?? false;
+		console.log(`[updateLibraryComponentState] Component state updated. isLibraryLoaded: ${isLibraryLoaded}, libraryBooks count: ${libraryBooks.length}`);
 
-			// Clear local array immediately
-			libraryBooks = [];
-			selectedBookIndex = 0;
-			isLibraryLoaded = false;
 
-			// Clear all books from IndexedDB
-			try {
-				const db = await openDatabase();
-				if (db.objectStoreNames.contains(BOOKS_STORE)) {
-					const transaction = db.transaction([BOOKS_STORE], 'readwrite');
-					const store = transaction.objectStore(BOOKS_STORE);
-
-					// Clear entire object store
-					await new Promise<void>((resolve, reject) => {
-						const request = store.clear();
-						request.onsuccess = () => resolve();
-						request.onerror = () => reject(request.error);
-					});
-					console.log('[DEBUG] All books cleared from database successfully');
-				}
-			} catch (error) {
-				console.error('[DEBUG] Error clearing books from database:', error);
-				showNotification('Error clearing library from database.', 'error');
-				return;
+		// Update coverflow if needed - MUST happen AFTER state is applied
+		if (!isLibraryLoaded) {
+			console.log('[updateLibraryComponentState] Library not loaded, setting up empty coverflow.');
+			await setupEmptyCoverflow(); // await the setup
+		} else if (newState.needsCoverflowUpdate) {
+			console.log('[updateLibraryComponentState] Library loaded and needs update, setting up main coverflow.');
+			await setupCoverflow(); // await the setup
+		} else {
+			console.log('[updateLibraryComponentState] Coverflow update not deemed necessary by calculateNewLibraryState.');
+			// If coverflow exists but index changed without needing a full rebuild, just select
+			if (coverflow && coverflow.currentIndex !== findCoverflowIndex(selectedBookIndex, libraryBooks, isSearching ? searchResults : libraryBooks)) {
+				console.log('[updateLibraryComponentState] Selecting new index in existing coverflow.');
+				coverflow.select(findCoverflowIndex(selectedBookIndex, libraryBooks, isSearching ? searchResults : libraryBooks));
 			}
-
-			// Also delete from service worker in background
-			if (isServiceWorkerRegistered && bookIds.length > 0) {
-				console.log('[DEBUG] Deleting books from service worker in background');
-				// Delete each book asynchronously (don't wait)
-				bookIds.forEach(id => {
-					deleteBook(id).catch(err => {
-						console.error('[DEBUG] Error deleting book from service worker:', id, err);
-					});
-				});
-			}
-
-			showNotification('Library cleared successfully.');
 		}
 	}
 
-	// Function to show notification
-	function showNotification(message: string, type: 'info' | 'error' = 'info') {
-		if (!browser) return;
+	// --- Book Actions (Wrappers calling utility functions) ---
 
-		// Create notification banner
-		const notificationBanner = document.createElement('div');
-		notificationBanner.className = 'notification-banner';
-		notificationBanner.innerHTML = `
-			<div class="notification-content ${type === 'error' ? 'error' : ''}">
-				<p>${message}</p>
-			</div>
-			<button class="close-button" aria-label="Close notification">×</button>
-		`;
-
-		// Add to document body
-		document.body.appendChild(notificationBanner);
-
-		// Add event listener to close button
-		const closeButton = notificationBanner.querySelector('.close-button');
-		if (closeButton) {
-			closeButton.addEventListener('click', () => {
-				notificationBanner.classList.add('fade-out');
-				setTimeout(() => {
-					notificationBanner.remove();
-				}, 300);
-			});
-		}
-
-		// Auto-dismiss after 3 seconds
-		setTimeout(() => {
-			if (document.body.contains(notificationBanner)) {
-				notificationBanner.classList.add('fade-out');
-				setTimeout(() => {
-					if (document.body.contains(notificationBanner)) {
-						notificationBanner.remove();
-					}
-				}, 300);
-			}
-		}, 3000);
-
-		return notificationBanner;
-	}
-
-	// Function to show a progress notification with a progress bar
-	function showProgressNotification(message: string, current: number, total: number, id?: string): HTMLElement {
-		if (!browser) return null;
-
-		// Create notification banner with progress bar
-		const notificationBanner = document.createElement('div');
-		notificationBanner.className = 'notification-banner progress-notification';
-		if (id) notificationBanner.id = id;
-
-		// Calculate percentage
-		const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-
-		notificationBanner.innerHTML = `
-			<div class="notification-content">
-				<p class="progress-message">${message}</p>
-				<div class="progress-container">
-					<div class="progress-bar" style="width: ${percentage}%"></div>
-				</div>
-				<p class="progress-stats">${current} of ${total} (${percentage}%)</p>
-			</div>
-			<button class="close-button" aria-label="Close notification">×</button>
-		`;
-
-		// Add to document body
-		document.body.appendChild(notificationBanner);
-
-		// Add event listener to close button
-		const closeButton = notificationBanner.querySelector('.close-button');
-		if (closeButton) {
-			closeButton.addEventListener('click', () => {
-				notificationBanner.classList.add('fade-out');
-				setTimeout(() => {
-					notificationBanner.remove();
-				}, 300);
-			});
-		}
-
-		return notificationBanner;
-	}
-
-	// Update an existing progress notification
-	function updateProgressNotification(message: string, current: number, total: number, id: string): HTMLElement {
-		if (!browser) return null;
-
-		// Find existing notification or create a new one
-		let notificationBanner = document.getElementById(id);
-		if (!notificationBanner) {
-			return showProgressNotification(message, current, total, id);
-		}
-
-		// Calculate percentage
-		const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-
-		// Update content
-		const messageElement = notificationBanner.querySelector('.progress-message');
-		if (messageElement) messageElement.textContent = message;
-
-		const progressBar = notificationBanner.querySelector('.progress-bar');
-		if (progressBar) progressBar.style.width = `${percentage}%`;
-
-		const statsElement = notificationBanner.querySelector('.progress-stats');
-		if (statsElement) statsElement.textContent = `${current} of ${total} (${percentage}%)`;
-
-		return notificationBanner;
-	}
-
-	// Remove a notification by ID
-	function removeNotification(id: string) {
-		if (!browser) return;
-
-		const notification = document.getElementById(id);
-		if (notification) {
-			notification.classList.add('fade-out');
-			setTimeout(() => {
-				if (document.body.contains(notification)) {
-					notification.remove();
-				}
-			}, 300);
-		}
-	}
-
-	// Open selected book - using filename and array index approach
 	async function openSelectedBook() {
-		if (!browser) return;
+		await handleOpenBook(selectedBookIndex, libraryBooks, updateLibraryComponentState);
+		// Navigation is handled within handleOpenBook
+	}
 
-		const selectedBook = libraryBooks[selectedBookIndex];
-		if (!selectedBook) return;
+	async function removeSelectedBook() {
+		await handleRemoveBook(selectedBookIndex, libraryBooks, updateLibraryComponentState);
+		// State update and coverflow refresh are handled via updateLibraryComponentState callback
+	}
 
-		try {
-			console.log('[DEBUG] Opening book:', selectedBook.title);
+	async function clearLibrary() {
+		await handleClearLibrary(libraryBooks, updateLibraryComponentState);
+		// State update and coverflow refresh are handled via updateLibraryComponentState callback
+	}
 
-			// Make sure we have a file to work with
-			if (!selectedBook.file) {
-				console.error('[DEBUG] No file object found for book:', selectedBook.title);
-				alert('Cannot open book: file data is missing. Try uploading the book again.');
-				return;
-			}
+	// --- Editing Title/Author (Wrappers calling utility functions) ---
 
-			// Update book's lastAccessed time
-			selectedBook.lastAccessed = Date.now();
+	function startEditingTitle() {
+		if (!isLibraryLoaded) return;
+		const editUpdate = startEditingTitleAction(selectedBookIndex, libraryBooks, { isEditingTitle, editedTitle, isEditingAuthor, editedAuthor });
+		if (editUpdate) {
+			isEditingTitle = editUpdate.isEditingTitle ?? isEditingTitle;
+			editedTitle = editUpdate.editedTitle ?? editedTitle;
+			isEditingAuthor = editUpdate.isEditingAuthor ?? isEditingAuthor;
+			editedAuthor = editUpdate.editedAuthor ?? editedAuthor;
 
-			// Update in memory array
-			libraryBooks[selectedBookIndex] = selectedBook;
-
-			// Save to IndexedDB - individual book
-			await saveBook(selectedBook);
-
-			// Create reader URL with essential parameters
-			console.log(`[DEBUG] Opening book "${selectedBook.title}" at index: ${selectedBookIndex}`);
-
-			// URL with bookId as the unique book identifier
-			let url = `/reader?bookId=${encodeURIComponent(selectedBook.id)}`;
-
-
-			// Add existing progress if available
-			if (selectedBook.progress) {
-				url += `&progress=${encodeURIComponent(selectedBook.progress)}`;
-			}
-
-			// Navigate to reader
-			window.location.href = url;
-		} catch (error) {
-			console.error('[DEBUG] Error preparing book for reader:', error);
-			alert('There was an error opening the book. Please try again.');
+			// Focus input in the next tick
+			setTimeout(() => {
+				const input = document.querySelector('.edit-container input.edit-input') as HTMLInputElement;
+				input?.focus();
+				input?.select();
+			}, 0);
 		}
 	}
 
-	// Handle directory selection
-	async function handleDirectorySelection(files: FileList | null) {
-		if (!files || files.length === 0) return;
+	function startEditingAuthor() {
+		if (!isLibraryLoaded) return;
+		const editUpdate = startEditingAuthorAction(selectedBookIndex, libraryBooks, { isEditingTitle, editedTitle, isEditingAuthor, editedAuthor });
+		if (editUpdate) {
+			isEditingTitle = editUpdate.isEditingTitle ?? isEditingTitle;
+			editedTitle = editUpdate.editedTitle ?? editedTitle;
+			isEditingAuthor = editUpdate.isEditingAuthor ?? isEditingAuthor;
+			editedAuthor = editUpdate.editedAuthor ?? editedAuthor;
 
-		const fileArray = Array.from(files);
-		await processFolder(fileArray);
+			// Focus input in the next tick
+			setTimeout(() => {
+				const input = document.querySelector('.edit-container input.edit-input') as HTMLInputElement;
+				input?.focus();
+				input?.select();
+			}, 0);
+		}
 	}
 
-	// Toggle upload modal visibility
+	async function saveEditedTitle() {
+		const saved = await saveEditedTitleAction(
+			{ isEditingTitle, editedTitle, isEditingAuthor, editedAuthor },
+			selectedBookIndex,
+			libraryBooks,
+			isSearching,
+			debouncedSearchQuery,
+			updateLibraryComponentState
+		);
+		if (saved) {
+			// Saved successfully, cancel edit mode
+			cancelEditing();
+		} else {
+			// Save failed or no changes, just cancel edit mode
+			cancelEditing();
+		}
+	}
+
+	async function saveEditedAuthor() {
+		const saved = await saveEditedAuthorAction(
+			{ isEditingTitle, editedTitle, isEditingAuthor, editedAuthor },
+			selectedBookIndex,
+			libraryBooks,
+			isSearching,
+			debouncedSearchQuery,
+			updateLibraryComponentState
+		);
+		if (saved) {
+			// Saved successfully, cancel edit mode
+			cancelEditing();
+		} else {
+			// Save failed or no changes, just cancel edit mode
+			cancelEditing();
+		}
+	}
+
+	function cancelEditing() {
+		const editUpdate = cancelEditingAction();
+		isEditingTitle = editUpdate.isEditingTitle ?? isEditingTitle;
+		editedTitle = editUpdate.editedTitle ?? editedTitle;
+		isEditingAuthor = editUpdate.isEditingAuthor ?? isEditingAuthor;
+		editedAuthor = editUpdate.editedAuthor ?? editedAuthor;
+	}
+
+	function handleEditKeydown(event: KeyboardEvent, type: 'title' | 'author') {
+		handleEditKeydownAction(
+			event,
+			type,
+			type === 'title' ? saveEditedTitle : saveEditedAuthor, // Pass correct save function
+			cancelEditing // Pass cancel function
+		);
+	}
+
+	// File Input / Upload Modal
 	function toggleUploadModal() {
+		console.log('[Debug] Toggling upload modal...'); // Added debug log
 		isUploadModalOpen = !isUploadModalOpen;
+		if (!isUploadModalOpen) {
+			// Reset import type on close? Optional.
+			// importType = ImportType.Book;
+		}
 	}
 
-	// Close the modal
 	function closeUploadModal() {
 		isUploadModalOpen = false;
 	}
 
-	// Handle file selection from the file input
-	function handleFileSelection(event: Event) {
+	function triggerFileInput() {
+		console.log('[Debug] triggerFileInput called.');
+		// Get the element reference *inside* the function
+		const fileInput = document.getElementById('file-input') as HTMLInputElement | null;
+		console.log('[Debug] Found #file-input element:', fileInput);
+
+		if (fileInput) {
+			fileInput.click();
+			console.log('[Debug] fileInput.click() called.');
+		} else {
+			console.error('[Error] Could not find #file-input element when trying to click.');
+			// Optionally show a user-facing error here
+			showNotification('Error: Could not initiate file browser.', 'error');
+		}
+	}
+
+	function handleFileSelectionEvent(event: Event) {
+		console.log('[File Input] handleFileSelectionEvent triggered.'); // Keep this log
 		const input = event.target as HTMLInputElement;
-		if (input.files && input.files.length > 0) {
-			console.log('Files selected:', input.files.length);
-			handleDirectorySelection(input.files);
-			closeUploadModal();
-		}
-	}
+		const files = input.files;
+		if (files && files.length > 0) {
+			console.log(`[File Input] Selected ${files.length} files.`);
+			closeUploadModal(); // Close modal after selection
 
-	// Handle the request to close the modal when clicking outside it
-	function handleClickOutside(event: MouseEvent) {
-		const uploadModal = document.querySelector('.upload-modal-content');
-		if (uploadModal && !uploadModal.contains(event.target as Node)) {
-			closeUploadModal();
-		}
-	}
+			// Reset summary for this batch
+			const currentSummary: ImportSummary = { succeeded: 0, failed: 0, new: 0, updated: 0, skipped: 0, failedBooks: [] };
+			lastImportedBooks = []; // Reset last imported list
 
-	// Handle file drop on the drop zone
-	function handleFileDrop(event: DragEvent) {
-		event.preventDefault();
-		const dropZone = event.currentTarget as HTMLElement;
-		dropZone.classList.remove('drag-active');
-
-		if (event.dataTransfer?.files.length) {
-			handleDirectorySelection(event.dataTransfer.files);
-			closeUploadModal();
-		}
-	}
-
-	// Handle drag over event to show the active state
-	function handleDragOver(event: DragEvent) {
-		event.preventDefault();
-		const dropZone = event.currentTarget as HTMLElement;
-		dropZone.classList.add('drag-active');
-	}
-
-	// Handle drag leave event to remove the active state
-	function handleDragLeave(event: DragEvent) {
-		const dropZone = event.currentTarget as HTMLElement;
-		dropZone.classList.remove('drag-active');
-	}
-
-	// Google Drive API integration
-	import { folderPickerCallback } from './googleDrive.js';
-
-	const CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com';
-	const APP_ID = '765754879203';
-
-	// Track books imported in the current session for cross-platform upload
-	let lastImportedBooks = [];
-	let showCrossPlatformDialog = false;
-	let ribbonCheckInterval; // Timer for checking expired ribbons
-
-	// Check for temporary ribbons that have expired
-	function checkExpiredRibbons() {
-		if (!libraryBooks || libraryBooks.length === 0) return;
-
-		const now = Date.now();
-		let ribbonsExpired = false;
-
-		// Loop through all books and check for expired ribbons
-		libraryBooks.forEach(book => {
-			// Only check books with temporary ribbon types (NEW, UPDATED) that have an expiry
-			if (book.ribbonData && (book.ribbonData === 'NEW' || book.ribbonData === 'UPDATED') && book.ribbonExpiry) {
-				if (now > book.ribbonExpiry) {
-					// Ribbon has expired - clear it
-					console.log(`Ribbon expired for book: ${book.title}`);
-					book.ribbonData = null;
-					book.ribbonExpiry = null;
-					ribbonsExpired = true;
-
-					// Update the book in the database silently (don't need to await)
-					saveBook(book);
+			// processFiles needs to accept the state calculation callback
+			processFiles(
+				Array.from(files),
+				currentSummary,
+				false, // Not from Google Drive
+				null, // Create new progress notification
+				updateLibraryComponentState, // Pass the centralized state update function
+				() => libraryBooks, // Pass function to get current books
+				importType,
+				similarityThreshold,
+				(imported) => { // Callback to show cross-platform dialog
+					lastImportedBooks = imported;
+					showCrossPlatformDialog = true;
 				}
-			}
-		});
-
-		// If any ribbons expired, refresh the coverflow to update the UI
-		if (ribbonsExpired && coverflow) {
-			console.log('Refreshing coverflow due to expired ribbons');
-			setTimeout(initCoverflow, 100);
+			);
 		}
+		if (input) input.value = '';
+		console.log('[File Input] handleFileSelectionEvent triggered.'); // Added log
 	}
 
-	// Initialize a Google Drive folder picker for uploading books
-	async function initGoogleDriveFolderPicker(books) {
-		// Ensure we're using only the books just imported, not from elsewhere
-		if (!books || books.length === 0) {
-			console.error('No books provided for upload');
-			showNotification('No books selected for cross-platform access', 'error');
-			return;
-		}
-
-		// Debug log the books we're about to upload
-		console.log('About to upload these books to Google Drive:',
-			books.map(b => ({ title: b.title, fileName: b.fileName })));
-		try {
-			if (!browser) return;
-
-			showNotification('Loading Google Drive Folder Picker...', 'info');
-
-			// Load Google API resources if not already loaded
-			if (!window.gapi || !window.google) {
-				// Load the Google API client if not already loaded
-				if (!window.gapi) {
-					await new Promise<void>((resolve, reject) => {
-						const script = document.createElement('script');
-						script.src = 'https://apis.google.com/js/api.js';
-						script.async = true;
-						script.defer = true;
-						script.onload = () => resolve();
-						script.onerror = () => reject(new Error('Failed to load Google API client'));
-						document.head.appendChild(script);
-					});
-				}
-
-				// Load the Google Identity Services library if not already loaded
-				if (!window.google) {
-					await new Promise<void>((resolve, reject) => {
-						const script = document.createElement('script');
-						script.src = 'https://accounts.google.com/gsi/client';
-						script.async = true;
-						script.defer = true;
-						script.onload = () => resolve();
-						script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
-						document.head.appendChild(script);
-					});
-				}
-			}
-
-			// Initialize the API client - just load picker
-			await new Promise<void>((resolve) => {
-				window.gapi.load('picker', resolve);
-			});
-
-			// Create a token client
-			const tokenClient = window.google.accounts.oauth2.initTokenClient({
-				client_id: CLIENT_ID,
-				scope: 'https://www.googleapis.com/auth/drive.file',
-				callback: (tokenResponse) => {
-					if (tokenResponse && tokenResponse.access_token) {
-						// Save token for later use
-						localStorage.setItem('google_drive_token', tokenResponse.access_token);
-
-						// Create folder picker
-						createFolderPicker(tokenResponse.access_token, books);
-					} else {
-						showNotification('Failed to get authorization token', 'error');
-					}
-				}
-			});
-
-			// Request the access token
-			tokenClient.requestAccessToken();
-		} catch (error) {
-			console.error('Error initializing Google Drive Folder Picker:', error);
-			showNotification('Failed to load Google Drive Folder Picker', 'error');
-		}
-	}
-
-	// Create folder picker for uploading books
-	function createFolderPicker(token, books) {
-		window.gapi.load('picker', () => {
-			try {
-				// Create a folders view specifically for selecting a destination folder
-				const foldersView = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
-					.setSelectFolderEnabled(true)
-					.setMimeTypes('application/vnd.google-apps.folder');
-
-				// Create the picker
-				const picker = new window.google.picker.PickerBuilder()
-					.setTitle('Select a folder for your books')
-					.setOAuthToken(token)
-					.addView(foldersView)
-					.setCallback((data) => handleFolderPickerCallback(data, token, books))
-					.build();
-
-				// Show the picker
-				picker.setVisible(true);
-			} catch (error) {
-				console.error('Error creating folder picker:', error);
-				showNotification('Error creating folder picker', 'error');
-			}
-		});
-	}
-
-	// Handle folder picker selection
-	async function handleFolderPickerCallback(data, token, books) {
-		// Create a notification ID for tracking upload progress
-		const notificationId = 'upload-to-drive-' + Date.now();
-
-		// Call the folder picker callback function
-		await folderPickerCallback(
-			data,
-			token,
-			books,
-			notificationId,
-			{
-				showNotification,
-				updateProgressNotification,
-				removeNotification
+	// Drag and Drop Wrappers
+	function handleDropEvent(event: DragEvent) {
+		closeUploadModal(); // Close modal if open
+		const currentSummary: ImportSummary = { succeeded: 0, failed: 0, new: 0, updated: 0, skipped: 0, failedBooks: [] };
+		lastImportedBooks = [];
+		handleDrop(
+			event,
+			processFiles,
+			currentSummary,
+			updateLibraryComponentState, // Pass the centralized state update function
+			() => libraryBooks,
+			importType,
+			similarityThreshold,
+			(imported) => {
+				lastImportedBooks = imported;
+				showCrossPlatformDialog = true;
 			}
 		);
+	}
+	function handleDragOverEvent(event: DragEvent) { handleDragOver(event); }
+	function handleDragLeaveEvent(event: DragEvent) { handleDragLeave(event); }
 
-		// Hide the cross-platform dialog
-		showCrossPlatformDialog = false;
+	// Google Drive Integration Wrappers
+	function triggerGoogleDriveImport() {
+		closeUploadModal();
+		lastImportedBooks = [];
+		initGoogleDrivePicker(
+			async (driveFiles, summary, isDrive) => {
+				await processFiles(
+					driveFiles,
+					summary,
+					isDrive,
+					null,
+					updateLibraryComponentState, // Pass the centralized state update function
+					() => libraryBooks,
+					ImportType.Book,
+					similarityThreshold,
+					() => { /* No cross-platform dialog for GDrive */ }
+				);
+			},
+			updateLibraryComponentState, // Pass callback if initGoogleDrivePicker needs it directly
+			() => libraryBooks,
+			() => { /* No cross-platform dialog for GDrive */ } // Add missing 4th argument
+		);
 	}
 
-	// Use a simpler approach with Google's Picker API directly for importing books
-	async function initGoogleDrivePicker() {
-		try {
-			if (!browser) return;
+	function triggerGoogleDriveUpload() {
+		showCrossPlatformDialog = false; // Hide dialog
+		if (lastImportedBooks.length === 0) {
+			showNotification('No books from the last import available for upload.', 'info');
+			return;
+		}
+		// Filter out books without file data (shouldn't happen with new logic, but good safeguard)
+		const booksToUpload = lastImportedBooks.filter(book => book.file instanceof File);
+		if (booksToUpload.length === 0) {
+			showNotification('Could not find file data for the imported books.', 'error');
+			return;
+		}
+		console.log(`[GDrive Upload Trigger] Starting upload for ${booksToUpload.length} books.`);
+		initGoogleDriveFolderPicker(booksToUpload);
+		lastImportedBooks = []; // Clear after initiating upload
+	}
 
-			showNotification('Loading Google Drive Picker...', 'info');
+	// Rapid Navigation Mouse/Touch Handlers (Example for Right Arrow)
+	function handleNavMouseDown(direction: 'left' | 'right', event: MouseEvent | TouchEvent) { // <-- Corrected type union
+		if ('button' in event && event.button !== 0) return; // Ignore right clicks
 
-			// Load the Google API client
-			await new Promise<void>((resolve, reject) => {
-				const script = document.createElement('script');
-				script.src = 'https://apis.google.com/js/api.js';
-				script.async = true;
-				script.defer = true;
-				script.onload = () => resolve();
-				script.onerror = () => reject(new Error('Failed to load Google API client'));
-				document.head.appendChild(script);
-			});
+		let intervalId: number | undefined;
+		const startRapidNav = () => {
+			// Clear existing interval if any (safety check)
+			if (intervalId) clearInterval(intervalId);
 
-			// Load the Google Identity Services library for OAuth
-			await new Promise<void>((resolve, reject) => {
-				const script = document.createElement('script');
-				script.src = 'https://accounts.google.com/gsi/client';
-				script.async = true;
-				script.defer = true;
-				script.onload = () => resolve();
-				script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
-				document.head.appendChild(script);
-			});
-
-			// Initialize the API client - just load picker
-			await new Promise<void>((resolve) => {
-				window.gapi.load('picker', resolve);
-			});
-
-			// Create a token client
-			const tokenClient = window.google.accounts.oauth2.initTokenClient({
-				client_id: CLIENT_ID,
-				scope: 'https://www.googleapis.com/auth/drive.readonly',
-				callback: (tokenResponse) => {
-					if (tokenResponse && tokenResponse.access_token) {
-						// We have the token, now create the picker
-						createPicker(tokenResponse.access_token);
-					} else {
-						showNotification('Failed to get authorization token', 'error');
-					}
-				}
-			});
-
-			// Request the access token
-			tokenClient.requestAccessToken();
-
-			// Function to create and display the Google Drive Picker
-			function createPicker(oauthToken: string) {
-				// Use OAuth token for API requests
-				localStorage.setItem('google_drive_token', oauthToken);
-
-				window.gapi.load('picker', () => {
-					try {
-						// Create a documents view for ebook files
-						const docsView = new window.google.picker.DocsView()
-							.setIncludeFolders(true)
-							.setSelectFolderEnabled(true) // Allow folder selection
-							.setMimeTypes('application/epub+zip,application/pdf,application/x-mobipocket-ebook,application/vnd.comicbook+zip');
-
-						// Create a folders view to browse and select folders
-						const foldersView = new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS)
-							.setSelectFolderEnabled(true)
-							.setMimeTypes('application/vnd.google-apps.folder');
-
-						// Create a picker configuration with multiple views
-						const picker = new window.google.picker.PickerBuilder()
-							.enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-							.setOAuthToken(oauthToken)
-							.addView(docsView) // Main view for documents
-							.addView(foldersView) // View for folders
-							.setCallback(pickerCallback)
-							.build();
-
-						// Show the picker
-						picker.setVisible(true);
-					} catch (error) {
-						console.error('Error creating picker:', error);
-						showNotification('Error creating file picker', 'error');
-					}
-				});
-			}
-
-			// Handle picker callback
-			async function pickerCallback(data: any) {
-				if (data.action !== window.google.picker.Action.PICKED) {
-					return; // User canceled or closed the picker
-				}
-
-				const docs = data.docs;
-				if (!docs || docs.length === 0) return;
-
-				// Get the OAuth token
-				const token = localStorage.getItem('google_drive_token');
-				if (!token) {
-					showNotification('Authentication token not available. Please try again.', 'error');
-					return;
-				}
-
-				// Track folders and files
-				const folderIds = [];
-				const fileItems = [];
-
-				// Create a notification banner for progress tracking
-				const notificationId = 'google-drive-import-' + Date.now();
-				showProgressNotification('Starting Google Drive import...', 0, 1, notificationId);
-
-				// First pass: separate files and folders
-				for (const doc of docs) {
-					if (doc.mimeType === 'application/vnd.google-apps.folder') {
-						folderIds.push(doc.id);
-						console.log('Found folder:', doc.name, 'ID:', doc.id);
-					} else {
-						fileItems.push(doc);
-					}
-				}
-
-				// If we have folders, list files in those folders
-				if (folderIds.length > 0) {
-					updateProgressNotification(`Scanning ${folderIds.length} folder(s)...`, 0, folderIds.length, notificationId);
-
-					let folderCounter = 0;
-					for (const folderId of folderIds) {
-						try {
-							folderCounter++;
-							updateProgressNotification(`Scanning folder ${folderCounter}/${folderIds.length}...`, folderCounter, folderIds.length, notificationId);
-
-							// List files in the folder
-							const query = encodeURIComponent(`'${folderId}' in parents and (mimeType='application/epub+zip' or mimeType='application/pdf' or mimeType='application/x-mobipocket-ebook' or mimeType='application/vnd.comicbook+zip')`);
-							const folderResponse = await fetch(
-								`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType)`,
-								{
-									headers: {
-										'Authorization': `Bearer ${token}`
-									}
-								}
-							);
-
-							if (folderResponse.ok) {
-								const folderData = await folderResponse.json();
-								if (folderData.files && folderData.files.length > 0) {
-									console.log(`Found ${folderData.files.length} ebooks in folder`);
-									// Add folder files to the file items array
-									fileItems.push(...folderData.files);
-									updateProgressNotification(`Found ${fileItems.length} total files...`, folderCounter, folderIds.length, notificationId);
-								}
-							}
-						} catch (error) {
-							console.error('Error listing files in folder:', error);
-						}
-					}
-				}
-
-				// Now process all files one by one
-				const totalFiles = fileItems.length;
-				if (totalFiles === 0) {
-					removeNotification(notificationId);
-					showNotification('No ebook files found to process', 'error');
-					return;
-				}
-
-				updateProgressNotification(`Processing ${totalFiles} file(s) from Google Drive...`, 0, totalFiles, notificationId);
-
-				// Track successes and failures for summary
-				let successCount = 0;
-				const failedFiles = [];
-
-				// Process each file item one at a time, downloading and adding to library immediately
-				for (let i = 0; i < fileItems.length; i++) {
-					const doc = fileItems[i];
-					try {
-						// Update progress notification
-						updateProgressNotification(`Downloading ${i + 1}/${totalFiles}: ${doc.name}`, i + 1, totalFiles, notificationId);
-
-						console.log('Processing file:', doc.name, 'ID:', doc.id);
-
-						// Download the file content
-						const response = await fetch(
-							`https://www.googleapis.com/drive/v3/files/${doc.id}?alt=media`,
-							{
-								headers: {
-									'Authorization': `Bearer ${token}`
-								}
-							}
-						);
-
-						if (!response.ok) {
-							throw new Error(`Failed to download file: ${response.status}`);
-						}
-
-						const blob = await response.blob();
-						const file = new File([blob], doc.name, {
-							type: doc.mimeType || 'application/octet-stream'
-						});
-
-						// Process this file immediately and add to library
-						updateProgressNotification(`Importing ${i + 1}/${totalFiles}: ${doc.name}`, i + 1, totalFiles, notificationId);
-
-						// Process this file individually
-						const result = await processFolder([file], true);
-
-						if (result && result.success) {
-							successCount++;
-						} else {
-							// If processFolder failed for some reason, add to failedFiles
-							failedFiles.push(doc.name);
-						}
-
-						// Small delay to allow UI to update
-						if (i < fileItems.length - 1) {
-							await new Promise(resolve => setTimeout(resolve, 300));
-						}
-
-					} catch (error) {
-						console.error('Error downloading/processing file:', doc.name, error);
-						failedFiles.push(doc.name);
-					}
-				}
-
-				// Show summary in notification
-				if (successCount > 0) {
-					if (failedFiles.length > 0) {
-						const failedList = failedFiles.length <= 3
-							? failedFiles.join(', ')
-							: `${failedFiles.slice(0, 3).join(', ')}... and ${failedFiles.length - 3} more`;
-						showNotification(`Imported ${successCount} files. Failed to import: ${failedList}`, failedFiles.length > 5 ? 'error' : 'info');
-					} else {
-						showNotification(`Successfully imported ${successCount} files from Google Drive`, 'info');
-					}
+			// Start new interval
+			intervalId = window.setInterval(() => {
+				if (!coverflow) return;
+				if (direction === 'left') {
+					coverflow.prev();
 				} else {
-					showNotification('Failed to import any files from Google Drive', 'error');
+					coverflow.next();
 				}
+			}, coverflowSpeed);
+		};
 
-				// Remove the progress notification
-				removeNotification(notificationId);
-			}
+		const timeoutId = window.setTimeout(startRapidNav, coverflowDelay);
 
-		} catch (error) {
-			console.error('Error initializing Google Drive Picker:', error);
-			showNotification('Failed to load Google Drive Picker', 'error');
-		}
+		const stopNavigation = () => {
+			clearTimeout(timeoutId);
+			clearInterval(intervalId);
+			window.removeEventListener('mouseup', stopNavigation);
+			window.removeEventListener('mouseleave', stopNavigation);
+			window.removeEventListener('touchend', stopNavigation);
+			window.removeEventListener('touchcancel', stopNavigation);
+		};
+
+		// Add listeners to stop navigation
+		window.addEventListener('mouseup', stopNavigation);
+		window.addEventListener('mouseleave', stopNavigation); // Stop if mouse leaves button
+		window.addEventListener('touchend', stopNavigation);
+		window.addEventListener('touchcancel', stopNavigation);
 	}
 
-	// Setup event tracking for UI updates from search
-	$: {
-		// When search query or results change, update UI
-		if (isSearching && searchResults.length > 0) {
-			// When we have search results, reinitialize coverflow
-			// This runs after searchResults is populated
-			setTimeout(initCoverflow, 100);
-		} else if (!isSearching && libraryBooks.length > 0) {
-			// When search is cleared, reinitialize coverflow with all books
-			setTimeout(initCoverflow, 100);
-		}
-	}
 
-	// Track selected book to ensure it's part of search results
-	$: if (isSearching && libraryBooks[selectedBookIndex]) {
-		// Check if the currently selected book is in search results
-		const isBookInResults = searchResults.some(book => book.id === libraryBooks[selectedBookIndex].id);
-
-		// If not in results and we have results, select the first result
-		if (!isBookInResults && searchResults.length > 0) {
-			const firstMatchIndex = libraryBooks.findIndex(book => book.id === searchResults[0].id);
-			if (firstMatchIndex >= 0) {
-				selectedBookIndex = firstMatchIndex;
-				if (coverflow) {
-					coverflow.select(0); // Select first item in search results
-				}
-			}
-		}
-	}
-
-	onMount(async () => {
-			if (!browser) return;
-
-			// Set up timer to check for expired ribbons every 10 seconds
-			ribbonCheckInterval = setInterval(checkExpiredRibbons, 10000);
-
-			// Also check once immediately to handle any ribbons that may have expired while away
-			setTimeout(checkExpiredRibbons, 1000);
-
-			const checkIsMobile = () => {
-				// Adjust this threshold value if needed
-				isMobile = window.innerWidth <= 768;
-			};
-
-			checkIsMobile();
-
-			window.addEventListener('resize', checkIsMobile);
-
-			// Try to load saved library state
-			const libraryLoaded = await loadLibraryState();
-
-			if (libraryLoaded) {
-				// Initialize coverflow with the loaded books (longer timeout for better positioning)
-				setTimeout(initCoverflow, 300);
-			} else {
-				// Initialize the empty library view with properly positioned dummy books
-				setTimeout(initEmptyCoverflow, 300);
-			}
-
-			// Setup file input element for file browsing
-			fileInputElement = document.getElementById('file-input') as HTMLInputElement;
-			if (fileInputElement) {
-				fileInputElement.addEventListener('change', handleFileSelection);
-			}
-
-			// Add global event listener for closing the modal when clicking outside
-			document.addEventListener('mousedown', (e) => {
-				if (isUploadModalOpen) {
-					handleClickOutside(e);
-				}
-			});
-
-			// Add keyboard event listener for navigation
-			window.addEventListener('keydown', handleKeyNavigation);
-
-			// Add keyboard event listener to close modal on Escape key
-			document.addEventListener('keydown', (e) => {
-				if (isUploadModalOpen && e.key === 'Escape') {
-					closeUploadModal();
-				}
-			});
-		}
-	);
-
-	onDestroy(() => {
-		if (!browser) return;
-
-		// Clear the ribbon check interval
-		if (ribbonCheckInterval) {
-			clearInterval(ribbonCheckInterval);
-		}
-
-		// Remove event listeners
-		window.removeEventListener('keydown', handleKeyNavigation);
-		document.removeEventListener('mousedown', (e) => handleClickOutside(e));
-		document.removeEventListener('keydown', (e) => {
-			if (isUploadModalOpen && e.key === 'Escape') {
-				closeUploadModal();
-			}
-		});
-
-		// Save any updated books before unmounting
-		console.log('Component being destroyed, saving any updated books', libraryBooks.length, 'books');
-		saveAllBooks().catch(err => {
-			console.error('Failed to save books on destroy:', err);
-		});
-
-		// Clean up any created object URLs
-		libraryBooks.forEach(book => {
-			if (book.coverUrl && book.coverUrl.startsWith('blob:')) {
-				console.log(`Revoking object URL for book "${book.title}": ${book.coverUrl}`);
-				URL.revokeObjectURL(book.coverUrl);
-			}
-		});
-	});
 </script>
 
+<!-- HTML Structure (Simplified - Keep existing HTML structure) -->
+
 <svelte:head>
-	<title>ReadStash E-book library and Reader</title>
+	<title>ReadStash E-book Library</title>
 	<meta name="description" content="A client-side e-book reader and library manager" />
+	<!-- Link to Google Fonts if needed -->
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+	<link href="https://fonts.googleapis.com/css2?family=Sedgwick+Ave&display=swap" rel="stylesheet">
 </svelte:head>
 
 <div class="library-container">
-	<!-- Unified header for both empty and populated library -->
+	<!-- Header -->
 	<h1 class="text-2xl font-bold text-center">Your Personal Library</h1>
-
 	<div class="epic-quote text-center mb-4">
 		<p>One place to store your books,</p>
 		<p>One shelf to hold your books,</p>
@@ -2836,7 +849,7 @@
 	</div>
 
 	<div class="flex flex-col justify-center mb-4">
-		<!-- Search box - only visible when books are loaded -->
+		<!-- Search Box (Visible when loaded) -->
 		{#if isLibraryLoaded}
 			<div class="search-container mb-8 fade-in">
 				<div class="search-input-wrapper">
@@ -2845,585 +858,252 @@
 						placeholder="Search by title or author..."
 						class="search-input"
 						bind:value={searchQuery}
-						on:input={handleSearch}
-						on:keydown={(e) => {
-                if (e.key === 'Escape') {
-                    clearSearch();
-                    e.target.blur();
-                    e.preventDefault();
-                }
-            }}
+						on:input={handleSearchInput}
+						on:keydown={(e) => { if (e.key === 'Escape') clearSearch(); }}
 					/>
 					{#if searchQuery}
 						<button class="search-clear-btn" on:click={clearSearch} title="Clear search">
-							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-									 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="18" y1="6" x2="6" y2="18"></line>
-								<line x1="6" y1="6" x2="18" y2="18"></line>
-							</svg>
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 						</button>
 					{:else}
-            <span class="search-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle
-									cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            </span>
+						<span class="search-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+						</span>
 					{/if}
 				</div>
-
-				{#if searchQuery && searchResults.length === 0}
-					<div class="search-results-count empty">No matching books found</div>
-				{:else if searchQuery && searchResults.length > 0}
-					<div class="search-results-count">Found {searchResults.length}
-						book{searchResults.length !== 1 ? 's' : ''}</div>
+				{#if isSearching}
+					{#if searchResults.length === 0}
+						<div class="search-results-count empty">No matching books found</div>
+					{:else}
+						<div class="search-results-count">Found {searchResults.length} book{searchResults.length !== 1 ? 's' : ''}</div>
+					{/if}
 				{/if}
 			</div>
 		{/if}
 
-		<!-- Button row -->
+		<!-- Action Buttons -->
 		<div class="flex justify-center mb-4">
-			<!-- Our custom file upload button -->
-			<button
-				class="btn btn-primary mx-2"
-				on:click={toggleUploadModal}
-			>
+			<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
 				Add Books to Your Library
 			</button>
 			{#if isLibraryLoaded}
-				<button class="btn btn-danger fade-in" on:click={clearLibrary}>
-					Clear out Your Library
+				<button class="btn btn-danger fade-in mx-2" on:click={clearLibrary}>
+					Clear Library
 				</button>
 			{/if}
 		</div>
 	</div>
 
-	<!-- Upload modal dialog -->
+
+	<!-- Upload Modal -->
 	{#if isUploadModalOpen}
-		<div class="upload-modal-overlay">
-			<div class="upload-modal-content">
-				<button class="modal-close-button" on:click={closeUploadModal}>×</button>
+		<div class="upload-modal-overlay" on:click|self={closeUploadModal}>
+			<div class="upload-modal-content"
+					 on:dragover={handleDragOverEvent}
+					 on:dragleave={handleDragLeaveEvent}
+					 on:drop={handleDropEvent}>
+				<button class="modal-close-button" on:click={closeUploadModal}>&times;</button>
 				<h2>Import Files</h2>
 
-				<!-- Import type selection -->
+				<!-- Import Type -->
 				<div class="import-type-selector">
-					<label>Import Type:</label>
+					<label for="import-type-select">Import Type:</label>
 					<div class="select-wrapper">
-						<select bind:value={importType}>
-							<option value={ImportType.Book}>Books</option>
-							<option value={ImportType.BookCover}>Book Covers</option>
+						<select id="import-type-select" bind:value={importType}>
+							<option value={ImportType.Book}>Books ({SUPPORTED_FORMATS.join(', ')})</option>
+							<option value={ImportType.BookCover}>Book Covers ({SUPPORTED_COVER_FORMATS.join(', ')})</option>
 						</select>
 					</div>
 				</div>
 
-				<!-- Show similarity threshold slider only for cover import -->
+				<!-- Similarity Slider (for Covers) -->
 				{#if importType === ImportType.BookCover}
 					<div class="similarity-slider">
-						<label>
+						<label for="similarity-slider-input">
 							Title Matching Threshold: {Math.round(similarityThreshold * 100)}%
 							<span class="tooltip">?
-								<span class="tooltip-text">
-									Determines how similar a filename must be to a book title for the cover to be applied.
-									Higher values require more similar matches, lower values allow more fuzzy matching.
-								</span>
+								<span class="tooltip-text">Adjust how closely cover filenames must match book titles (higher means stricter matching).</span>
 							</span>
 						</label>
 						<input
+							id="similarity-slider-input"
 							type="range"
-							min="0.2"
+							min="0.1"
 							max="1"
 							step="0.05"
 							bind:value={similarityThreshold}
 						/>
 						<div class="slider-labels">
-							<span>Lenient</span>
-							<span>Strict</span>
+							<span>Less Strict</span>
+							<span>More Strict</span>
 						</div>
 					</div>
 				{/if}
 
-				<div
-					class="modal-drop-zone"
-					on:dragover={handleDragOver}
-					on:dragleave={handleDragLeave}
-					on:drop={handleFileDrop}
-				>
-					<div class="modal-drop-content">
-						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
-								 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-							<polyline points="17 8 12 3 7 8" />
-							<line x1="12" y1="3" x2="12" y2="15" />
-						</svg>
-						<h3>Drop files here</h3>
-						<p>or</p>
-
-						<div class="modal-button-row">
-							<button class="btn btn-primary" on:click={() => document.getElementById('file-input').click()}>
-								Browse Files
+				<!-- Drop Zone / Browse -->
+				<div class="drop-zone">
+					<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+					<h3>Drop files here</h3>
+					<p>or</p>
+					<div class="modal-button-row">
+						<button
+							class="btn btn-primary"
+							on:click={() => {
+								// alert('Browse Files button clicked!'); // Removed alert
+								console.log('[Click] Browse Files button clicked!');
+								triggerFileInput(); // Restore the function call
+							}}
+						>
+							Browse Files
+						</button>
+						{#if importType === ImportType.Book}
+							<button class="btn btn-secondary" on:click={triggerGoogleDriveImport}>
+								Import from Google Drive
 							</button>
-							{#if importType === ImportType.Book}
-								<button class="btn btn-secondary" on:click={() => {
-                          closeUploadModal();
-                          initGoogleDrivePicker();
-                      }}>
-									Import from Google Drive
-								</button>
-							{/if}
-						</div>
-
-						<p class="supported-formats">
-							{#if importType === ImportType.Book}
-								Supported formats: EPUB, PDF, MOBI, AZW3, CBZ
-							{:else}
-								Supported formats: JPG, JPEG, PNG, WEBP, GIF
-							{/if}
-						</p>
-
-						{#if importType === ImportType.BookCover}
-							<p class="import-hint">
-								Cover images should have filenames that match your book titles.
-								For example, <code>Return-of-the-King.jpg</code> will be matched to a book titled "The Return of the
-								King".
-							</p>
 						{/if}
 					</div>
+					<p class="supported-formats">
+						{#if importType === ImportType.Book}
+							Supported book formats: {SUPPORTED_FORMATS.join(', ')}
+						{:else}
+							Supported cover formats: {SUPPORTED_COVER_FORMATS.join(', ')}
+						{/if}
+					</p>
+					{#if importType === ImportType.BookCover}
+						<p class="import-hint">Cover filenames should ideally match book titles (e.g., <code>Book Title.jpg</code>).</p>
+					{/if}
 				</div>
 			</div>
 		</div>
 	{/if}
 
-	<!-- Cross-platform access dialog -->
-	{#if showCrossPlatformDialog && lastImportedBooks.length > 0}
-		<div class="upload-modal-overlay">
-			<div class="upload-modal-content">
-				<button class="modal-close-button" on:click={() => showCrossPlatformDialog = false}>×</button>
-				<h2>Enable Cross-Platform Access</h2>
-
-				<div class="crossplatform-content">
-					<div class="info-icon">
-						<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
-								 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<circle cx="12" cy="12" r="10"></circle>
-							<line x1="12" y1="16" x2="12" y2="12"></line>
-							<line x1="12" y1="8" x2="12.01" y2="8"></line>
-						</svg>
-					</div>
-
-					<p class="crossplatform-text">
-						Would you like to enable cross-platform access for your imported books?
-					</p>
-
-					<p class="crossplatform-description">
-						Your books will be uploaded to your Google Drive account, allowing you to access them from any device.
-						This ensures your library is available everywhere you go.
-					</p>
-
-					<div class="crossplatform-buttons">
-						<button class="btn btn-secondary" on:click={() => showCrossPlatformDialog = false}>
-							No, Thanks
-						</button>
-						<button class="btn btn-primary" on:click={() =>
-						{
-							// Hide this dialog
-							showCrossPlatformDialog = false;
-							// Initialize Google Drive folder picker for upload
-							// Debug logging - print books being sent for upload
-							console.log('Books to be uploaded:', lastImportedBooks.map(b => b.title));
-
-							// Create a copy of the books array and filter out books without file data
-							const booksToUpload = [...lastImportedBooks].filter(book =>
-							{
-									const hasFileData = book?.file instanceof File;
-									if (!hasFileData) {
-											console.warn('Book missing file data:', book.title);
-									}
-									return hasFileData;
-							});
-
-							console.log('Filtered books for upload:', booksToUpload.map(b => b.title));
-
-							// Initialize Google Drive folder picker for upload with the filtered books
-							initGoogleDriveFolderPicker(booksToUpload);
-
-							//reset the lastImported Books field
-							lastImportedBooks = [];
-						}}>
-							Yes, Enable Cross-Platform Access
-						</button>
-					</div>
+	<!-- Cross-Platform Sync Dialog -->
+	{#if showCrossPlatformDialog}
+		<div class="upload-modal-overlay" on:click|self={() => showCrossPlatformDialog = false}>
+			<div class="upload-modal-content crossplatform-content">
+				<button class="modal-close-button" on:click={() => showCrossPlatformDialog = false}>&times;</button>
+				<div class="info-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+				</div>
+				<p class="crossplatform-text">Enable Cross-Platform Access?</p>
+				<p class="crossplatform-description">Upload your imported books to Google Drive to access them from any device.</p>
+				<div class="crossplatform-buttons">
+					<button class="btn btn-secondary" on:click={() => { showCrossPlatformDialog = false; lastImportedBooks = []; }}>
+						No, Thanks
+					</button>
+					<button class="btn btn-primary" on:click={triggerGoogleDriveUpload}>
+						Yes, Upload to Google Drive
+					</button>
 				</div>
 			</div>
 		</div>
 	{/if}
 
-	<!-- Invisible file input (used by both modal and inline views) -->
+
+	<!-- Invisible File Input -->
 	<input
 		type="file"
 		id="file-input"
 		style="display: none;"
 		multiple
-		accept={importType === ImportType.Book 
-			? ".epub,.pdf,.mobi,.azw3,.cbz" 
-			: ".jpg,.jpeg,.png,.webp,.gif"}
+		accept={importType === ImportType.Book ? SUPPORTED_FORMATS.join(',') : SUPPORTED_COVER_FORMATS.join(',')}
+		on:change={handleFileSelectionEvent}
 	/>
 
-	<!-- Main container for coverflow or empty library image -->
+	<!-- Main Content: Coverflow or Empty State -->
 	<div>
 		{#if isLibraryLoaded}
-			<!-- Main coverflow container when books are loaded -->
+			<!-- Coverflow for Books -->
 			<div bind:this={bookshelf} class="coverflow-container fade-in">
-				<!-- Books will be added here dynamically by the Coverflow class -->
+				<!-- Books added dynamically by Coverflow class -->
 			</div>
-			<div class="keyboard-instructions">
+			<!-- Navigation Hints -->
+			<div class="navigation-hints">
 				{#if isMobile}
-					Swipe left and right to navigate through your books
+					Swipe left/right or use buttons:
 					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
-						<button on:contextmenu|preventDefault
-							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
-							on:click={() => {
-								if (selectedBookIndex > 0) {
-									selectedBookIndex--;
-									coverflow.select(selectedBookIndex);
-								}
-							}}
-							on:mousedown={(e) => {
-								// Ignore right clicks
-								if (e.button !== 0) return;
-								
-								// Navigation interval reference
-								let intervalId;
-								let delay = coverflowDelay; // Initial delay before rapid navigation
-								let speed = coverflowSpeed; // ms between navigations while holding
-								
-								// Start navigation after short delay
-								const timeoutId = setTimeout(() => {
-									intervalId = setInterval(() => {
-										if (selectedBookIndex > 0) {
-											selectedBookIndex--;
-											coverflow.select(selectedBookIndex);
-										} else {
-											// Stop if we hit the beginning
-											clearInterval(intervalId);
-										}
-									}, speed);
-								}, delay);
-								
-								// Handle mouseup and mouseout to stop navigation
-								const stopNavigation = () => {
-									clearTimeout(timeoutId);
-									clearInterval(intervalId);
-									// Remove listeners
-									window.removeEventListener('mouseup', stopNavigation);
-									e.target.removeEventListener('mouseout', stopNavigation);
-								};
-								
-								window.addEventListener('mouseup', stopNavigation);
-								e.target.addEventListener('mouseout', stopNavigation);
-							}}
-
-							on:touchstart={(e) => {
-								// Navigation interval reference
-								let intervalId;
-								let delay = coverflowDelay; // Initial delay before rapid navigation
-								let speed = coverflowSpeed; // ms between navigations while holding
-								
-								// Start navigation after short delay
-								const timeoutId = setTimeout(() => {
-									intervalId = setInterval(() => {
-										if (selectedBookIndex > 0) {
-											selectedBookIndex--;
-											coverflow.select(selectedBookIndex);
-										} else {
-											// Stop if we hit the beginning
-											clearInterval(intervalId);
-										}
-									}, speed);
-								}, delay);
-								
-								// Handle touchend to stop navigation
-								const stopNavigation = () => {
-									clearTimeout(timeoutId);
-									clearInterval(intervalId);
-									// Remove listeners
-									window.removeEventListener('touchend', stopNavigation);
-									window.removeEventListener('touchcancel', stopNavigation);
-								};
-								
-								window.addEventListener('touchend', stopNavigation);
-								window.addEventListener('touchcancel', stopNavigation);
-							}}
-						><span on:contextmenu|preventDefault class="keyboard-arrow">←</span></button>
-						<button on:contextmenu|preventDefault
-							style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;"
-							on:click={() => {
-								if (selectedBookIndex < libraryBooks.length - 1) {
-									selectedBookIndex++;
-									coverflow.select(selectedBookIndex);
-								}
-							}}
-							on:mousedown={(e) => {
-								// Ignore right clicks
-								if (e.button !== 0) return;
-								
-								// Navigation interval reference
-								let intervalId;
-								let delay = coverflowDelay; // Initial delay before rapid navigation
-								let speed = coverflowSpeed; // ms between navigations while holding
-								
-								// Start navigation after short delay
-								const timeoutId = setTimeout(() => {
-									intervalId = setInterval(() => {
-										if (selectedBookIndex < libraryBooks.length - 1) {
-											selectedBookIndex++;
-											coverflow.select(selectedBookIndex);
-										} else {
-											// Stop if we hit the end
-											clearInterval(intervalId);
-										}
-									}, speed);
-								}, delay);
-								
-								// Handle mouseup and mouseout to stop navigation
-								const stopNavigation = () => {
-									clearTimeout(timeoutId);
-									clearInterval(intervalId);
-									// Remove listeners
-									window.removeEventListener('mouseup', stopNavigation);
-									e.target.removeEventListener('mouseout', stopNavigation);
-								};
-								
-								window.addEventListener('mouseup', stopNavigation);
-								e.target.addEventListener('mouseout', stopNavigation);
-							}}
-
-							on:touchstart={(e) => {
-								// Navigation interval reference
-								let intervalId;
-								let delay = coverflowDelay; // Initial delay before rapid navigation
-								let speed = coverflowSpeed; // ms between navigations while holding
-								
-								// Start navigation after short delay
-								const timeoutId = setTimeout(() => {
-									intervalId = setInterval(() => {
-										if (selectedBookIndex < libraryBooks.length - 1) {
-											selectedBookIndex++;
-											coverflow.select(selectedBookIndex);
-										} else {
-											// Stop if we hit the end
-											clearInterval(intervalId);
-										}
-									}, speed);
-								}, delay);
-								
-								// Handle touchend to stop navigation
-								const stopNavigation = () => {
-									clearTimeout(timeoutId);
-									clearInterval(intervalId);
-									// Remove listeners
-									window.removeEventListener('touchend', stopNavigation);
-									window.removeEventListener('touchcancel', stopNavigation);
-								};
-								
-								window.addEventListener('touchend', stopNavigation);
-								window.addEventListener('touchcancel', stopNavigation);
-							}}
-						><span on:contextmenu|preventDefault class="keyboard-arrow">→</span></button>
+						<button class="nav-arrow-button"
+								on:click={() => coverflow?.select(coverflow.currentIndex - 1)}
+								on:touchstart={(e) => handleNavMouseDown('left', e)}
+								on:mousedown={(e) => handleNavMouseDown('left', e)}
+								aria-label="Previous Book">
+							<span class="keyboard-arrow">←</span>
+						</button>
+						<button class="nav-arrow-button"
+								on:click={() => coverflow?.select(coverflow.currentIndex + 1)}
+								on:touchstart={(e) => handleNavMouseDown('right', e)}
+								on:mousedown={(e) => handleNavMouseDown('right', e)}
+								aria-label="Next Book">
+							<span class="keyboard-arrow">→</span>
+						</button>
 					</div>
 				{:else}
-					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to
-					navigate through your books
+					Use <span class="keyboard-arrow">←</span> / <span class="keyboard-arrow">→</span> keys to navigate, Enter to read, Delete to remove.
 				{/if}
 			</div>
+
+			<!-- Selected Book Info -->
+			<div class="book-info fade-in">
+				{#if libraryBooks[selectedBookIndex]}
+					<!-- Title Display/Edit -->
+					{#if isEditingTitle}
+						<div class="edit-container">
+							<input type="text" class="edit-input" bind:value={editedTitle} on:keydown={(e) => handleEditKeydown(e, 'title')} on:blur={saveEditedTitle} />
+							<div class="edit-buttons">
+								<button class="btn-icon" on:click={saveEditedTitle} title="Save"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
+								<button class="btn-icon" on:click={cancelEditing} title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+							</div>
+						</div>
+					{:else}
+						<h2 class="book-title" on:click={startEditingTitle} title="Click to edit title (or press E)">
+							{libraryBooks[selectedBookIndex].title || 'Unknown Title'}
+							<span class="edit-icon">✎</span>
+						</h2>
+					{/if}
+
+					<!-- Author Display/Edit -->
+					{#if isEditingAuthor}
+						<div class="edit-container">
+							<input type="text" class="edit-input" bind:value={editedAuthor} on:keydown={(e) => handleEditKeydown(e, 'author')} on:blur={saveEditedAuthor} />
+							<div class="edit-buttons">
+								<button class="btn-icon" on:click={saveEditedAuthor} title="Save"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
+								<button class="btn-icon" on:click={cancelEditing} title="Cancel"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+							</div>
+						</div>
+					{:else}
+						<p class="book-author" on:click={startEditingAuthor} title="Click to edit author (or press A)">
+							{libraryBooks[selectedBookIndex].author || 'Unknown Author'}
+							<span class="edit-icon">✎</span>
+						</p>
+					{/if}
+
+					<!-- Action Buttons for Selected Book -->
+					<div class="flex justify-center gap-4 mt-4">
+						<button class="btn btn-primary" on:click={openSelectedBook}>Read Book</button>
+						<button class="btn btn-danger" on:click={removeSelectedBook}>Remove Book</button>
+					</div>
+				{:else}
+					<p>Loading book details...</p>
+				{/if}
+			</div>
+
 		{:else}
-			<!-- Empty library placeholder with enhanced momentum swipe -->
-			<div class="coverflow-container fade-in"
-					 on:touchstart={(e) => { 
-						 // Clear any ongoing animation
-						 if (emptyAnimationId) {
-							 cancelAnimationFrame(emptyAnimationId);
-							 emptyAnimationId = null;
-						 }
-						 
-						 // Record start position and time
-						 touchStartX = e.touches[0].screenX;
-						 touchStartTime = Date.now();
-						 emptySwipeDistance = 0;
-						 emptySwipeVelocity = 0;
-					 }}
-					 on:touchmove={(e) => {
-						 // Track distance for visual feedback
-						 const currentX = e.touches[0].screenX;
-						 emptySwipeDistance = currentX - touchStartX;
-						 
-						 // Apply visual feedback during drag
-						 const dragElement = e.currentTarget.querySelector('.align');
-						 if (dragElement) {
-							 // Apply a subtle transform to show movement
-							 const movePercent = Math.min(Math.abs(emptySwipeDistance) / 200, 0.3);
-							 const direction = emptySwipeDistance < 0 ? -1 : 1;
-							 emptyDragTransform = `translateX(${direction * movePercent * 30}px)`;
-							 dragElement.style.transform = emptyDragTransform;
-						 }
-					 }}
-					 on:touchend={(e) => {
-						 // Record end position and time
-						 touchEndX = e.changedTouches[0].screenX;
-						 touchEndTime = Date.now();
-						 emptySwipeDistance = touchEndX - touchStartX;
-						 
-						 // Reset any drag transform
-						 const dragElement = e.currentTarget.querySelector('.align');
-						 if (dragElement) {
-							 dragElement.style.transform = '';
-						 }
-						 
-						 // Handle the swipe with momentum
-						 handleEmptyLibrarySwipe();
-					 }}
-			>
-				<ul class="align" style="display: flex; justify-content: center; transform-style: preserve-3d;">
-					{#each dummyBooks as dummy, index}
-						<li
-							tabindex="0"
-							data-index={index}
-							on:click={() => selectDummyBook(index)}
-							on:keydown={(e) => e.key === 'Enter' && selectDummyBook(index)}
-							style="transform: translate3d({(index-selectedDummyIndex)*200}px, 0, {(index === selectedDummyIndex) ? 60 : 0}px) rotateY({(index-selectedDummyIndex)*15}deg) scale({(index === selectedDummyIndex) ? 1.05 : 0.9}); z-index: {3-Math.abs(index-selectedDummyIndex)}; position: absolute; transition: transform 0.5s ease, z-index 0.5s ease;">
-							<figure class="book">
-								<ul class="hardcover_front">
-									<li>
-										<div class="coverDesign">
-											<span class="ribbon">{dummy.ribbon}</span>
-											<div class="cover-image" style="background-image: url('/placeholder-cover.png')"></div>
-											<div class="cover-text">
-												<h1></h1>
-												<p></p>
-											</div>
-										</div>
-									</li>
-									<li></li>
-								</ul>
-								<ul class="page">
-									<li></li>
-									<li></li>
-									<li></li>
-									<li></li>
-									<li></li>
-									<li></li>
-									<li></li>
-								</ul>
-								<ul class="hardcover_back">
-									<li></li>
-									<li></li>
-								</ul>
-								<ul class="book_spine">
-									<li></li>
-									<li></li>
-								</ul>
-							</figure>
-						</li>
-					{/each}
-				</ul>
+			<!-- Empty Library State -->
+			<div bind:this={emptyBookshelf} class="coverflow-container fade-in">
+				<!-- Dummy books added dynamically -->
 			</div>
 			<div class="spray-painted-text">
-				Its looking lonely in here...<br />
-				Add some of your favourite books to get started
+				It's looking lonely in here...<br /> Add some books to get started!
 			</div>
 			<div class="epic-quote text-center mb-4">
-				<p>This is your FREE online ebook library and reader</p>
-				<p>One place to store all your books and read them</p>
-				<p>Cross platform support for EPUB, PDF, MOBI, AZW3, CBZ books</p>
-				<p>Premium version supports time bound controlled sharing <br /> of your ebooks with friends AND more Ebook
-					formats</p>
+				<p>Click "Add Books" above to import your e-books.</p>
+				<p>Supports EPUB, PDF, MOBI, AZW3, CBZ formats.</p>
 			</div>
 		{/if}
-
-		<!-- Show selected book info - only visible when books are loaded -->
-		<div class="book-info" class:hidden={!isLibraryLoaded} class:fade-in={isLibraryLoaded}>
-			{#if libraryBooks[selectedBookIndex]}
-				{#if isEditingTitle}
-					<!-- Title edit mode -->
-					<div class="edit-container">
-						<input
-							type="text"
-							class="edit-input"
-							bind:value={editedTitle}
-							on:keydown={(e) => handleEditKeydown(e, 'title')}
-							on:blur={saveEditedTitle}
-							autofocus
-						/>
-						<div class="edit-buttons">
-							<button class="btn-icon" on:click={saveEditedTitle} title="Save">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="20 6 9 17 4 12"></polyline>
-								</svg>
-							</button>
-							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="18" y1="6" x2="6" y2="18"></line>
-									<line x1="6" y1="6" x2="18" y2="18"></line>
-								</svg>
-							</button>
-						</div>
-					</div>
-				{:else}
-					<!-- Title display mode -->
-					<h2 class="book-title" on:click={startEditingTitle} title="Click to edit title">
-						{libraryBooks[selectedBookIndex].title}
-						<span class="edit-icon">✎</span>
-					</h2>
-				{/if}
-
-				{#if isEditingAuthor}
-					<!-- Author edit mode -->
-					<div class="edit-container">
-						<input
-							type="text"
-							class="edit-input"
-							bind:value={editedAuthor}
-							on:keydown={(e) => handleEditKeydown(e, 'author')}
-							on:blur={saveEditedAuthor}
-							autofocus
-						/>
-						<div class="edit-buttons">
-							<button class="btn-icon" on:click={saveEditedAuthor} title="Save">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="20 6 9 17 4 12"></polyline>
-								</svg>
-							</button>
-							<button class="btn-icon" on:click={cancelEditing} title="Cancel">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-										 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="18" y1="6" x2="6" y2="18"></line>
-									<line x1="6" y1="6" x2="18" y2="18"></line>
-								</svg>
-							</button>
-						</div>
-					</div>
-				{:else}
-					<!-- Author display mode -->
-					<p class="book-author" on:click={startEditingAuthor} title="Click to edit author">
-						{libraryBooks[selectedBookIndex].author}
-						<span class="edit-icon">✎</span>
-					</p>
-				{/if}
-
-				<div class="flex justify-center gap-4">
-					<button class="btn btn-primary mt-4"
-									on:click={() => { openSelectedBook().catch(err => console.error('Error opening book:', err)); }}>
-						Read this Book
-					</button>
-					<button class="btn btn-danger mt-4" on:click={removeSelectedBook}>
-						Remove Book
-					</button>
-				</div>
-			{/if}
-		</div>
 	</div>
+
 </div>
+
 
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Finger+Paint&family=Sedgwick+Ave&display=swap'); /* Reset and Base Styles for 3D Books */
@@ -3544,27 +1224,6 @@
 
     :global(.book_spine li:last-child) {
         background: #333;
-    }
-
-    /* Keyboard instructions */
-    .keyboard-instructions {
-        text-align: center;
-        margin-top: 20px;
-        color: var(--color-text);
-        opacity: 0.8;
-        font-size: 0.9em;
-        transition: color 0.3s ease;
-    }
-
-    .keyboard-arrow {
-        display: inline-block;
-        font-weight: bold;
-        color: var(--color-theme-1);
-    }
-
-    :global(.dark-mode) .keyboard-arrow {
-        color: var(--color-theme-1);
-        text-shadow: 0 0 5px rgba(97, 218, 251, 0.5);
     }
 
     /* Thickness of cover */
@@ -3738,24 +1397,6 @@
     }
 
     /* Thickness details */
-    :global(.hardcover_front li:first-child:after),
-    :global(.hardcover_front li:first-child:before),
-    :global(.hardcover_front li:last-child:after),
-    :global(.hardcover_front li:last-child:before),
-    :global(.hardcover_back li:first-child:after),
-    :global(.hardcover_back li:first-child:before),
-    :global(.hardcover_back li:last-child:after),
-    :global(.hardcover_back li:last-child:before),
-    :global(.book_spine li:first-child:after),
-    :global(.book_spine li:first-child:before),
-    :global(.book_spine li:last-child:after),
-    :global(.book_spine li:last-child:before) {
-        position: absolute;
-        top: 0;
-        left: 0;
-    }
-
-    /* Front Cover Thickness */
     :global(.hardcover_front li:first-child:after),
     :global(.hardcover_front li:first-child:before) {
         width: 4px;
@@ -4113,15 +1754,6 @@
     }
 
     /* Empty library placeholder styling */
-    .coverflow-empty-container {
-        height: 550px;
-        width: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        position: relative;
-        background-color: transparent;
-    }
 
     /* Media query for responsive height */
     @media (max-width: 768px) {
@@ -4179,18 +1811,6 @@
     }
 
     /* Drop zone in modal */
-    .modal-drop-zone {
-        border: 3px dashed #ccc;
-        border-radius: 8px;
-        padding: 30px;
-        text-align: center;
-        transition: border-color 0.3s, background-color 0.3s;
-    }
-
-    .modal-drop-zone.drag-active {
-        border-color: var(--color-theme-1);
-        background-color: rgba(80, 80, 255, 0.05);
-    }
 
     .modal-drop-content {
         display: flex;
@@ -4237,9 +1857,6 @@
         }
     }
 
-    .hidden {
-        display: none;
-    }
 
     /* Book info section */
     .book-info {
@@ -4408,15 +2025,6 @@
         background-color: #dc2626;
     }
 
-    .btn-danger-outline {
-        background-color: transparent;
-        color: #ef4444;
-        border: 1px solid #ef4444;
-    }
-
-    .btn-danger-outline:hover {
-        background-color: #fef2f2;
-    }
 
     /* Notification banner styling */
     :global(.notification-banner) {

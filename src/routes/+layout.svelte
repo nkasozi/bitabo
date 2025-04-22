@@ -5,7 +5,7 @@
 	import Header from './Header.svelte';
 	import ReaderHeader from './components/ReaderHeader.svelte';
 	import '../app.css';
-	import { registerServiceWorker } from '$lib/serviceWorker';
+	import { registerServiceWorker } from '$lib/serviceWorker'; // <-- ADDED IMPORT BACK
 	import { injectSpeedInsights } from '@vercel/speed-insights/sveltekit';
 	import { injectAnalytics } from '@vercel/analytics/sveltekit';
 	import { readerStore } from '$lib/stores/reader-store';
@@ -23,22 +23,22 @@
 	// Register service worker on app load
 	onMount(async () => {
 		if (browser) {
+			 // Added service worker registration call back here
 			try {
 				const registered = await registerServiceWorker();
 				console.log('Service worker registered from layout:', registered);
-
-				if (isReaderPage && page.data?.bookInfo) {
-					readerStore.updateBookMetadata({
-						title: page.data.bookInfo.title,
-						author: page.data.bookInfo.author,
-						bookId: page.data.bookInfo.id
-					});
-
-					console.log('Updated Book Metadata for ReaderHeader:', isReaderPage);
-				}
-
 			} catch (error) {
-				console.error('Error registering service worker:', error);
+				console.error('Error registering service worker from layout:', error);
+			}
+
+			if (isReaderPage && page.data?.bookInfo) {
+				readerStore.updateBookMetadata({
+					title: page.data.bookInfo.title,
+					author: page.data.bookInfo.author,
+					bookId: page.data.bookInfo.id
+				});
+
+				console.log('Updated Book Metadata for ReaderHeader:', isReaderPage);
 			}
 		}
 	});
