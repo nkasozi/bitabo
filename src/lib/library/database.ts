@@ -9,17 +9,21 @@ export type BookWithOptionalFile = Book & { file?: File };
 export function openDatabase(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
 		if (!browser) {
-			console.error("[DB openDatabase] Attempted to open DB in non-browser env."); // <-- ADDED LOG
-			reject(new Error("IndexedDB cannot be opened in a non-browser environment."));
+			console.error('[DB openDatabase] Attempted to open DB in non-browser env.'); // <-- ADDED LOG
+			reject(new Error('IndexedDB cannot be opened in a non-browser environment.'));
 			return;
 		}
 		console.log(`[DB openDatabase] Attempting to open database: ${DB_NAME}`); // <-- MODIFIED LOG
 		const request = indexedDB.open(DB_NAME); // Use version 1 or higher if needed
 
-		request.onupgradeneeded = function(event) {
-			console.log(`[DB openDatabase] onupgradeneeded triggered. Old: ${event.oldVersion}, New: ${event.newVersion}`); // <-- ADDED LOG
+		request.onupgradeneeded = function (event) {
+			console.log(
+				`[DB openDatabase] onupgradeneeded triggered. Old: ${event.oldVersion}, New: ${event.newVersion}`
+			); // <-- ADDED LOG
 			const db = (event.target as IDBOpenDBRequest).result;
-			console.log(`[DB] Upgrade needed for database. Old version: ${event.oldVersion}, New version: ${event.newVersion}`);
+			console.log(
+				`[DB] Upgrade needed for database. Old version: ${event.oldVersion}, New version: ${event.newVersion}`
+			);
 
 			// Create books store if it doesn't exist
 			if (!db.objectStoreNames.contains(BOOKS_STORE)) {
@@ -45,35 +49,38 @@ export function openDatabase(): Promise<IDBDatabase> {
 						}
 					}
 				} catch (e) {
-					console.error("[DB] Error trying to add index during upgrade:", e);
+					console.error('[DB] Error trying to add index during upgrade:', e);
 				}
 			}
 		};
 
-		request.onerror = function(event) {
+		request.onerror = function (event) {
 			const error = (event.target as IDBOpenDBRequest).error;
 			console.error('[DB openDatabase] onerror triggered:', error); // <-- MODIFIED LOG
 			reject(error);
 		};
 
-		request.onsuccess = function(event) {
+		request.onsuccess = function (event) {
 			const db = (event.target as IDBOpenDBRequest).result;
 			console.log(`[DB openDatabase] onsuccess triggered. Database opened successfully.`); // <-- MODIFIED LOG
 			resolve(db);
 		};
 
 		// Add logging for blocked event, which can prevent opening
-		request.onblocked = function(event) {
-			console.warn('[DB openDatabase] onblocked triggered. Database opening is blocked, possibly by other open connections.', event); // <-- ADDED LOG
+		request.onblocked = function (event) {
+			console.warn(
+				'[DB openDatabase] onblocked triggered. Database opening is blocked, possibly by other open connections.',
+				event
+			); // <-- ADDED LOG
 			reject(new Error('Database opening blocked. Close other tabs/windows using the database.'));
 		};
 	});
 }
 
-
 // Helper to prepare book data for storage (removes File, fetches Blob)
-async function prepareBookForStorage(bookData: Book): Promise<Omit<Book, 'file'>> {
-	const bookToStore = { ...bookData };
+async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Omit<Book, 'file'>> {
+	// <-- Change Book to BookWithOptionalFile here
+	const bookToStore: any = { ...bookData }; // Use 'any' temporarily for flexibility
 
 	// Fetch and store coverBlob if coverUrl is a blob URL
 	if (bookToStore.coverUrl && bookToStore.coverUrl.startsWith('blob:')) {
@@ -83,7 +90,9 @@ async function prepareBookForStorage(bookData: Book): Promise<Omit<Book, 'file'>
 				bookToStore.coverBlob = await response.blob();
 				console.log(`[DB] Stored cover blob for "${bookToStore.title}"`);
 			} else {
-				console.warn(`[DB] Failed to fetch blob URL for saving: ${bookToStore.coverUrl}, Status: ${response.status}`);
+				console.warn(
+					`[DB] Failed to fetch blob URL for saving: ${bookToStore.coverUrl}, Status: ${response.status}`
+				);
 				bookToStore.coverBlob = undefined;
 			}
 			// Keep the blob URL for runtime display consistency, but it won't be persisted effectively.
@@ -94,23 +103,50 @@ async function prepareBookForStorage(bookData: Book): Promise<Omit<Book, 'file'>
 		}
 	}
 
-	// Remove the File object before storing, keep metadata
-	if (bookToStore.file) {
+	// Store the File object's content as file, keep metadata
+	if (bookToStore.file instanceof File || bookToStore.file instanceof Blob) {
+		// Check if it's a File or Blob
+		console.log(`[DB] Storing file blob for \"${bookToStore.title}\"`);
+		bookToStore.file = bookToStore.file; // Store the actual Blob/File content
 		bookToStore.fileName = bookToStore.file.name;
 		bookToStore.fileType = bookToStore.file.type;
 		bookToStore.fileSize = bookToStore.file.size;
-		bookToStore.lastModified = bookToStore.file.lastModified;
-		delete bookToStore.file; // Remove the actual File object
+		// Only update lastModified if it's a File object
+		if (bookToStore.file instanceof File) {
+			bookToStore.lastModified = bookToStore.file.lastModified;
+		}
 	} else {
-		// Ensure file metadata exists if file object is already gone
+		// Ensure file metadata exists if file object is already gone or wasn't provided
+		console.log(
+			`[DB] No File object found for \"${bookToStore.title}\", ensuring metadata exists.`
+		);
 		bookToStore.fileName = bookToStore.fileName || 'Unknown Filename';
 		bookToStore.fileType = bookToStore.fileType || 'application/octet-stream';
 		bookToStore.fileSize = bookToStore.fileSize || 0;
 		bookToStore.lastModified = bookToStore.lastModified || Date.now();
 	}
 
+	// Ensure all required fields are present before returning
+	const finalBookToStore: Book & { fileBlob?: Blob } = {
+		id: bookToStore.id,
+		title: bookToStore.title,
+		author: bookToStore.author,
+		coverUrl: bookToStore.coverUrl,
+		coverBlob: bookToStore.coverBlob,
+		fileName: bookToStore.fileName,
+		fileType: bookToStore.fileType,
+		fileSize: bookToStore.fileSize,
+		dateAdded: bookToStore.dateAdded,
+		lastModified: bookToStore.lastModified,
+		lastAccessed: bookToStore.lastAccessed,
+		progress: bookToStore.progress,
+		fontSize: bookToStore.fontSize, // Keep font size if present
+		ribbonData: bookToStore.ribbonData,
+		ribbonExpiry: bookToStore.ribbonExpiry,
+		file: bookToStore.file
+	};
 
-	return bookToStore;
+	return finalBookToStore;
 }
 
 // Save a single book to IndexedDB
@@ -162,27 +198,30 @@ export async function saveBook(
 				const error = (event.target as IDBTransaction).error;
 				console.error(`[DB] Transaction aborted after put for book "${bookToStore.title}":`, error);
 				reject(new Error('Transaction aborted'));
-			}
+			};
 		});
 
 		console.log(`[DB] Finished saving book: ${bookToStore.title}`);
 		return true;
-
 	} catch (error) {
 		// Catch errors from prepareBookForStorage, openDBFunc, transaction creation, put, or transaction completion
 		console.error(`[DB] Overall error saving book "${bookData.title}":`, error);
 		// Check if it's the specific TransactionInactiveError for better logging
 		if (error instanceof DOMException && error.name === 'TransactionInactiveError') {
-			console.error("[DB] Encountered TransactionInactiveError - this might indicate an await still happening within the transaction lifecycle.");
+			console.error(
+				'[DB] Encountered TransactionInactiveError - this might indicate an await still happening within the transaction lifecycle.'
+			);
 		}
 		return false;
 	}
 }
 
-
-// Helper to process book data after loading from DB (regenerates blob URL, adds placeholder File)
-function processBookAfterLoad(bookFromDB: any): Book | null { // Return null if processing fails
-	console.log(`[DB processBookAfterLoad] Processing book from DB: ${bookFromDB?.title} (ID: ${bookFromDB?.id})`);
+// Helper to process book data after loading from DB (regenerates blob URL, uses stored File)
+function processBookAfterLoad(bookFromDB: any): Book | null {
+	// Return null if processing fails
+	console.log(
+		`[DB processBookAfterLoad] Processing book from DB: ${bookFromDB?.title} (ID: ${bookFromDB?.id})`
+	);
 	if (!bookFromDB || typeof bookFromDB !== 'object') {
 		console.error('[DB processBookAfterLoad] Invalid book data received:', bookFromDB);
 		return null;
@@ -194,40 +233,62 @@ function processBookAfterLoad(bookFromDB: any): Book | null { // Return null if 
 	if (bookFromDB.coverBlob instanceof Blob) {
 		try {
 			// Revoke previous blob URL if it exists and is a blob URL (prevent memory leaks)
+			// Note: Be cautious with revoking if the URL might still be in use elsewhere immediately after load.
+			// Consider managing Blob URL lifecycles more carefully if issues arise.
 			if (coverUrl && coverUrl.startsWith('blob:')) {
 				console.log(`[DB processBookAfterLoad] Revoking old blob URL: ${coverUrl}`);
 				URL.revokeObjectURL(coverUrl);
 			}
 			coverUrl = URL.createObjectURL(bookFromDB.coverBlob);
-			console.log(`[DB processBookAfterLoad] Regenerated blob URL for book "${bookFromDB.title}": ${coverUrl}`);
+			console.log(
+				`[DB processBookAfterLoad] Regenerated blob URL for book "${bookFromDB.title}": ${coverUrl}`
+			);
 		} catch (error) {
-			console.error(`[DB processBookAfterLoad] Error regenerating blob URL for "${bookFromDB.title}":`, error);
+			console.error(
+				`[DB processBookAfterLoad] Error regenerating blob URL for "${bookFromDB.title}":`,
+				error
+			);
 			coverUrl = '/placeholder-cover.png'; // Fallback
 		}
 	} else if (!coverUrl) {
 		// If no URL and no blob, use placeholder
-		console.log(`[DB processBookAfterLoad] Using placeholder for "${bookFromDB.title}" as no coverUrl or coverBlob found`);
+		console.log(
+			`[DB processBookAfterLoad] Using placeholder for "${bookFromDB.title}" as no coverUrl or coverBlob found`
+		);
 		coverUrl = '/placeholder-cover.png';
 	} else {
-		console.log(`[DB processBookAfterLoad] Using existing coverUrl for "${bookFromDB.title}": ${coverUrl}`);
+		console.log(
+			`[DB processBookAfterLoad] Using existing coverUrl for "${bookFromDB.title}": ${coverUrl}`
+		);
 	}
 
-
-	// Recreate a placeholder File object for runtime consistency (content is not stored)
-	let file: File | undefined = undefined;
-	if (bookFromDB.fileName) {
-		try {
-			file = new File([''], bookFromDB.fileName, {
-				type: bookFromDB.fileType || 'application/octet-stream',
-				lastModified: bookFromDB.lastModified || Date.now()
-				});
-			// console.log(`[DB processBookAfterLoad] Created placeholder File for ${bookFromDB.fileName}`);
-		} catch (e) {
-			console.error(`[DB processBookAfterLoad] Error creating placeholder File for ${bookFromDB.fileName}:`, e);
+	// --- CHANGE START ---
+	// Use the File/Blob object directly from the database record
+	let file: File | Blob | undefined = undefined; // Type can be File or Blob
+	if (bookFromDB.file instanceof File || bookFromDB.file instanceof Blob) {
+		file = bookFromDB.file;
+		console.log(
+			`[DB processBookAfterLoad] Using stored File/Blob object for ${bookFromDB.fileName || bookFromDB.id}`
+		);
+		// Verify size - helps catch corruption where the object exists but content is lost
+		if (file.size !== bookFromDB.fileSize) {
+			console.warn(
+				`[DB processBookAfterLoad] Mismatch between stored file size (${bookFromDB.fileSize}) and retrieved Blob/File size (${file.size}) for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
+			);
+			// Optionally handle corruption: file = undefined; or attempt recovery/error reporting
+		} else if (file.size === 0 && bookFromDB.fileSize > 0) {
+			console.warn(
+				`[DB processBookAfterLoad] Retrieved Blob/File size is 0, but stored size was ${bookFromDB.fileSize} for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
+			);
+			// Optionally handle corruption
 		}
 	} else {
-		console.warn(`[DB processBookAfterLoad] No fileName found for book ID ${bookFromDB.id}, cannot create placeholder File.`);
+		console.warn(
+			`[DB processBookAfterLoad] No valid File or Blob object found in DB record for book ID ${bookFromDB.id}. Cannot open book content.`
+		);
 	}
+	// --- CHANGE END ---
+
 
 	// Explicitly type the object being returned
 	const processedBook: Book = {
@@ -237,26 +298,30 @@ function processBookAfterLoad(bookFromDB: any): Book | null { // Return null if 
 		author: bookFromDB.author ?? 'Unknown Author',
 		coverUrl: coverUrl,
 		coverBlob: bookFromDB.coverBlob, // Keep the blob itself if needed elsewhere, though URL is primary
-		file: file,
+		// --- CHANGE START ---
+		file: file as File | undefined, // Assign the retrieved File/Blob (or undefined if missing/corrupt)
+		// Cast to File | undefined for compatibility with the Book type, assuming the reader expects File.
+		// If the reader can handle Blob, adjust the Book type and remove the cast.
+		// --- CHANGE END ---
 		fileName: bookFromDB.fileName,
 		fileType: bookFromDB.fileType,
-		fileSize: bookFromDB.fileSize,
+		fileSize: bookFromDB.fileSize, // Use the size stored during save
 		dateAdded: bookFromDB.dateAdded ?? Date.now(),
-		lastModified: bookFromDB.lastModified,
+		lastModified: bookFromDB.lastModified, // Use the lastModified stored during save
 		lastAccessed: bookFromDB.lastAccessed ?? 0,
 		progress: bookFromDB.progress ?? 0,
-		ribbonData: bookFromDB.ribbon,
-		ribbonExpiry: bookFromDB.ribbonExpiry,
+		fontSize: bookFromDB.fontSize, // Keep font size if present
+		ribbonData: bookFromDB.ribbonData, // Ensure correct property name if different
+		ribbonExpiry: bookFromDB.ribbonExpiry // Ensure correct property name if different
 	};
 	console.log(`[DB processBookAfterLoad] Finished processing book: ${processedBook.title}`);
 	return processedBook; // Return the typed object
 }
 
-
 // Load all books directly from IndexedDB
 export async function loadLibraryStateFromDB(
 	openDBFunc: () => Promise<IDBDatabase> = openDatabase
-): Promise<{ books: Book[], loaded: boolean }> {
+): Promise<{ books: Book[]; loaded: boolean }> {
 	if (!browser) {
 		console.log('[DB loadLibraryStateFromDB] Skipping: Not in browser.');
 		return { books: [], loaded: false };
@@ -278,45 +343,64 @@ export async function loadLibraryStateFromDB(
 			booksFromDB = await new Promise<any[]>((resolve, reject) => {
 				const request = store.getAll();
 				request.onsuccess = () => {
-					console.log(`[DB loadLibraryStateFromDB] getAll success. Found ${request.result?.length ?? 0} records.`);
+					console.log(
+						`[DB loadLibraryStateFromDB] getAll success. Found ${request.result?.length ?? 0} records.`
+					);
 					resolve(request.result || []);
 				};
 				request.onerror = () => {
-					console.error('[DB loadLibraryStateFromDB] Error in store.getAll() request.onerror:', request.error); // <-- MODIFIED LOG
+					console.error(
+						'[DB loadLibraryStateFromDB] Error in store.getAll() request.onerror:',
+						request.error
+					); // <-- MODIFIED LOG
 					reject(request.error); // Reject the promise on error
 				};
 			});
 
-			console.log(`[DB loadLibraryStateFromDB] Retrieved ${booksFromDB.length} raw book objects from store.`);
-
+			console.log(
+				`[DB loadLibraryStateFromDB] Retrieved ${booksFromDB.length} raw book objects from store.`
+			);
 		} else {
-			console.warn('[DB loadLibraryStateFromDB] Books store not found in database. Returning empty library.');
+			console.warn(
+				'[DB loadLibraryStateFromDB] Books store not found in database. Returning empty library.'
+			);
 			return { books: [], loaded: false }; // Return early if store doesn't exist
 		}
 
 		if (booksFromDB.length > 0) {
-			console.log(`[DB loadLibraryStateFromDB] Processing ${booksFromDB.length} books for display...`);
+			console.log(
+				`[DB loadLibraryStateFromDB] Processing ${booksFromDB.length} books for display...`
+			);
 			// Process books: regenerate blob URLs, add placeholder File objects, filter out nulls
-			const processedBooks = booksFromDB.map(processBookAfterLoad).filter(book => book !== null) as Book[];
-			console.log(`[DB loadLibraryStateFromDB] Successfully processed ${processedBooks.length} books.`);
-
+			const processedBooks = booksFromDB
+				.map(processBookAfterLoad)
+				.filter((book) => book !== null) as Book[];
+			console.log(
+				`[DB loadLibraryStateFromDB] Successfully processed ${processedBooks.length} books.`
+			);
 
 			// Sort books by last accessed (most recent first)
 			processedBooks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 			console.log('[DB loadLibraryStateFromDB] Books sorted by lastAccessed.');
 
-			console.log('[DB loadLibraryStateFromDB] Library loaded successfully. Returning loaded state.'); // <-- MODIFIED LOG
+			console.log(
+				'[DB loadLibraryStateFromDB] Library loaded successfully. Returning loaded state.'
+			); // <-- MODIFIED LOG
 			return { books: processedBooks, loaded: true };
 		} else {
-			console.log('[DB loadLibraryStateFromDB] No books found in storage. Returning empty library.');
+			console.log(
+				'[DB loadLibraryStateFromDB] No books found in storage. Returning empty library.'
+			);
 			return { books: [], loaded: false }; // Explicitly loaded: false
 		}
 	} catch (error) {
-		console.error('[DB loadLibraryStateFromDB] Critical error during library loading process:', error); // <-- MODIFIED LOG
+		console.error(
+			'[DB loadLibraryStateFromDB] Critical error during library loading process:',
+			error
+		); // <-- MODIFIED LOG
 		return { books: [], loaded: false }; // Ensure loaded is false on error
 	}
 }
-
 
 // Remove a book from IndexedDB by ID
 export async function removeBookFromDB(
@@ -371,7 +455,10 @@ export async function saveAllBooks(
 					const request = store.put(bookToStore);
 					request.onsuccess = () => resolve();
 					request.onerror = (event) => {
-						console.error(`[DB] Error saving book "${book.title}" during saveAll:`, (event.target as IDBRequest).error);
+						console.error(
+							`[DB] Error saving book "${book.title}" during saveAll:`,
+							(event.target as IDBRequest).error
+						);
 						reject((event.target as IDBRequest).error); // Reject on error
 					};
 				});
@@ -382,7 +469,6 @@ export async function saveAllBooks(
 				console.error(`[DB] Failed to save book "${book.title}" during saveAll:`, error);
 			}
 		}
-
 
 		console.log(`[DB] Finished saving all books. Success: ${successCount}, Failed: ${errorCount}`);
 		return errorCount === 0; // Return true only if all books were saved successfully

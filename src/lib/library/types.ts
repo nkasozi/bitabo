@@ -4,6 +4,7 @@ export interface Book {
 	author: string;
 	file?: File; // Keep File object temporarily at runtime, but don't store in DB
 	fileName?: string; // Store filename
+	fontSize?: number; // Store font size
 	fileType?: string; // Store filetype
 	fileSize?: number; // Store filesize
 	lastModified?: number; // Store last modified timestamp
