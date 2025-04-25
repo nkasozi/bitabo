@@ -1134,8 +1134,8 @@ class EbookReader {
 				
 				// Try to get the function from window after script loads
 				// Some modules might expose their exports on the window object
-				if (window['fromCalibreHighlight']) {
-					fromCalibreHighlight = window['fromCalibreHighlight'];
+				if (typeof (window as any)['fromCalibreHighlight'] === 'function') {
+					fromCalibreHighlight = (window as any)['fromCalibreHighlight'];
 				}
 			} catch (scriptError) {
 				console.warn('Failed to load epubcfi.js with script tag, trying import', scriptError);

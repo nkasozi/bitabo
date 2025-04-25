@@ -1067,10 +1067,9 @@
 			<div bind:this={bookshelf} class="coverflow-container fade-in">
 				<!-- Books added dynamically by Coverflow class -->
 			</div>
-			<!-- Navigation Hints -->
-			<div class="navigation-hints">
+			<div class="keyboard-instructions">
 				{#if isMobile}
-					Swipe left/right or use buttons:
+					Swipe left and right to navigate through your books
 					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
 						<button
 							class="nav-arrow-button"
@@ -1092,8 +1091,8 @@
 						</button>
 					</div>
 				{:else}
-					Use <span class="keyboard-arrow">←</span> / <span class="keyboard-arrow">→</span> keys to navigate,
-					Enter to read, Delete to remove.
+					Use left and right arrow keys <span class="keyboard-arrow">←</span> <span class="keyboard-arrow">→</span> to
+					navigate through your books
 				{/if}
 			</div>
 

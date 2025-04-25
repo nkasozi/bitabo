@@ -271,12 +271,12 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 			`[DB processBookAfterLoad] Using stored File/Blob object for ${bookFromDB.fileName || bookFromDB.id}`
 		);
 		// Verify size - helps catch corruption where the object exists but content is lost
-		if (file.size !== bookFromDB.fileSize) {
+		if (file?.size !== bookFromDB.fileSize) {
 			console.warn(
-				`[DB processBookAfterLoad] Mismatch between stored file size (${bookFromDB.fileSize}) and retrieved Blob/File size (${file.size}) for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
+				`[DB processBookAfterLoad] Mismatch between stored file size (${bookFromDB.fileSize}) and retrieved Blob/File size (${file?.size}) for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
 			);
 			// Optionally handle corruption: file = undefined; or attempt recovery/error reporting
-		} else if (file.size === 0 && bookFromDB.fileSize > 0) {
+		} else if (file?.size === 0 && bookFromDB.fileSize > 0) {
 			console.warn(
 				`[DB processBookAfterLoad] Retrieved Blob/File size is 0, but stored size was ${bookFromDB.fileSize} for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
 			);

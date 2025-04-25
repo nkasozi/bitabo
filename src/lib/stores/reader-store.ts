@@ -29,6 +29,8 @@ function createReaderStore() {
 
 	return {
 		subscribe,
+		set, // Add set method
+		update, // Add update method
 
 		setBookLoaded: (isLoaded: boolean): void => {
 			update((state) => ({ ...state, bookLoaded: isLoaded }));
