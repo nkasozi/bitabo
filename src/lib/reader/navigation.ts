@@ -9,10 +9,6 @@ import { goto } from '$app/navigation';
  */
 export function navigateToLibrary(): boolean {
 	console.log('[DEBUG] Navigating back to library');
-	if (!browser) {
-		console.log('[DEBUG] Not in browser environment, cannot navigate.');
-		return false;
-	}
 	try {
 		// Try goto first for smoother SPA transition
 		goto('/library');
