@@ -65,7 +65,7 @@ export function calculateTitleSimilarity(title1: string, title2: string): number
 	const shorter = title1.length > title2.length ? title2 : title1;
 
 	if (longer.length === 0) {
-		return 1.0; // Both are empty
+		return 0.0; // Both are empty
 	}
 
 	// Normalize titles (lowercase, remove punctuation/articles if needed)
@@ -73,7 +73,7 @@ export function calculateTitleSimilarity(title1: string, title2: string): number
 	const normalized1 = normalize(shorter);
 	const normalized2 = normalize(longer);
 
-	if (normalized1.length === 0 && normalized2.length === 0) return 1.0;
+	if (normalized1.length === 0 && normalized2.length === 0) return 0.0;
 	if (normalized1.length === 0 || normalized2.length === 0) return 0.0;
 
 

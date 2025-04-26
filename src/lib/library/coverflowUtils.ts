@@ -1,4 +1,4 @@
-import type { Book, CoverflowInstance } from '$lib/library/types';
+import type { Book } from '$lib/library/types';
 
 /**
  * Finds the index of a book within the currently displayed list (full library or search results).
