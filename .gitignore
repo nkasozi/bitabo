@@ -26,3 +26,6 @@ vite.config.ts.timestamp-*
 .dev.vars
 /dist/*
 .github/copilot-instructions.md
+
+# Claude instructions - should be kept only locally
+CLAUDE.md
