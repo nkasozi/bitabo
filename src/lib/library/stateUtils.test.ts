@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { calculateNewLibraryState } from './stateUtils';
 import { performSearch } from './searchUtils';
 import type { Book } from './types';
@@ -7,6 +7,10 @@ import type { Book } from './types';
 vi.mock('./searchUtils', () => ({
 	performSearch: vi.fn()
 }));
+
+beforeEach(() => {
+	vi.resetAllMocks();
+});
 
 describe('calculateNewLibraryState', () => {
 	// Sample book data for testing
@@ -36,10 +40,6 @@ describe('calculateNewLibraryState', () => {
 			progress: 0
 		}
 	];
-
-	beforeEach(() => {
-		vi.resetAllMocks();
-	});
 
 	it('should return new books and index when provided', () => {
 		// Arrange - basic case with all parameters provided

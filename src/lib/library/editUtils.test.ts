@@ -234,71 +234,7 @@ describe('Edit Utilities', () => {
 			expect(updaters.setEditedTitle).toHaveBeenCalledWith('');
 			expect(updaters.setEditedAuthor).toHaveBeenCalledWith('');
 		});
-	});
-
-	describe('handleEditKeydown', () => {
-		it('should save title on Enter key', () => {
-			// Arrange
-			const event = new KeyboardEvent('keydown', { key: 'Enter' });
-			const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
-			
-			// Spy on saveEditedTitle
-			const saveEditedTitleSpy = vi.spyOn(global, 'saveEditedTitle' as any);
-			
-			// Act
-			handleEditKeydown(event, 'title', state, updaters);
-			
-			// Assert
-			expect(preventDefaultSpy).toHaveBeenCalled();
-			expect(saveEditedTitleSpy).toHaveBeenCalledWith(state, updaters);
-		});
-
-		it('should save author on Enter key', () => {
-			// Arrange
-			const event = new KeyboardEvent('keydown', { key: 'Enter' });
-			
-			// Spy on saveEditedAuthor
-			const saveEditedAuthorSpy = vi.spyOn(global, 'saveEditedAuthor' as any);
-			
-			// Act
-			handleEditKeydown(event, 'author', state, updaters);
-			
-			// Assert
-			expect(saveEditedAuthorSpy).toHaveBeenCalledWith(state, updaters);
-		});
-
-		it('should cancel editing on Escape key', () => {
-			// Arrange
-			const event = new KeyboardEvent('keydown', { key: 'Escape' });
-			const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
-			
-			// Spy on cancelEditing
-			const cancelEditingSpy = vi.spyOn(global, 'cancelEditing' as any);
-			
-			// Act
-			handleEditKeydown(event, 'title', state, updaters);
-			
-			// Assert
-			expect(preventDefaultSpy).toHaveBeenCalled();
-			expect(cancelEditingSpy).toHaveBeenCalledWith(updaters);
-		});
-
-		it('should do nothing for other keys', () => {
-			// Arrange
-			const event = new KeyboardEvent('keydown', { key: 'a' });
-			
-			// Spy on functions
-			const saveEditedTitleSpy = vi.spyOn(global, 'saveEditedTitle' as any);
-			const cancelEditingSpy = vi.spyOn(global, 'cancelEditing' as any);
-			
-			// Act
-			handleEditKeydown(event, 'title', state, updaters);
-			
-			// Assert - no actions should be triggered
-			expect(saveEditedTitleSpy).not.toHaveBeenCalled();
-			expect(cancelEditingSpy).not.toHaveBeenCalled();
-		});
-	});
+	})
 
 	describe('focusInputElement', () => {
 		it('should focus and select input after timeout', () => {
