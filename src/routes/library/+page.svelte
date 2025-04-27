@@ -1881,6 +1881,27 @@
 		text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
 	}
 
+  /* Keyboard instructions */
+  .keyboard-instructions {
+      text-align: center;
+      margin-top: 20px;
+      color: var(--color-text);
+      opacity: 0.8;
+      font-size: 0.9em;
+      transition: color 0.3s ease;
+  }
+
+  .keyboard-arrow {
+      display: inline-block;
+      font-weight: bold;
+      color: var(--color-theme-1);
+  }
+
+  :global(.dark-mode) .keyboard-arrow {
+      color: var(--color-theme-1);
+      text-shadow: 0 0 5px rgba(97, 218, 251, 0.5);
+  }
+
 	/* Animation for UI elements appearing when books are added */
 	.fade-in {
 		animation: fadeIn 0.8s ease-in-out;
