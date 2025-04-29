@@ -78,7 +78,7 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-top: 0.5dvh;
+		margin-top: calc(env(safe-area-inset-top, 0px) + 0.5dvh);;
 		padding: 1rem;
 		background-color: var(--color-header-bg);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
