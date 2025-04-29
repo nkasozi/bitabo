@@ -2022,6 +2022,7 @@
         font-size: 0.8rem;
         color: #666;
         margin: 10px 0 0 0;
+				text-align: center;
     }
 
     .library-container {
