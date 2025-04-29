@@ -6,71 +6,16 @@ import type { ReaderState } from '$lib/stores/reader-store'; // Corrected: Use R
 import { displayErrorNotification } from './ui';
 import { initializeReaderInteractivity } from './ui';
 
-// Constants
-const DB_NAME = 'ebitabo-books';
-const BOOKS_STORE = 'books';
+// Import from constants.ts instead of defining here
+import { DB_NAME, BOOKS_STORE } from '$lib/library/constants';
+import { db } from '$lib/library/dexieDatabase';
+
 const DEFAULT_FONT_SIZE = 18;
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 72;
 
 /**
- * Opens the IndexedDB database with error handling and upgrade logic.
- * @param dbName - Name of the database.
- * @param storeName - Name of the object store.
- * @returns {Promise<IDBDatabase>} A promise that resolves with the database instance.
- */
-function openDatabase(dbName: string, storeName: string): Promise<IDBDatabase> {
-	console.log(`[DEBUG] Opening IndexedDB: ${dbName}`);
-	return new Promise<IDBDatabase>((resolve, reject) => {
-		// Check if IndexedDB is supported
-		if (!('indexedDB' in window)) {
-			console.error('[DEBUG] IndexedDB not supported in this browser.');
-			return reject(new Error('IndexedDB not supported'));
-		}
-
-		const request = indexedDB.open(dbName, 1); // Specify a version
-
-		request.onerror = (event) => {
-			const error = (event.target as IDBOpenDBRequest)?.error;
-			console.error('[DEBUG] Error opening database:', error);
-			reject(error || new Error('Unknown DB open error'));
-		};
-
-		request.onsuccess = (event) => {
-			const db = (event.target as IDBOpenDBRequest)?.result;
-			console.log(`[DEBUG] Successfully opened database version ${db.version}`);
-			// Optional: Add a handler for version change conflicts
-			db.onversionchange = () => {
-				console.warn('[DEBUG] Database version change detected, closing connection.');
-				db.close();
-				// Optionally reload or notify user
-			};
-			resolve(db);
-		};
-
-		request.onupgradeneeded = (event) => {
-			const db = (event.target as IDBOpenDBRequest)?.result;
-			const oldVersion = event.oldVersion;
-			console.log(`[DEBUG] Database upgrade needed from version ${oldVersion} to ${db.version}`);
-			if (!db.objectStoreNames.contains(storeName)) {
-				console.log(`[DEBUG] Creating object store: ${storeName}`);
-				db.createObjectStore(storeName, { keyPath: 'id' });
-				// TODO: Add indexes if needed in the future
-				// store.createIndex('title', 'title', { unique: false });
-			}
-			// Handle other version upgrades here if necessary
-		};
-
-		request.onblocked = () => {
-			// This event fires if the DB is open elsewhere (e.g., another tab) with an older version
-			console.warn('[DEBUG] Database open request blocked, possibly due to other open connections.');
-			reject(new Error('Database connection blocked. Please close other tabs/windows using this app.'));
-		};
-	});
-}
-
-/**
- * Saves reading progress and font size to IndexedDB with retry logic.
+ * Saves reading progress and font size to Dexie database
  * @param bookId - The ID of the book.
  * @param progress - The reading progress (0 to 1).
  * @param explicitFontSize - Optional explicit font size to save. If not provided, attempts to get from reader.
@@ -124,111 +69,48 @@ export async function saveReadingProgress(
 	console.log(`[DEBUG] Final font size value being saved: ${fontSize}px`);
 
 	// Function to attempt the save with retry capability
-	const attemptDirectSave = async (retryAttempt = 0): Promise<boolean> => {
-		let db: IDBDatabase | null = null;
+	const attemptSave = async (retryAttempt = 0): Promise<boolean> => {
 		try {
-			console.log(`[DEBUG] Direct save attempt ${retryAttempt + 1}`);
-			db = await openDatabase(DB_NAME, BOOKS_STORE);
-
-			// Ensure store exists (though openDatabase should handle creation)
-			if (!db.objectStoreNames.contains(BOOKS_STORE)) {
-				throw new Error(`Books store '${BOOKS_STORE}' not found in database '${DB_NAME}'`);
+			console.log(`[DEBUG] Dexie save attempt ${retryAttempt + 1}`);
+			
+			// Get the book from database
+			const book = await db.books.get(bookId);
+			
+			if (!book) {
+				console.warn(`[DEBUG] Book ${bookId} not found during Dexie save attempt.`);
+				return false;
 			}
-
-			return await new Promise<boolean>((resolve, reject) => {
-				let transaction: IDBTransaction | null = null;
-				try {
-					transaction = db!.transaction([BOOKS_STORE], 'readwrite'); // Use non-null assertion as db should be open
-					const store = transaction.objectStore(BOOKS_STORE);
-
-					transaction.onerror = (e) => {
-						const error = (e.target as IDBTransaction)?.error;
-						console.error('[DEBUG] Transaction error during save:', error);
-						reject(error || new Error('Unknown transaction error'));
-					};
-					transaction.onabort = (e) => {
-						const error = (e.target as IDBTransaction)?.error;
-						console.error('[DEBUG] Transaction aborted during save:', error);
-						reject(new Error(`Transaction aborted: ${error?.message}`));
-					};
-                    transaction.oncomplete = () => {
-                        // This confirms the transaction (including the put) completed successfully.
-                        console.log('[DEBUG] Save transaction completed successfully.');
-                        // We resolve(true) within putRequest.onsuccess for clarity
-                    };
-
-					const getRequest = store.get(bookId);
-
-					getRequest.onsuccess = (event) => {
-						const book = (event.target as IDBRequest)?.result as Book | undefined;
-						if (book) {
-							// Update progress, font size, and last accessed timestamp
-							book.progress = progress;
-							book.fontSize = fontSize; // Save the validated font size
-							book.lastAccessed = Date.now();
-
-							const putRequest = store.put(book);
-
-							putRequest.onsuccess = () => {
-								console.log(
-									`[DEBUG] Direct IndexedDB put successful for book ${bookId}. Progress: ${progress}, Font size: ${fontSize}px`
-								);
-								resolve(true); // Indicate success
-							};
-
-							putRequest.onerror = (e) => {
-								const error = (e.target as IDBRequest)?.error;
-								console.error('[DEBUG] Error in direct IndexedDB put operation:', error);
-								reject(error || new Error('Unknown DB put error'));
-							};
-						} else {
-							console.warn(`[DEBUG] Book ${bookId} not found during direct IndexedDB save attempt.`);
-							resolve(false); // Indicate book not found, not necessarily an error
-						}
-					};
-
-					getRequest.onerror = (e) => {
-						const error = (e.target as IDBRequest)?.error;
-						console.error('[DEBUG] Error getting book for save:', error);
-						reject(error || new Error('Unknown DB get error'));
-					};
-				} catch (transactionError) {
-					console.error('[DEBUG] Exception during transaction setup:', transactionError);
-                    // Abort transaction manually if possible and reject
-                    if (transaction && transaction.abort) {
-                        try { transaction.abort(); } catch { /* ignore abort error */ }
-                    }
-					reject(transactionError);
-				}
-			}).finally(() => {
-                // Ensure DB connection is closed after the promise settles
-                if (db) {
-                    db.close();
-                    console.log('[DEBUG] Closed DB connection after save attempt promise settled.');
-                }
-            });
+			
+			// Update progress, font size, and last accessed timestamp
+			book.progress = progress;
+			book.fontSize = fontSize;
+			book.lastAccessed = Date.now();
+			
+			// Save the updated book
+			await db.books.put(book);
+			
+			console.log(
+				`[DEBUG] Dexie put successful for book ${bookId}. Progress: ${progress}, Font size: ${fontSize}px`
+			);
+			return true;
 		} catch (error) {
-			console.warn(`[DEBUG] Direct save attempt ${retryAttempt + 1} failed:`, error);
-            if (db) { // Ensure DB is closed even if openDatabase succeeded but transaction failed/rejected
-                db.close();
-                console.log('[DEBUG] Closed DB connection after failed save attempt.');
-            }
+			console.warn(`[DEBUG] Dexie save attempt ${retryAttempt + 1} failed:`, error);
 
 			// Retry logic with exponential backoff (e.g., up to 3 attempts)
 			if (retryAttempt < 2) { // 0, 1
 				const delay = Math.min(800 * Math.pow(1.5, retryAttempt), 3000); // ~800ms, ~1200ms
-				console.log(`[DEBUG] Retrying direct save in ${delay}ms`);
+				console.log(`[DEBUG] Retrying Dexie save in ${delay}ms`);
 				await new Promise((resolve) => setTimeout(resolve, delay));
-				return attemptDirectSave(retryAttempt + 1); // Recursively call
+				return attemptSave(retryAttempt + 1); // Recursively call
 			} else {
-				console.error('[DEBUG] All direct save attempts failed for book:', bookId);
+				console.error('[DEBUG] All Dexie save attempts failed for book:', bookId);
 				return false; // Indicate final failure
 			}
 		}
 	};
 
 	// Start the save process
-	return attemptDirectSave();
+	return attemptSave();
 }
 
 
@@ -306,6 +188,7 @@ export function determineBookReadingProgress(bookData?: Book | null): number {
     console.log(`[DEBUG] Using valid progress from URL: ${progress}`);
     return progress;
 }
+
 interface LoadBookResult {
     success: boolean;
     bookData?: Book; // Changed bookInfo to bookData
@@ -314,7 +197,7 @@ interface LoadBookResult {
 
 
 /**
- * Loads a book from IndexedDB into the reader instance.
+ * Loads a book from Dexie database into the reader instance.
  * Handles fetching data and opening the book.
  * Initial state application (progress, font size) should happen *after* this function succeeds.
  * @param reader - The initialized reader instance.
@@ -342,49 +225,21 @@ export async function loadBookIntoReader(
     console.log(`[DEBUG] Attempting to load book with ID: ${bookId}`);
 
     try {
-        // 1. Fetch Book Data from IndexedDB with Retry
+        // 1. Fetch Book Data from Dexie with Retry
         const fetchBookData = async (retryAttempt = 0): Promise<Book | null> => {
-            let localDb: IDBDatabase | null = null; // Use local variable for DB connection per attempt
             try {
-                console.log(`[DEBUG] Opening DB to fetch book data (attempt ${retryAttempt + 1})`);
-                localDb = await openDatabase(DB_NAME, BOOKS_STORE);
-
-                if (!localDb.objectStoreNames.contains(BOOKS_STORE)) {
-                    throw new Error(`Books store '${BOOKS_STORE}' not found.`);
+                console.log(`[DEBUG] Fetching book data from Dexie (attempt ${retryAttempt + 1})`);
+                
+                // Get the book from Dexie database
+                const book = await db.books.get(bookId);
+                
+                if (book) {
+                    console.log(`[DEBUG] Book data found: ${book.title} by ${book.author}`);
+                    return book;
+                } else {
+                    console.warn(`[DEBUG] Book with ID ${bookId} not found in DB.`);
+                    return null;
                 }
-
-                return await new Promise<Book | null>((resolve, reject) => {
-                    let transaction: IDBTransaction | null = null;
-                    try {
-                        transaction = localDb!.transaction([BOOKS_STORE], 'readonly');
-                        const store = transaction.objectStore(BOOKS_STORE);
-                        const getRequest = store.get(bookId);
-
-                        transaction.onerror = (e) => reject((e.target as IDBTransaction)?.error || new Error('Read transaction failed'));
-                        transaction.onabort = (e) => reject(new Error(`Read transaction aborted: ${(e.target as IDBTransaction)?.error?.message}`));
-                        transaction.oncomplete = () => {
-                             console.log('[DEBUG] Fetch book data transaction completed.');
-                        };
-
-                        getRequest.onsuccess = (event) => {
-                            const result = (event.target as IDBRequest)?.result as Book | undefined;
-                            if (result) {
-                                console.log(`[DEBUG] Book data found: ${result.title} by ${result.author}`);
-                                resolve(result);
-                            } else {
-                                console.warn(`[DEBUG] Book with ID ${bookId} not found in DB.`);
-                                resolve(null); // Resolve with null if not found
-                            }
-                        };
-                        getRequest.onerror = (e) => reject((e.target as IDBRequest)?.error || new Error('DB get request failed'));
-                    } catch (transactionError) {
-                         console.error('[DEBUG] Exception during fetch transaction setup:', transactionError);
-                         if (transaction && transaction.abort) {
-                            try { transaction.abort(); } catch { /* ignore */ }
-                         }
-                         reject(transactionError);
-                    }
-                });
             } catch (error) {
                 console.warn(`[DEBUG] Fetch book data attempt ${retryAttempt + 1} failed:`, error);
                 if (retryAttempt < 2) { // Retry up to 3 times total
@@ -395,11 +250,6 @@ export async function loadBookIntoReader(
                 } else {
                     console.error('[DEBUG] All attempts to fetch book data failed.');
                     throw error; // Throw the last error
-                }
-            } finally {
-                 if (localDb) { // Ensure DB connection for this attempt is closed
-                    localDb.close();
-                    console.log(`[DEBUG] Closed DB connection after fetch attempt ${retryAttempt + 1}.`);
                 }
             }
         };
@@ -463,7 +313,7 @@ export async function loadBookIntoReader(
 
         // Determine file to open
         let fileToOpen: File | Blob | null = null;
-        if (bookData.file instanceof File) { // Check for Blob too
+        if (bookData.file instanceof File || bookData.file instanceof Blob) { // Check for Blob too
              console.log(`[DEBUG] Using file/blob object from bookData (type: ${bookData.file.constructor.name}, size: ${bookData.file.size})`);
              fileToOpen = bookData.file;
         } else {

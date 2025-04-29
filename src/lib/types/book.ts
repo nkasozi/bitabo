@@ -15,6 +15,8 @@ export interface Book {
 	fontSize?: number; // User's preferred font size for this book
 	ribbonData?: string; // Optional ribbon text (e.g., "NEW", "LATER")
 	ribbonExpiry?: number; // Optional timestamp for ribbon expiry
+	originalFile?: string; // Base64 encoded string of the original file for sync
+	originalCoverImage?: string; // Base64 encoded string of the original cover image for sync
 }
 
 // Type for when the file property might be present (e.g., before saving)

@@ -8,15 +8,14 @@ import {
 	saveEditedTitle,
 	saveEditedAuthor,
 	cancelEditing,
-	handleEditKeydown,
 	focusInputElement
 } from './editUtils';
-import { saveBook } from './database';
+import { saveBook } from './dexieDatabase';
 import type { Book } from './types';
 import type { EditState, EditStateUpdaters } from './editUtils';
 
 // Mock dependencies
-vi.mock('./database', () => ({
+vi.mock('./dexieDatabase', () => ({
 	saveBook: vi.fn().mockResolvedValue(true)
 }));
 

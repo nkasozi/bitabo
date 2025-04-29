@@ -1,8 +1,5 @@
-
-import { browser } from '$app/environment';
 import type { Book } from './types';
-import { saveBook } from './database';
-import { calculateNewLibraryState } from './stateUtils'; // Import state calculation
+import { saveBook } from './dexieDatabase';
 
 // --- Types for State Update Callback ---
 type StateUpdateCallback = (

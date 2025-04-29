@@ -20,3 +20,6 @@ export const DEFAULT_SIMILARITY_THRESHOLD = 0.7;
 export const GOOGLE_CLIENT_ID = '765754879203-gdu4lclkrn9lpd9tlsu1vh87nk33auin.apps.googleusercontent.com'; //import.meta.env.VITE_GOOGLE_CLIENT_ID;
 export const GOOGLE_DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
 export const GOOGLE_DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
+
+// Google Drive Sync constants
+export const GDRIVE_SYNC_INTERVAL = 30000; // 30 seconds in milliseconds

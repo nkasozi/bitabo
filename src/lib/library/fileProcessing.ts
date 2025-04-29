@@ -2,7 +2,7 @@ import type { Book, ImportSummary } from './types';
 import { browser } from '$app/environment';
 import { ImportType, SUPPORTED_FORMATS, SUPPORTED_COVER_FORMATS, DEFAULT_SIMILARITY_THRESHOLD } from './constants';
 import { extractCover } from './coverExtractor';
-import { saveBook } from './database';
+import { saveBook } from './dexieDatabase';
 import { hashString, calculateTitleSimilarity } from './utils';
 import { showNotification,showProgressNotification, updateProgressNotification, closeNotification, showErrorNotification } from './ui';
 // Import other necessary functions or types if needed, e.g., Coverflow related types/functions if interacting directly

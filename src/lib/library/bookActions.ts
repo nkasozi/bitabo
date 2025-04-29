@@ -1,7 +1,8 @@
 
 import { browser } from '$app/environment';
 import type { Book } from './types';
-import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './database';
+import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
+import { syncWithGoogleDrive } from './googleDriveSync'; // Google Drive sync
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification } from './ui';
 
@@ -48,6 +49,11 @@ export async function handleOpenBook(
 
         // Save updated access time to DB
         await saveBook(bookToUpdate);
+        
+        // Trigger Google Drive sync in the background
+        void syncWithGoogleDrive().catch(err => {
+            console.error('[BookAction] Error during Google Drive sync:', err);
+        });
 
         // Re-sort library and find new index
         const currentId = bookToUpdate.id;

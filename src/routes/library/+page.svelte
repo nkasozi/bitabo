@@ -14,13 +14,11 @@
 		DEFAULT_SIMILARITY_THRESHOLD
 	} from '$lib/library/constants';
 
-	// Import modularized functions
-	// import { initServiceWorker } from '$lib/library/serviceWorkerUtils'; // <-- REMOVED IMPORT
-	import { saveBook, loadLibraryStateFromDB, saveAllBooks } from '$lib/library/database';
+	import { loadLibraryStateFromDB, saveAllBooks } from '$lib/library/dexieDatabase';
 	import { initCoverflow, initEmptyCoverflow } from '$lib/library/coverflow';
-	import { findCoverflowIndex } from '$lib/library/coverflowUtils'; // Import findCoverflowIndex
-	import { calculateNewLibraryState, type LibraryStateUpdate } from '$lib/library/stateUtils'; // Import state calculation and type
-	import { performSearch as performSearchUtil, clearSearchState } from '$lib/library/searchUtils'; // Import search utils
+	import { findCoverflowIndex } from '$lib/library/coverflowUtils';
+	import { calculateNewLibraryState } from '$lib/library/stateUtils';
+	import { performSearch as performSearchUtil, clearSearchState } from '$lib/library/searchUtils';
 	import { showNotification, checkExpiredRibbons } from '$lib/library/ui';
 	import { initGoogleDrivePicker, initGoogleDriveFolderPicker } from '$lib/library/googleDrive';
 	import {

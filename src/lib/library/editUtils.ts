@@ -1,5 +1,5 @@
 import type { Book } from './types';
-import { saveBook } from './database';
+import { saveBook } from './dexieDatabase';
 
 // Type for the state needed by edit functions
 export interface EditState {

@@ -266,3 +266,141 @@ export function checkExpiredRibbons(
 	}
 	return changed;
 }
+
+// Interface for confirm dialog options
+interface ConfirmDialogOptions {
+	title: string;
+	message: string;
+	confirmText?: string;
+	cancelText?: string;
+}
+
+// Function to show a confirmation dialog
+export function showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
+	if (!browser) return Promise.resolve(false);
+	
+	return new Promise((resolve) => {
+		const dialogId = `confirm-dialog-${Date.now()}-${notificationCount++}`;
+		const dialogOverlay = document.createElement('div');
+		dialogOverlay.id = `${dialogId}-overlay`;
+		dialogOverlay.className = 'dialog-overlay';
+		
+		const dialog = document.createElement('div');
+		dialog.id = dialogId;
+		dialog.className = 'confirm-dialog';
+		
+		dialog.innerHTML = `
+			<h3>${options.title}</h3>
+			<div class="dialog-content">${options.message}</div>
+			<div class="dialog-buttons">
+				<button class="cancel-button">${options.cancelText || 'Cancel'}</button>
+				<button class="confirm-button">${options.confirmText || 'Confirm'}</button>
+			</div>
+		`;
+		
+		// Style the overlay
+		Object.assign(dialogOverlay.style, {
+			position: 'fixed',
+			top: '0',
+			left: '0',
+			right: '0',
+			bottom: '0',
+			backgroundColor: 'rgba(0, 0, 0, 0.5)',
+			display: 'flex',
+			justifyContent: 'center',
+			alignItems: 'center',
+			zIndex: '1050',
+			opacity: '0',
+			transition: 'opacity 0.2s ease'
+		});
+		
+		// Style the dialog
+		Object.assign(dialog.style, {
+			backgroundColor: 'var(--color-bg-1, #fff)',
+			borderRadius: '8px',
+			padding: '20px',
+			width: '90%',
+			maxWidth: '450px',
+			boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+			zIndex: '1051',
+			opacity: '0',
+			transform: 'scale(0.9)',
+			transition: 'opacity 0.2s ease, transform 0.2s ease'
+		});
+		
+		// Style dialog elements
+		const h3 = dialog.querySelector('h3') as HTMLElement;
+		if (h3) Object.assign(h3.style, {
+			margin: '0 0 15px 0',
+			fontSize: '18px',
+			fontWeight: 'bold'
+		});
+		
+		const content = dialog.querySelector('.dialog-content') as HTMLElement;
+		if (content) Object.assign(content.style, {
+			marginBottom: '20px'
+		});
+		
+		const buttons = dialog.querySelector('.dialog-buttons') as HTMLElement;
+		if (buttons) Object.assign(buttons.style, {
+			display: 'flex',
+			justifyContent: 'flex-end',
+			gap: '10px'
+		});
+		
+		const cancelButton = dialog.querySelector('.cancel-button') as HTMLElement;
+		if (cancelButton) Object.assign(cancelButton.style, {
+			padding: '8px 16px',
+			backgroundColor: 'var(--color-bg-2, #f0f0f0)',
+			border: 'none',
+			borderRadius: '4px',
+			cursor: 'pointer'
+		});
+		
+		const confirmButton = dialog.querySelector('.confirm-button') as HTMLElement;
+		if (confirmButton) Object.assign(confirmButton.style, {
+			padding: '8px 16px',
+			backgroundColor: 'var(--color-theme-1, #aa22f5)',
+			color: 'white',
+			border: 'none',
+			borderRadius: '4px',
+			cursor: 'pointer'
+		});
+		
+		// Add to DOM
+		dialogOverlay.appendChild(dialog);
+		document.body.appendChild(dialogOverlay);
+		
+		// Add event listeners
+		cancelButton?.addEventListener('click', () => {
+			closeDialog(false);
+		});
+		
+		confirmButton?.addEventListener('click', () => {
+			closeDialog(true);
+		});
+		
+		// Function to close the dialog
+		function closeDialog(result: boolean) {
+			// Fade out
+			dialog.style.opacity = '0';
+			dialog.style.transform = 'scale(0.9)';
+			dialogOverlay.style.opacity = '0';
+			
+			// Remove from DOM after animation
+			setTimeout(() => {
+				if (document.body.contains(dialogOverlay)) {
+					document.body.removeChild(dialogOverlay);
+				}
+				resolve(result);
+			}, 200);
+		}
+		
+		// Show with animation
+		setTimeout(() => {
+			dialogOverlay.style.opacity = '1';
+			dialog.style.opacity = '1';
+			dialog.style.transform = 'scale(1)';
+		}, 10);
+	});
+}

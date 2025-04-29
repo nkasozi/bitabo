@@ -15,6 +15,8 @@ export interface Book {
 	dateAdded: number;
 	ribbonData?: string; // For 'NEW' or 'UPDATED' ribbons
 	ribbonExpiry?: number; // Timestamp when ribbon should expire
+	originalFile?: string; // Base64 encoded string of the original file for sync
+	originalCoverImage?: string; // Base64 encoded string of the original cover image for sync
 }
 
 export interface DummyBook {

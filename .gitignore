@@ -29,3 +29,9 @@ vite.config.ts.timestamp-*
 
 # Claude instructions - should be kept only locally
 CLAUDE.md
+
+# Dexie Cloud credentials
+dexie-cloud.key
+# Don't ignore the JSON config as it doesn't contain secrets
+# dexie-cloud.json
+/google-drive-sync

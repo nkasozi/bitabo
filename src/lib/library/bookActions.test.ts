@@ -3,7 +3,7 @@
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleOpenBook, handleRemoveBook, handleClearLibrary } from './bookActions';
-import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './database';
+import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './dexieDatabase'; // Using Dexie implementation
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification } from './ui';
 import type { Book } from './types';
@@ -14,7 +14,7 @@ vi.mock('$app/environment', () => ({
 	browser: true
 }));
 
-vi.mock('./database', () => ({
+vi.mock('./dexieDatabase', () => ({
 	saveBook: vi.fn().mockResolvedValue(true),
 	removeBookFromDB: vi.fn().mockResolvedValue(true),
 	clearAllBooksFromDB: vi.fn().mockResolvedValue(true)

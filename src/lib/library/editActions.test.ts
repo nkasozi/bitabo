@@ -10,11 +10,11 @@ import {
 	cancelEditingAction,
 	handleEditKeydownAction
 } from './editActions';
-import { saveBook } from './database';
+import { saveBook } from './dexieDatabase'; // Use Dexie implementation
 import type { Book } from './types';
 
 // Mock dependencies
-vi.mock('./database', () => ({
+vi.mock('./dexieDatabase', () => ({
 	saveBook: vi.fn().mockResolvedValue(true)
 }));
 

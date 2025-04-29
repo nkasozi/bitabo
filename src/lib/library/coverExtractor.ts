@@ -1,4 +1,3 @@
-import type { Book } from './types';
 import { browser } from '$app/environment';
 
 // Function to extract cover from e-book file

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { processFiles, handleDrop, handleDragOver, handleDragLeave } from './fileProcessing';
 import { extractCover } from './coverExtractor';
-import { saveBook } from './database';
+import { saveBook } from './dexieDatabase'; // Use Dexie implementation
 import {
 	showNotification,
 	showProgressNotification,
@@ -26,7 +26,7 @@ vi.mock('./coverExtractor', () => ({
 	extractCover: vi.fn()
 }));
 
-vi.mock('./database', () => ({
+vi.mock('./dexieDatabase', () => ({
 	saveBook: vi.fn()
 }));
 

@@ -3,7 +3,7 @@ import type { Book, ImportSummary } from './types';
 import { GOOGLE_CLIENT_ID, SUPPORTED_FORMATS } from './constants';
 import { showNotification,showProgressNotification, updateProgressNotification, closeNotification, showErrorNotification } from './ui';
 import { extractCover } from './coverExtractor'; // Needed for single file processing
-import { saveBook, type BookWithOptionalFile } from './database'; // Import BookWithOptionalFile if needed by saveBook
+import { saveBook, type BookWithOptionalFile } from './dexieDatabase'; // Use standard DB implementation
 import { hashString } from './utils'; // Needed for single file processing
 
 // --- Google Drive Types ---
