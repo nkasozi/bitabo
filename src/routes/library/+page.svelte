@@ -832,18 +832,15 @@
 </svelte:head>
 
 <div class="library-container">
-	<!-- Header -->
-	<h1 class="text-center text-2xl font-bold">Your Personal Library</h1>
-	<div class="epic-quote mb-4 text-center">
-		<p>One place to store your books,</p>
-		<p>One shelf to hold your books,</p>
-		<p>One search to find your books,</p>
-		<p>And in your browser read them all</p>
-	</div>
+
 
 	<div class="mb-4 flex flex-col justify-center">
-		<!-- Search Box (Visible when loaded) -->
+
 		{#if isLibraryLoaded}
+			<!-- Content Title Header -->
+			<h1 class="text-center text-2xl font-bold" style="margin-bottom: 1rem;">Your Personal Library</h1>
+
+			<!-- Main content -->
 			<div class="search-container fade-in mb-8">
 				<div class="search-input-wrapper">
 					<input
@@ -903,14 +900,16 @@
 		{/if}
 
 		<!-- Action Buttons -->
-		<div class="mb-4 flex justify-center">
-			<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
-				Add Books to Your Library
-			</button>
-			{#if isLibraryLoaded}
-				<button class="btn btn-danger fade-in mx-2" on:click={clearLibrary}> Clear All Books from Library </button>
-			{/if}
-		</div>
+		{#if isLibraryLoaded}
+			<div class="mb-4 flex justify-center">
+				<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
+					Add Books to Your Library
+				</button>
+				<button class="btn btn-danger fade-in mx-2" on:click={clearLibrary}>
+					Clear All Books from Library
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Upload Modal -->
@@ -1211,6 +1210,21 @@
 				{/if}
 			</div>
 		{:else}
+			<!-- Header -->
+			<h1 class="text-center text-2xl font-bold">Your Personal Library</h1>
+			<div class="epic-quote mb-4 text-center">
+				<p>One place to store your books,</p>
+				<p>One shelf to hold your books,</p>
+				<p>One search to find your books,</p>
+				<p>And in your browser read them all</p>
+			</div>
+
+			<div class="mb-4 flex justify-center">
+				<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
+					Add Books to Your Library
+				</button>
+			</div>
+
 			<!-- Empty Library State -->
 			<div bind:this={emptyBookshelf} class="coverflow-container fade-in">
 				<!-- Dummy books added dynamically -->
