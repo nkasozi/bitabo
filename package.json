@@ -53,6 +53,7 @@
 		"@uppy/google-drive": "^4.3.1",
 		"@vercel/analytics": "^1.5.0",
 		"@vercel/speed-insights": "^1.2.0",
+		"dexie": "^4.0.11",
 		"fs-extra": "^11.3.0",
 		"register-service-worker": "^1.7.2"
 	}
