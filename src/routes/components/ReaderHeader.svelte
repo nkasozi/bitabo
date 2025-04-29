@@ -314,6 +314,7 @@
         box-sizing: border-box;
         position: fixed;
         z-index: 10;
+        margin-top: 0.5dvh;
         display: flex;
         align-items: center;
         justify-content: space-between;
