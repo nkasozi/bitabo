@@ -553,7 +553,7 @@
 		border-radius: 6px;
 		background: none;
 		border: 0;
-		color: GrayText;
+		color: white;
 		flex-shrink: 0;
 		cursor: pointer; /* Ensure buttons look clickable */
 		display: flex; /* Align icons properly */
