@@ -311,22 +311,16 @@
 <style>
     /* Header toolbar */
     .header-bar {
-        box-sizing: border-box;
-        position: fixed;
-        z-index: 10;
-        margin-top: calc(env(safe-area-inset-top, 0px) + 0.5dvh);;
         display: flex;
-        align-items: center;
         justify-content: space-between;
-        width: 100%;
-        height: 48px;
-        padding: 6px 12px;
-        background-color: var(--color-bg-1, #ffffff);
-        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-        top: 0;
-        left: 0;
-        visibility: visible;
-        opacity: 0.95;
+        align-items: center;
+        margin-top: calc(env(safe-area-inset-top, 0px) + 0.5dvh);;
+        padding: 1rem;
+        background-color: var(--color-header-bg);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        position: relative;
+        z-index: 10;
+        transition: background-color 0.3s ease;
     }
 
     .header-left {
