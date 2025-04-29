@@ -99,7 +99,8 @@
 		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--color-header-logo);
-		margin: 0;
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
 		transition: color 0.3s ease;
 	}
 
