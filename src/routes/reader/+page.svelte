@@ -240,7 +240,7 @@
 </script>
 
 <!-- Book content container -->
-<div id="ebook-container" class="reader-container" style="margin-top: 5dvh;">
+<div id="ebook-container" class="reader-container">
 	<!-- Reader content will be injected here by Foliate/createReader -->
 </div>
 
@@ -509,9 +509,8 @@
 	/* Book content container (keep existing) */
 	.reader-container {
 		width: 100%;
-		height: calc(100dvh - 96px); /* 48px for header + 48px for nav bar */
+		height: calc(100dvh - 120px); /* 48px for header + 48px for nav bar */
 		overflow: hidden;
-		margin-top: 3rem; /* Matches header height */
 		position: relative; /* Needed for absolute positioning inside if any */
 		background-color: var(--color-bg-0, #ffffff); /* Default background */
 	}
@@ -523,7 +522,6 @@
 	.nav-bar {
 		box-sizing: border-box;
 		position: fixed;
-		z-index: 10;
 		bottom: 0;
 		left: 0;
 		width: 100%;
