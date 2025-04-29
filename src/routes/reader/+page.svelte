@@ -240,7 +240,7 @@
 </script>
 
 <!-- Book content container -->
-<div id="ebook-container" class="reader-container" style="margin-top: 1.5rem;">
+<div id="ebook-container" class="reader-container" style="margin-top: 5dvh;">
 	<!-- Reader content will be injected here by Foliate/createReader -->
 </div>
 
