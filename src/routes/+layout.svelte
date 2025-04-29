@@ -95,7 +95,7 @@
 	.app {
 		display: flex;
 		flex-direction: column;
-		min-height: 100vh;
+		min-height: 100dvh;
 	}
 
 	main {
@@ -112,7 +112,7 @@
 		margin: 0 !important;
 		max-width: 100% !important;
 		width: 100% !important;
-		height: 100vh !important;
+		height: 100dvh !important;
 	}
 
 	footer {
@@ -156,8 +156,8 @@
 	
 	/* Reader page styles */
 	:global(body.reader-page) {
-		min-height: 100vh;
-		max-height: 100vh;
+		min-height: 100dvh;
+		max-height: 100dvh;
 		overflow: hidden;
 	}
 </style>
