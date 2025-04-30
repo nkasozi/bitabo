@@ -8,7 +8,6 @@
 
 .empty-library-container::before,
 .empty-library-container::after {
-    content: "";
     position: absolute;
     top: 0;
     width: 50%;
@@ -60,7 +59,6 @@
 }
 
 .empty-library-content::before {
-    content: "";
     position: absolute;
     top: 0;
     bottom: 0;

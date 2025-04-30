@@ -1518,18 +1518,7 @@
         transition: all 0.8s ease;
         border-top: grey solid thin;
     }
-
-    /* Hardcover positioning refinements */
-    :global(.hardcover_front li:first-child) {
-        will-change: transform;
-        cursor: default;
-        -webkit-user-select: none;
-        -moz-user-select: none;
-        user-select: none;
-        transform: translateZ(2px);
-        border-radius: 5px;
-        -webkit-box-reflect: below 5px linear-gradient(to bottom, rgba(0, 0, 0, 0.0) 0%, rgba(0, 0, 0, 0.4) 40%);
-    }
+		
 
     :global(.hardcover_front li:last-child) {
         will-change: transform;
