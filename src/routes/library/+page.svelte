@@ -1,9 +1,10 @@
 <script lang="ts">
-	// console.log('[Script Start] +page.svelte script executing...'); // Removed log
+
 
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { browser } from '$app/environment';
 	import { debounce } from '$lib/library/utils'; // Import debounce
+	import PWAInstallPrompt from '$lib/components/PWAInstallPrompt.svelte';
 
 	// Import types and constants
 	import type { Book, DummyBook, CoverflowInstance, ImportSummary } from '$lib/library/types';
@@ -830,6 +831,8 @@
 		rel="stylesheet"
 	/>
 </svelte:head>
+
+<PWAInstallPrompt />
 
 <div class="library-container">
 

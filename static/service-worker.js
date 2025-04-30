@@ -936,62 +936,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Network-first strategy for HTML files
-  if (event.request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // Cache the latest version
-          let responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
-          });
-          return response;
-        })
-        .catch(() => {
-          // If network fails, try cache
-          return caches.match(event.request).then(cachedResponse => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            // If not in cache, try the root page as fallback
-            return caches.match('/');
-          });
-        })
-    );
-    return;
-  }
-  
-  // Cache-first strategy for assets
-  if (
-    event.request.url.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/)
-  ) {
-    event.respondWith(
-      caches.match(event.request).then(cachedResponse => {
-        if (cachedResponse) {
-          // Return from cache
-          return cachedResponse;
-        }
-        // Fetch from network, then cache
-        return fetch(event.request).then(response => {
-          if (response.ok) {
-            let responseClone = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-  
-  // Network first, falling back to cache for other requests
+  // Use network-first strategy for all requests
+  // This ensures we're only using cached content when offline
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Only cache successful responses
+        // Cache the latest version if it's a successful response
         if (response.ok) {
           let responseClone = response.clone();
           caches.open(CACHE_NAME).then(cache => {
@@ -1001,9 +951,22 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => {
-        // Fall back to cache
+        // If network fails, fall back to cache
+        debugLog('Network request failed, falling back to cache', { url: event.request.url });
         return caches.match(event.request).then(cachedResponse => {
-          return cachedResponse || Promise.reject('fetch-failed');
+          if (cachedResponse) {
+            debugLog('Found response in cache', { url: event.request.url });
+            return cachedResponse;
+          }
+          
+          // If it's an HTML request and we don't have it cached, try the root page as fallback
+          if (event.request.headers.get('accept')?.includes('text/html')) {
+            debugLog('HTML request not in cache, trying root page fallback', { url: event.request.url });
+            return caches.match('/');
+          }
+          
+          debugLog('No cached response found', { url: event.request.url });
+          return Promise.reject('network-error');
         });
       })
   );
