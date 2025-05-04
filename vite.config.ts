@@ -1,3 +1,4 @@
+import { sentrySvelteKit } from "@sentry/sveltekit";
 // vite.config.ts
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -36,44 +37,43 @@ const NODE_BUILTINS = [
 ];
 
 export default defineConfig({
-	plugins: [
-		sveltekit(),
-		
-		// Custom plugin to preserve external files
-		{
-			name: 'preserve-foliate-js',
-			enforce: 'pre',
-			
-			// Ensure these paths are treated as external
-			resolveId(id) {
-				if (id.includes('foliate-js/') || id.includes('reader.html') || (id.endsWith('.js') && id.includes('/ui/'))) {
-					return { id, external: true };
-				}
-				return null;
-			},
-			
-			// Copy essential files to build directory
-			closeBundle() {
-				console.log('Ensuring foliate-js files are properly preserved');
-			}
-		},
-		
-		// Handle index.html redirects
-		{
-			name: 'custom-middleware',
-			configureServer(server: ViteDevServer) {
-				server.middlewares.use((req: any, res: any, next: () => void) => {
-					if (req.url === '/index.html') {
-						console.log('Redirecting /index.html request to /');
-						res.writeHead(301, { Location: '/' });
-						res.end();
-						return;
-					}
-					next();
-				});
-			}
-		}
-	],
+	plugins: [sentrySvelteKit({
+        sourceMapsUploadOptions: {
+            org: "readstash",
+            project: "javascript-sveltekit"
+        }
+    }), sveltekit(), // Custom plugin to preserve external files
+    {
+        name: 'preserve-foliate-js',
+        enforce: 'pre',
+        
+        // Ensure these paths are treated as external
+        resolveId(id) {
+            if (id.includes('foliate-js/') || id.includes('reader.html') || (id.endsWith('.js') && id.includes('/ui/'))) {
+                return { id, external: true };
+            }
+            return null;
+        },
+        
+        // Copy essential files to build directory
+        closeBundle() {
+            console.log('Ensuring foliate-js files are properly preserved');
+        }
+    }, // Handle index.html redirects
+    {
+        name: 'custom-middleware',
+        configureServer(server: ViteDevServer) {
+            server.middlewares.use((req: any, res: any, next: () => void) => {
+                if (req.url === '/index.html') {
+                    console.log('Redirecting /index.html request to /');
+                    res.writeHead(301, { Location: '/' });
+                    res.end();
+                    return;
+                }
+                next();
+            });
+        }
+    }],
 
 	// Server configuration for development
 	server: {

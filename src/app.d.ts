@@ -8,6 +8,13 @@ declare global {
 			ctx: ExecutionContext;
 		}
 	}
+
+	// Add types for the PWA install functionality
+	interface Window {
+		deferredInstallPrompt: any;
+		installAttempted?: boolean;
+		showPrompt?: boolean;
+	}
 }
 
 export {};

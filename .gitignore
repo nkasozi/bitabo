@@ -35,3 +35,6 @@ dexie-cloud.key
 # Don't ignore the JSON config as it doesn't contain secrets
 # dexie-cloud.json
 /google-drive-sync
+
+# Sentry Config File
+.env.sentry-build-plugin
