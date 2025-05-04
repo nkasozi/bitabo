@@ -7,7 +7,6 @@ import { displayErrorNotification } from './ui';
 import { initializeReaderInteractivity } from './ui';
 
 // Import from constants.ts instead of defining here
-import { DB_NAME, BOOKS_STORE } from '$lib/library/constants';
 import { db } from '$lib/library/dexieDatabase';
 
 const DEFAULT_FONT_SIZE = 18;
@@ -351,7 +350,6 @@ export async function loadBookIntoReader(
                 // Revoke object URL if created
                 if (coverObjectUrl) {
                     console.log(`[DEBUG] Revoking cover object URL: ${coverObjectUrl}`);
-                    URL.revokeObjectURL(coverObjectUrl);
                     coverObjectUrl = null; // Clear the reference
                 }
             }
@@ -364,10 +362,6 @@ export async function loadBookIntoReader(
         // Ensure cleanup is attempted if partially successful
          if (interactivityCleanup) {
             try { interactivityCleanup(); } catch (e) { console.error("Error during error cleanup:", e); }
-         }
-         // Revoke URL if created before error
-         if (coverObjectUrl) {
-            try { URL.revokeObjectURL(coverObjectUrl); } catch (e) { console.error("Error revoking URL during error cleanup:", e); }
          }
         return { success: false };
     }

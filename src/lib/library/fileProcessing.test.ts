@@ -72,7 +72,6 @@ describe('File Processing', () => {
 
 		// Mock URL methods
 		global.URL.createObjectURL = vi.fn().mockReturnValue('blob:test-url');
-		global.URL.revokeObjectURL = vi.fn();
 
 		// Default behavior for extractCover
 		vi.mocked(extractCover).mockResolvedValue({
@@ -358,9 +357,6 @@ describe('File Processing', () => {
 			// Check summary
 			expect(importSummary.failed).toBe(1);
 			expect(importSummary.failedBooks).toContain(testFiles[1].name);
-
-			// Should revoke unused blob URL
-			expect(URL.revokeObjectURL).toHaveBeenCalled();
 		});
 	});
 

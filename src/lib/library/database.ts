@@ -235,10 +235,6 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 			// Revoke previous blob URL if it exists and is a blob URL (prevent memory leaks)
 			// Note: Be cautious with revoking if the URL might still be in use elsewhere immediately after load.
 			// Consider managing Blob URL lifecycles more carefully if issues arise.
-			if (coverUrl && coverUrl.startsWith('blob:')) {
-				console.log(`[DB processBookAfterLoad] Revoking old blob URL: ${coverUrl}`);
-				URL.revokeObjectURL(coverUrl);
-			}
 			coverUrl = URL.createObjectURL(bookFromDB.coverBlob);
 			console.log(
 				`[DB processBookAfterLoad] Regenerated blob URL for book "${bookFromDB.title}": ${coverUrl}`

@@ -199,7 +199,7 @@ async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Om
 	return finalBookToStore;
 }
 
-// Helper to process book data after loading from DB (regenerates blob URL, uses stored File)
+// Helper to process book data after loading from DB (always recreates blobs from base64 data)
 function processBookAfterLoad(bookFromDB: any): Book | null {
 	// Return null if processing fails
 	console.log(
@@ -210,13 +210,13 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 		return null;
 	}
 
-	let coverUrl = bookFromDB.coverUrl; // Keep original URL unless blob exists
-	let coverBlob = bookFromDB.coverBlob;
+	let coverUrl = '/placeholder-cover.png'; // Default to placeholder
+	let coverBlob = null;
 
-	// Check if we have a base64 cover but no coverBlob
-	if (!coverBlob && bookFromDB.originalCoverImage) {
+	// Always recreate cover blob from base64 if available
+	if (bookFromDB.originalCoverImage) {
 		try {
-			console.log(`[DexieDB processBookAfterLoad] Restoring cover from base64 for "${bookFromDB.title}"`);
+			console.log(`[DexieDB processBookAfterLoad] Creating cover blob from base64 for "${bookFromDB.title}"`);
 			const binaryString = atob(bookFromDB.originalCoverImage);
 			const bytes = new Uint8Array(binaryString.length);
 			for (let i = 0; i < binaryString.length; i++) {
@@ -225,90 +225,64 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 			
 			// Create a blob from the binary data
 			coverBlob = new Blob([bytes.buffer], { type: 'image/jpeg' }); // Assume JPEG for compatibility
-			bookFromDB.coverBlob = coverBlob;
-			console.log(`[DexieDB processBookAfterLoad] Successfully restored cover from base64 for "${bookFromDB.title}"`);
-		} catch (error) {
-			console.error(`[DexieDB processBookAfterLoad] Error restoring cover from base64 for "${bookFromDB.title}":`, error);
-		}
-	}
-
-	// Regenerate blob URL from stored coverBlob
-	if (coverBlob instanceof Blob) {
-		try {
-			// Revoke previous blob URL if it exists and is a blob URL (prevent memory leaks)
-			if (coverUrl && coverUrl.startsWith('blob:')) {
-				console.log(`[DexieDB processBookAfterLoad] Revoking old blob URL: ${coverUrl}`);
-				URL.revokeObjectURL(coverUrl);
-			}
+			
+			// Generate a fresh blob URL
 			coverUrl = URL.createObjectURL(coverBlob);
-			console.log(
-				`[DexieDB processBookAfterLoad] Regenerated blob URL for book "${bookFromDB.title}": ${coverUrl}`
-			);
+			console.log(`[DexieDB processBookAfterLoad] Successfully created cover blob and URL from base64 for "${bookFromDB.title}"`);
 		} catch (error) {
-			console.error(
-				`[DexieDB processBookAfterLoad] Error regenerating blob URL for "${bookFromDB.title}":`,
-				error
-			);
-			coverUrl = '/placeholder-cover.png'; // Fallback
+			console.error(`[DexieDB processBookAfterLoad] Error creating cover from base64 for "${bookFromDB.title}":`, error);
+			coverUrl = '/placeholder-cover.png'; // Fallback to placeholder on error
 		}
-	} else if (!coverUrl) {
-		// If no URL and no blob, use placeholder
-		console.log(
-			`[DexieDB processBookAfterLoad] Using placeholder for "${bookFromDB.title}" as no coverUrl or coverBlob found`
-		);
-		coverUrl = '/placeholder-cover.png';
+	} else if (bookFromDB.coverBlob instanceof Blob) {
+		// Fallback to using stored coverBlob if no base64 is available
+		try {
+			coverBlob = bookFromDB.coverBlob;
+			coverUrl = URL.createObjectURL(coverBlob);
+			console.log(`[DexieDB processBookAfterLoad] Using stored coverBlob for "${bookFromDB.title}"`);
+		} catch (error) {
+			console.error(`[DexieDB processBookAfterLoad] Error creating URL from stored coverBlob for "${bookFromDB.title}":`, error);
+			coverUrl = '/placeholder-cover.png';
+		}
+	} else if (bookFromDB.coverUrl && !bookFromDB.coverUrl.startsWith('blob:')) {
+		// Use existing static URL if it's not a blob URL
+		coverUrl = bookFromDB.coverUrl;
+		console.log(`[DexieDB processBookAfterLoad] Using existing static coverUrl for "${bookFromDB.title}": ${coverUrl}`);
 	} else {
-		console.log(
-			`[DexieDB processBookAfterLoad] Using existing coverUrl for "${bookFromDB.title}": ${coverUrl}`
-		);
+		console.log(`[DexieDB processBookAfterLoad] Using placeholder for "${bookFromDB.title}" - no cover data available`);
 	}
 
-	// Use the File/Blob object directly from the database record
-	let file: File | Blob | undefined = undefined; // Type can be File or Blob
-	if (bookFromDB.file instanceof File || bookFromDB.file instanceof Blob) {
-		file = bookFromDB.file;
-		console.log(
-			`[DexieDB processBookAfterLoad] Using stored File/Blob object for ${bookFromDB.fileName || bookFromDB.id}`
-		);
-		// Verify size - helps catch corruption where the object exists but content is lost
-		if (file?.size !== bookFromDB.fileSize) {
-			console.warn(
-				`[DexieDB processBookAfterLoad] Mismatch between stored file size (${bookFromDB.fileSize}) and retrieved Blob/File size (${file?.size}) for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
-			);
-		} else if (file?.size === 0 && bookFromDB.fileSize > 0) {
-			console.warn(
-				`[DexieDB processBookAfterLoad] Retrieved Blob/File size is 0, but stored size was ${bookFromDB.fileSize} for ${bookFromDB.fileName || bookFromDB.id}. File might be corrupted.`
-			);
-		}
-	} else if (bookFromDB.originalFile) {
-		// Try to restore the file from base64
+	// Always create a new File object from base64 if available
+	let file: File | Blob | undefined = undefined;
+	if (bookFromDB.originalFile) {
 		try {
-			console.log(`[DexieDB processBookAfterLoad] Restoring file from base64 for "${bookFromDB.title}"`);
+			console.log(`[DexieDB processBookAfterLoad] Creating file from base64 for "${bookFromDB.title}"`);
 			const binaryString = atob(bookFromDB.originalFile);
 			const bytes = new Uint8Array(binaryString.length);
 			for (let i = 0; i < binaryString.length; i++) {
 				bytes[i] = binaryString.charCodeAt(i);
 			}
 			
-			// Create a File from the binary data
+			// Create a File from the binary data if we have a filename
 			if (bookFromDB.fileName) {
 				file = new File([bytes.buffer], bookFromDB.fileName, {
 					type: bookFromDB.fileType || 'application/octet-stream',
 					lastModified: bookFromDB.lastModified || Date.now()
 				});
-				console.log(`[DexieDB processBookAfterLoad] Successfully restored file from base64 for "${bookFromDB.title}"`);
+				console.log(`[DexieDB processBookAfterLoad] Successfully created File from base64 for "${bookFromDB.title}"`);
 			} else {
 				// If no filename, create a Blob instead
 				file = new Blob([bytes.buffer], { type: bookFromDB.fileType || 'application/octet-stream' });
-				console.log(`[DexieDB processBookAfterLoad] Restored file as Blob (no filename) for "${bookFromDB.title}"`);
+				console.log(`[DexieDB processBookAfterLoad] Created Blob (no filename) from base64 for "${bookFromDB.title}"`);
 			}
 		} catch (error) {
-			console.error(`[DexieDB processBookAfterLoad] Error restoring file from base64 for "${bookFromDB.title}":`, error);
+			console.error(`[DexieDB processBookAfterLoad] Error creating file from base64 for "${bookFromDB.title}":`, error);
 		}
+	} else if (bookFromDB.file instanceof File || bookFromDB.file instanceof Blob) {
+		// Fallback to using stored file if no base64 is available
+		file = bookFromDB.file;
+		console.log(`[DexieDB processBookAfterLoad] Using stored File/Blob object for "${bookFromDB.title}"`);
 	} else {
-		console.warn(
-			`[DexieDB processBookAfterLoad] No valid File object or base64 backup found for book ID ${bookFromDB.id}. Cannot open book content.`
-		);
+		console.warn(`[DexieDB processBookAfterLoad] No file data available for "${bookFromDB.title}" - book won't be readable`);
 	}
 
 	// Explicitly type the object being returned
@@ -318,8 +292,8 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 		title: bookFromDB.title ?? 'Untitled Book',
 		author: bookFromDB.author ?? 'Unknown Author',
 		coverUrl: coverUrl,
-		coverBlob: coverBlob, // Updated coverBlob (possibly restored from base64)
-		file: file as File | undefined, // Cast to File | undefined for compatibility with the Book type
+		coverBlob: coverBlob, // The newly created coverBlob from base64
+		file: file as File | undefined, // The newly created File or Blob from base64
 		fileName: bookFromDB.fileName,
 		fileType: bookFromDB.fileType,
 		fileSize: bookFromDB.fileSize,
