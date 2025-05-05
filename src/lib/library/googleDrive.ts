@@ -315,7 +315,7 @@ export async function initGoogleDrivePicker(
 		if (!gapiInitialized) throw new Error("GAPI picker feature failed to load.");
 
 		let gisInitialized = false; // Flag to track GIS init status
-		const readOnlyScope = 'https://www.googleapis.com/auth/drive.readonly';
+		const readOnlyScope = 'https://www.googleapis.com/auth/drive.file';
 
 		const tokenCallback = (tokenResponse: GoogleTokenResponse) => {
 			if (tokenResponse && tokenResponse.access_token) {

@@ -342,10 +342,6 @@ export async function saveBook(bookData: BookWithOptionalFile): Promise<boolean>
 
 // Load all books from Dexie.js database
 export async function loadLibraryStateFromDB(): Promise<{ books: Book[]; loaded: boolean }> {
-	if (!browser) {
-		console.log('[DexieDB loadLibraryStateFromDB] Skipping: Not in browser.');
-		return { books: [], loaded: false };
-	}
 	console.log('[DexieDB loadLibraryStateFromDB] Function execution started.');
 
 	try {
@@ -382,7 +378,6 @@ export async function loadLibraryStateFromDB(): Promise<{ books: Book[]; loaded:
 
 // Remove a book from Dexie.js database by ID
 export async function removeBookFromDatabaseById(bookId: string): Promise<boolean> {
-	if (!browser || !bookId) return false;
 	try {
 		console.log(`[DexieDB] Deleting book with ID ${bookId} from DB`);
 		await db.books.delete(bookId);
@@ -396,7 +391,6 @@ export async function removeBookFromDatabaseById(bookId: string): Promise<boolea
 
 // Returns a book from Dexie.js database by ID
 export async function getBookFromDatabaseById(bookId: string): Promise<Book | undefined> {
-	if (!browser || !bookId) return undefined;
 	try {
 		console.log(`[DexieDB] Retrieving book with ID ${bookId} from DB`);
 		let book = await db.books.get(bookId);
@@ -410,7 +404,7 @@ export async function getBookFromDatabaseById(bookId: string): Promise<Book | un
 
 // Save all books (e.g., on destroy)
 export async function saveAllBooks(libraryBooks: Book[]): Promise<boolean> {
-	if (!browser || !libraryBooks || libraryBooks.length === 0) return false;
+	if (!libraryBooks || libraryBooks.length === 0) return false;
 	console.log('[DexieDB] Saving all books to database:', libraryBooks.length);
 	
 	try {
@@ -453,8 +447,6 @@ export async function saveAllBooks(libraryBooks: Book[]): Promise<boolean> {
 
 // Clear all books from Dexie.js database
 export async function clearAllBooksFromDB(): Promise<boolean> {
-	if (!browser) return false;
-
 	try {
 		// Only clear books for the current user
 		await db.books.clear();
@@ -468,8 +460,6 @@ export async function clearAllBooksFromDB(): Promise<boolean> {
 
 // Initialize Dexie Database
 export async function initializeDexieDatabase(): Promise<void> {
-	if (!browser) return;
-	
 	try {
 		console.log('[DexieDB] Dexie database initialized successfully');
 	} catch (error) {
