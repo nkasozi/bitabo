@@ -1,7 +1,7 @@
 
 import { browser } from '$app/environment';
 import type { Book } from './types';
-import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
+import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
 import { syncWithGoogleDrive } from './googleDriveSync'; // Google Drive sync
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification } from './ui';
@@ -107,7 +107,7 @@ export async function handleRemoveBook(
         const originalIndex = selectedBookIndex; // Store index before removal
 
         // 1. Remove from database
-        const removedFromDB = await removeBookFromDB(bookId);
+        const removedFromDB = await removeBookFromDatabaseById(bookId);
         if (!removedFromDB) {
             showErrorNotification('Error Removing Book', bookToRemove.title, 'Could not remove book from the database.');
             return false; // Stop if DB removal fails

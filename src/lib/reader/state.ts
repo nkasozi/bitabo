@@ -7,7 +7,7 @@ import { displayErrorNotification } from './ui';
 import { initializeReaderInteractivity } from './ui';
 
 // Import from constants.ts instead of defining here
-import { db } from '$lib/library/dexieDatabase';
+import { getBookFromDatabaseById, saveBook } from '$lib/library/dexieDatabase';
 
 const DEFAULT_FONT_SIZE = 18;
 const MIN_FONT_SIZE = 10;
@@ -73,7 +73,7 @@ export async function saveReadingProgress(
 			console.log(`[DEBUG] Dexie save attempt ${retryAttempt + 1}`);
 			
 			// Get the book from database
-			const book = await db.books.get(bookId);
+			const book = await getBookFromDatabaseById(bookId);
 			
 			if (!book) {
 				console.warn(`[DEBUG] Book ${bookId} not found during Dexie save attempt.`);
@@ -86,7 +86,7 @@ export async function saveReadingProgress(
 			book.lastAccessed = Date.now();
 			
 			// Save the updated book
-			await db.books.put(book);
+			await saveBook(book);
 			
 			console.log(
 				`[DEBUG] Dexie put successful for book ${bookId}. Progress: ${progress}, Font size: ${fontSize}px`
@@ -230,7 +230,7 @@ export async function loadBookIntoReader(
                 console.log(`[DEBUG] Fetching book data from Dexie (attempt ${retryAttempt + 1})`);
                 
                 // Get the book from Dexie database
-                const book = await db.books.get(bookId);
+                const book = await getBookFromDatabaseById(bookId);
                 
                 if (book) {
                     console.log(`[DEBUG] Book data found: ${book.title} by ${book.author}`);

@@ -3,7 +3,7 @@
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleOpenBook, handleRemoveBook, handleClearLibrary } from './bookActions';
-import { saveBook, removeBookFromDB, clearAllBooksFromDB } from './dexieDatabase'; // Using Dexie implementation
+import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase'; // Using Dexie implementation
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification } from './ui';
 import type { Book } from './types';
@@ -157,7 +157,7 @@ describe('Book Actions', () => {
 			// Assert
 			expect(result).toBe(true);
 			expect(window.confirm).toHaveBeenCalled();
-			expect(removeBookFromDB).toHaveBeenCalledWith('1');
+			expect(removeBookFromDatabaseById).toHaveBeenCalledWith('1');
 			expect(deleteBookInSW).toHaveBeenCalledWith('1');
 			expect(showNotification).toHaveBeenCalled();
 			
@@ -179,7 +179,7 @@ describe('Book Actions', () => {
 			// Assert
 			expect(result).toBe(false);
 			expect(window.confirm).toHaveBeenCalled();
-			expect(removeBookFromDB).not.toHaveBeenCalled();
+			expect(removeBookFromDatabaseById).not.toHaveBeenCalled();
 			expect(mockUpdateCallback).not.toHaveBeenCalled();
 		});
 
@@ -192,14 +192,14 @@ describe('Book Actions', () => {
 			
 			// Assert
 			expect(result).toBe(false);
-			expect(removeBookFromDB).not.toHaveBeenCalled();
+			expect(removeBookFromDatabaseById).not.toHaveBeenCalled();
 			expect(mockUpdateCallback).not.toHaveBeenCalled();
 		});
 
 		it('should show error notification if database removal fails', async () => {
 			// Arrange
 			const mockUpdateCallback = vi.fn();
-			(removeBookFromDB as any).mockResolvedValueOnce(false);
+			(removeBookFromDatabaseById as any).mockResolvedValueOnce(false);
 			
 			// Act
 			const result = await handleRemoveBook(0, libraryBooks, mockUpdateCallback);

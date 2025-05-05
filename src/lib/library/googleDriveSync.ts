@@ -4,12 +4,10 @@ import { GOOGLE_CLIENT_ID, GDRIVE_SYNC_INTERVAL } from './constants';
 import { 
 	showNotification, 
 	showProgressNotification, 
-	updateProgressNotification, 
-	closeNotification, 
+	closeNotification,
 	showErrorNotification,
 	showConfirmDialog
 } from './ui';
-import { db } from './dexieDatabase';
 import { saveAllBooks, loadLibraryStateFromDB } from './dexieDatabase';
 
 // --- Types for Google Drive Sync ---

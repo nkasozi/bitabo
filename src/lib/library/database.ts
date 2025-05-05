@@ -399,7 +399,7 @@ export async function loadLibraryStateFromDB(
 }
 
 // Remove a book from IndexedDB by ID
-export async function removeBookFromDB(
+export async function removeBookFromDatabaseById(
 	bookId: string,
 	openDBFunc: () => Promise<IDBDatabase> = openDatabase
 ): Promise<boolean> {
@@ -426,6 +426,96 @@ export async function removeBookFromDB(
 	} catch (error) {
 		console.error(`[DB] Error deleting book with ID ${bookId} from DB:`, error);
 		return false;
+	}
+}
+
+
+// Helper type for clearer event target access in IDB requests
+type IDBRequestEventTarget<T> = EventTarget & { result: T | undefined; error?: DOMException };
+
+/**
+ * Retrieves a book from the IndexedDB database by its ID.
+ * Follows clean code principles: clear intent, minimal solution, type safety.
+ * Uses readonly transaction for reads. Handles 'not found' cases gracefully.
+ *
+ * @param bookId - The unique identifier of the book to retrieve.
+ * @param openDatabaseFunction - An async function that returns an open IDBDatabase instance. Defaults to a predefined openDatabase function.
+ * @returns A Promise that resolves with the Book object if found, otherwise resolves with undefined.
+ * Rejects only on unexpected database/transaction errors.
+ */
+export async function getBookFromDatabaseById(
+	bookId: string,
+	openDatabaseFunction: () => Promise<IDBDatabase> = openDatabase
+): Promise<Book | undefined> {
+	// 1. Pre-conditions and Environment Checks
+	if (typeof window === 'undefined' || !window.indexedDB) {
+		console.warn('[DB] IndexedDB environment not available.');
+		return undefined;
+	}
+	if (!bookId) {
+		console.warn('[DB] Cannot retrieve book: No valid bookId provided.');
+		return undefined;
+	}
+
+	// 2. Core Logic: Database Interaction wrapped in a Promise
+	try {
+		console.log(`[DB] Attempting to retrieve book with ID: ${bookId}`);
+		const database_connection: IDBDatabase = await openDatabaseFunction();
+
+		// Create a readonly transaction for reading data
+		const transaction: IDBTransaction = database_connection.transaction([BOOKS_STORE], 'readonly');
+		const objectStore: IDBObjectStore = transaction.objectStore(BOOKS_STORE);
+
+		// Promisify the IDBRequest for async/await usage
+		const retrieved_book_record: Book | undefined = await new Promise<Book | undefined>((resolve, reject) => {
+			const get_request: IDBRequest = objectStore.get(bookId);
+
+			// Handle successful retrieval (or not found)
+			get_request.onsuccess = (event: Event) => {
+				// Use helper type for clarity
+				const target = event.target as IDBRequestEventTarget<Book>;
+				const result_data = target.result; // This will be the Book object or undefined
+
+				if (result_data) {
+					console.log(`[DB] Successfully retrieved book with ID: ${bookId}`);
+				} else {
+					// This is not an error, just means the record doesn't exist
+					console.log(`[DB] No book found with ID: ${bookId}`);
+				}
+				resolve(result_data); // Resolve with the Book or undefined
+			};
+
+			// Handle errors during the get operation
+			get_request.onerror = (event: Event) => {
+				const target = event.target as IDBRequestEventTarget<Book>;
+				const error_details = target.error;
+				console.error(`[DB] Error retrieving book with ID ${bookId} from store '${BOOKS_STORE}':`, error_details);
+				reject(error_details); // Reject the promise on request error
+			};
+
+			// Optional: More robust error handling by listening to transaction errors/abort
+			transaction.onerror = (event: Event) => {
+				console.error(`[DB] Transaction error while trying to retrieve book ID ${bookId}:`, (event.target as IDBTransaction).error);
+				// The request.onerror usually handles specific errors, but this catches broader transaction issues.
+				// Ensure rejection happens if request.onerror didn't fire.
+				reject((event.target as IDBTransaction).error ?? new Error('IndexedDB Transaction Error'));
+			};
+			transaction.onabort = (event: Event) => {
+				console.warn(`[DB] Transaction aborted while trying to retrieve book ID ${bookId}:`, (event.target as IDBTransaction).error);
+				// Aborts often happen after an error, ensure rejection.
+				reject((event.target as IDBTransaction).error ?? new Error('IndexedDB Transaction Aborted'));
+			}
+
+		}); // End of Promise wrapper
+
+		// 3. Return the result from the resolved promise
+		return retrieved_book_record;
+
+	} catch (outer_error) {
+		// Catch errors from openDatabaseFunction or unexpected errors during the process
+		console.error(`[DB] A critical error occurred during the getBookFromDatabaseById operation for ID ${bookId}:`, outer_error);
+		// According to the signature, return undefined for any failure scenario
+		return undefined;
 	}
 }
 

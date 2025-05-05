@@ -93,11 +93,14 @@ class BitaboDatabase extends Dexie {
 	}
 }
 
-// Create the database instance
-export const db = new BitaboDatabase();
+// Create the database instance...
+// don't export, keep it private...
+// other code shouldn't depend on dexie js directly
+// but ONLY through standard crud methods
+const db = new BitaboDatabase();
 
 // Helper to prepare book data for storage (removes File, fetches Blob)
-async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Omit<Book, 'file'>> {
+async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Book> {
 	const bookToStore: any = { ...bookData }; // Use 'any' temporarily for flexibility
 
 	// Fetch and store coverBlob if coverUrl is a blob URL
@@ -378,7 +381,7 @@ export async function loadLibraryStateFromDB(): Promise<{ books: Book[]; loaded:
 }
 
 // Remove a book from Dexie.js database by ID
-export async function removeBookFromDB(bookId: string): Promise<boolean> {
+export async function removeBookFromDatabaseById(bookId: string): Promise<boolean> {
 	if (!browser || !bookId) return false;
 	try {
 		console.log(`[DexieDB] Deleting book with ID ${bookId} from DB`);
@@ -388,6 +391,20 @@ export async function removeBookFromDB(bookId: string): Promise<boolean> {
 	} catch (error) {
 		console.error(`[DexieDB] Error deleting book with ID ${bookId} from DB:`, error);
 		return false;
+	}
+}
+
+// Returns a book from Dexie.js database by ID
+export async function getBookFromDatabaseById(bookId: string): Promise<Book | undefined> {
+	if (!browser || !bookId) return undefined;
+	try {
+		console.log(`[DexieDB] Retrieving book with ID ${bookId} from DB`);
+		let book = await db.books.get(bookId);
+		console.log(`[DexieDB] Book with ID ${bookId} retrieved successfully from DB`);
+		return book;
+	} catch (error) {
+		console.error(`[DexieDB] Error retrieving book with ID ${bookId} from DB:`, error);
+		return undefined;
 	}
 }
 
