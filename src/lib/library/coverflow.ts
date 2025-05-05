@@ -19,8 +19,12 @@ export class Coverflow implements CoverflowInstance {
 		scale: { active: number; inactive: number; };
 	};
 	touchStartX: number = 0;
+	touchStartY: number = 0;
 	touchStartTime: number = 0;
 	isSwiping: boolean = false;
+	isHorizontalSwipe: boolean = false;
+	swipeDirectionLocked: boolean = false;
+	readonly DIRECTION_THRESHOLD: number = 10; // Pixels to determine swipe direction
 	animationFrameId: number | null = null;
 	// Removed onSelectCallback
 
@@ -101,11 +105,11 @@ export class Coverflow implements CoverflowInstance {
 		console.log('[Coverflow] Destroying instance');
 		if (browser) {
 			window.removeEventListener('resize', this.handleResize);
-			 // Ensure touch listeners added by the new setupEventListeners are removed
-			this.container.removeEventListener('touchstart', this.handleTouchStart);
-			this.container.removeEventListener('touchmove', this.handleTouchMove);
-			this.container.removeEventListener('touchend', this.handleTouchEnd);
-			this.container.removeEventListener('touchcancel', this.handleTouchCancel); // Added touchcancel
+			 // Ensure touch listeners are removed with matching passive options
+			this.container.removeEventListener('touchstart', this.handleTouchStart, { passive: true });
+			this.container.removeEventListener('touchmove', this.handleTouchMove, { passive: false });
+			this.container.removeEventListener('touchend', this.handleTouchEnd, { passive: true });
+			this.container.removeEventListener('touchcancel', this.handleTouchCancel, { passive: true }); 
 		}
 		// Remove click/focus listeners from book elements
 		this.books.forEach(book => {
@@ -252,20 +256,27 @@ export class Coverflow implements CoverflowInstance {
 		}
 	};
 
-	// --- Touch Event Handlers (Matching Original Logic) ---
+	// --- Touch Event Handlers with Directional Detection ---
 	touchEndX: number = 0;
 	touchEndTime: number = 0;
 	swipeVelocity: number = 0;
 	swipeDistance: number = 0;
+	touchStartY: number = 0; // Track vertical position
+	touchCurrentY: number = 0; // Current Y position during move
+	swipeDirectionThreshold: number = 10; // Threshold to determine swipe direction (in px)
+	isHorizontalSwipe: boolean = false; // Flag to track if swipe is primarily horizontal
 
 	handleTouchStart = (e: TouchEvent) => {
 		if (this.animationFrameId) {
 			cancelAnimationFrame(this.animationFrameId);
 			this.animationFrameId = null;
 		}
+		// Track both X and Y coordinates
 		this.touchStartX = e.changedTouches[0].screenX;
+		this.touchStartY = e.changedTouches[0].screenY;
 		this.touchStartTime = Date.now();
 		this.isSwiping = true;
+		this.isHorizontalSwipe = false; // Reset direction flag
 		this.swipeVelocity = 0;
 		this.swipeDistance = 0;
 	};
@@ -273,58 +284,84 @@ export class Coverflow implements CoverflowInstance {
 	handleTouchMove = (e: TouchEvent) => {
 		if (!this.isSwiping) return;
 
-		// Prevent vertical scroll while swiping horizontally
-		e.preventDefault();
-
 		const touchCurrentX = e.changedTouches[0].screenX;
+		const touchCurrentY = e.changedTouches[0].screenY;
+		this.touchCurrentY = touchCurrentY; // Store current Y position
+		
+		// Calculate horizontal and vertical distances
 		this.swipeDistance = touchCurrentX - this.touchStartX;
+		const verticalDistance = touchCurrentY - this.touchStartY;
 
-		// Optional: Apply visual feedback during swipe (original had this)
-		const movePercent = Math.min(Math.abs(this.swipeDistance) / 150, 0.5);
-		const direction = this.swipeDistance < 0 ? 1 : -1;
+		// Determine if swipe is primarily horizontal or vertical
+		// Only set this flag once when movement exceeds threshold
+		if (!this.isHorizontalSwipe && (Math.abs(this.swipeDistance) > this.swipeDirectionThreshold || 
+		    Math.abs(verticalDistance) > this.swipeDirectionThreshold)) {
+			// If horizontal distance is greater than vertical distance, it's a horizontal swipe
+			this.isHorizontalSwipe = Math.abs(this.swipeDistance) > Math.abs(verticalDistance);
+		}
 
-		this.books.forEach((book, i) => {
-			if (book.style.display === 'none') return;
-			// Apply temporary transform only to visible books near the center for feedback
-			const offset = i - this.currentIndex;
-			if (Math.abs(offset) <= 2) { // Apply feedback to center and immediate neighbors
-				// Get current transform to preserve it
-				const currentTransform = book.style.transform;
-				// Apply temporary translation/rotation - Needs careful combination with existing transform
-				// This part is complex to replicate exactly without knowing the base transform state.
-				// Simplified approach: Just apply to the current book for now.
-				if (i === this.currentIndex) {
-					// This will overwrite the positionBooks transform temporarily
-					// book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
-					// A better approach might be needed if combining transforms is crucial.
+		// Only prevent default for horizontal swipes to allow vertical scrolling
+		if (this.isHorizontalSwipe) {
+			e.preventDefault();
+			
+			// Apply visual feedback during horizontal swipe
+			const movePercent = Math.min(Math.abs(this.swipeDistance) / 150, 0.5);
+			const direction = this.swipeDistance < 0 ? 1 : -1;
+
+			this.books.forEach((book, i) => {
+				if (book.style.display === 'none') return;
+				// Apply temporary transform only to visible books near the center for feedback
+				const offset = i - this.currentIndex;
+				if (Math.abs(offset) <= 2) { // Apply feedback to center and immediate neighbors
+					// Get current transform to preserve it
+					const currentTransform = book.style.transform;
+					// Visual feedback for horizontal swipes only
+					if (i === this.currentIndex) {
+						// This will overwrite the positionBooks transform temporarily
+						// book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
+						// A better approach might be needed if combining transforms is crucial.
+					}
 				}
-			}
-		});
+			});
+		}
+		// For vertical swipes, we do nothing and let the browser handle the scrolling
 	};
 
 	handleTouchEnd = (e: TouchEvent) => {
 		if (!this.isSwiping) return;
 		this.isSwiping = false;
 
-		this.touchEndX = e.changedTouches[0].screenX;
-		this.touchEndTime = Date.now();
-		this.swipeDistance = this.touchEndX - this.touchStartX;
-		const swipeDuration = Math.max(1, this.touchEndTime - this.touchStartTime); // Prevent division by zero
-		this.swipeVelocity = this.swipeDistance / swipeDuration; // pixels per millisecond
+		// Only process horizontal swipes for coverflow navigation
+		if (this.isHorizontalSwipe) {
+			this.touchEndX = e.changedTouches[0].screenX;
+			this.touchEndTime = Date.now();
+			this.swipeDistance = this.touchEndX - this.touchStartX;
+			const swipeDuration = Math.max(1, this.touchEndTime - this.touchStartTime); // Prevent division by zero
+			this.swipeVelocity = this.swipeDistance / swipeDuration; // pixels per millisecond
 
-		this.handleSwipeWithMomentum();
+			this.handleSwipeWithMomentum();
+		}
+		
+		// Reset flags
+		this.isHorizontalSwipe = false;
 	};
 
 	handleTouchCancel = () => {
 		if (!this.isSwiping) return;
 		this.isSwiping = false;
 
-		// Reset any temporary transforms if they were applied
-		this.books.forEach(book => {
-			// Resetting transform might cause flicker, better to just reposition
-			// book.style.transform = ''; // Or reset to original position
-		});
-		this.positionBooks(this.currentIndex); // Snap back
+		// Only reposition books if we were in a horizontal swipe
+		if (this.isHorizontalSwipe) {
+			// Reset any temporary transforms if they were applied
+			this.books.forEach(book => {
+				// Resetting transform might cause flicker, better to just reposition
+				// book.style.transform = ''; // Or reset to original position
+			});
+			this.positionBooks(this.currentIndex); // Snap back
+		}
+
+		// Reset flags
+		this.isHorizontalSwipe = false;
 
 		if (this.animationFrameId) {
 			cancelAnimationFrame(this.animationFrameId);
@@ -429,10 +466,10 @@ export class Coverflow implements CoverflowInstance {
 		// Touch swipe support
 		if (browser) {
 			// Use instance methods as handlers directly
-			this.container.addEventListener('touchstart', this.handleTouchStart, { passive: false }); // passive: false needed for preventDefault
-			this.container.addEventListener('touchmove', this.handleTouchMove, { passive: false });
-			this.container.addEventListener('touchend', this.handleTouchEnd);
-			this.container.addEventListener('touchcancel', this.handleTouchCancel);
+			this.container.addEventListener('touchstart', this.handleTouchStart, { passive: true }); // No need to prevent default on touchstart
+			this.container.addEventListener('touchmove', this.handleTouchMove, { passive: false }); // passive: false needed to conditionally preventDefault
+			this.container.addEventListener('touchend', this.handleTouchEnd, { passive: true });
+			this.container.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
 		}
 	}
 
