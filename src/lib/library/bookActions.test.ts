@@ -16,7 +16,7 @@ vi.mock('$app/environment', () => ({
 
 vi.mock('./dexieDatabase', () => ({
 	saveBook: vi.fn().mockResolvedValue(true),
-	removeBookFromDB: vi.fn().mockResolvedValue(true),
+	removeBookFromDatabaseById: vi.fn().mockResolvedValue(true),
 	clearAllBooksFromDB: vi.fn().mockResolvedValue(true)
 }));
 

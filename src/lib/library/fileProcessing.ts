@@ -214,8 +214,6 @@ export async function processFiles(
 					console.log(`[FileProc] No matching book found for cover "${possibleTitle}" (Threshold: ${similarityThresholdValue})`);
 					importSummary.failed++;
 					importSummary.failedBooks.push(file.name);
-					// Revoke the temporary URL created for the non-matching cover
-					URL.revokeObjectURL(coverUrl);
 				}
 
 				// Small delay for UI update
