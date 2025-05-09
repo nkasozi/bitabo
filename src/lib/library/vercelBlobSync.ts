@@ -1048,7 +1048,7 @@ async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult> {
         formData.append('file', jsonBlob);
         formData.append('filename', filename);
         
-        // Send the request to our server-side endpoint
+        // Send the request to our Vercel API endpoint
         const response = await fetch('/api/vercel-blob/put', {
             method: 'POST',
             body: formData

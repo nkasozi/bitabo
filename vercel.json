@@ -1,6 +1,21 @@
 {
   "routes": [
     {
+      "src": "/api/vercel-blob/put",
+      "methods": ["POST"],
+      "dest": "/api/vercel-blob/put.js"
+    },
+    {
+      "src": "/api/vercel-blob/list",
+      "methods": ["GET"],
+      "dest": "/api/vercel-blob/list.js"
+    },
+    {
+      "src": "/api/vercel-blob/delete",
+      "methods": ["DELETE"],
+      "dest": "/api/vercel-blob/delete.js"
+    },
+    {
       "src": "/(.*)/?$",
       "dest": "/$1.html"
     }
