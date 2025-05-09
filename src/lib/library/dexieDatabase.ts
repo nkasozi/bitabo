@@ -215,6 +215,7 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 
 	let coverUrl = '/placeholder-cover.png'; // Default to placeholder
 	let coverBlob = null;
+	let fileUrl = ''; // Add fileUrl to store URL for the file
 
 	// Always recreate cover blob from base64 if available
 	if (bookFromDB.originalCoverImage) {
@@ -231,7 +232,7 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 			
 			// Generate a fresh blob URL
 			coverUrl = URL.createObjectURL(coverBlob);
-			console.log(`[DexieDB processBookAfterLoad] Successfully created cover blob and URL from base64 for "${bookFromDB.title}"`);
+			console.log(`[DexieDB processBookAfterLoad] Successfully created cover blob and URL from base64 for "${bookFromDB.title}": ${coverUrl}`);
 		} catch (error) {
 			console.error(`[DexieDB processBookAfterLoad] Error creating cover from base64 for "${bookFromDB.title}":`, error);
 			coverUrl = '/placeholder-cover.png'; // Fallback to placeholder on error
@@ -241,7 +242,7 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 		try {
 			coverBlob = bookFromDB.coverBlob;
 			coverUrl = URL.createObjectURL(coverBlob);
-			console.log(`[DexieDB processBookAfterLoad] Using stored coverBlob for "${bookFromDB.title}"`);
+			console.log(`[DexieDB processBookAfterLoad] Using stored coverBlob for "${bookFromDB.title}": ${coverUrl}`);
 		} catch (error) {
 			console.error(`[DexieDB processBookAfterLoad] Error creating URL from stored coverBlob for "${bookFromDB.title}":`, error);
 			coverUrl = '/placeholder-cover.png';
@@ -272,10 +273,18 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 					lastModified: bookFromDB.lastModified || Date.now()
 				});
 				console.log(`[DexieDB processBookAfterLoad] Successfully created File from base64 for "${bookFromDB.title}"`);
+				
+				// Create a blob URL for the file
+				fileUrl = URL.createObjectURL(file);
+				console.log(`[DexieDB processBookAfterLoad] Created fileUrl for "${bookFromDB.title}": ${fileUrl}`);
 			} else {
 				// If no filename, create a Blob instead
 				file = new Blob([bytes.buffer], { type: bookFromDB.fileType || 'application/octet-stream' });
 				console.log(`[DexieDB processBookAfterLoad] Created Blob (no filename) from base64 for "${bookFromDB.title}"`);
+				
+				// Create a blob URL for the blob
+				fileUrl = URL.createObjectURL(file);
+				console.log(`[DexieDB processBookAfterLoad] Created fileUrl for "${bookFromDB.title}": ${fileUrl}`);
 			}
 		} catch (error) {
 			console.error(`[DexieDB processBookAfterLoad] Error creating file from base64 for "${bookFromDB.title}":`, error);
@@ -283,34 +292,87 @@ function processBookAfterLoad(bookFromDB: any): Book | null {
 	} else if (bookFromDB.file instanceof File || bookFromDB.file instanceof Blob) {
 		// Fallback to using stored file if no base64 is available
 		file = bookFromDB.file;
+		
+		// Create a blob URL for the file
+		try {
+			fileUrl = URL.createObjectURL(file);
+			console.log(`[DexieDB processBookAfterLoad] Created fileUrl from stored file for "${bookFromDB.title}": ${fileUrl}`);
+		} catch (error) {
+			console.error(`[DexieDB processBookAfterLoad] Error creating URL from stored file for "${bookFromDB.title}":`, error);
+		}
+		
 		console.log(`[DexieDB processBookAfterLoad] Using stored File/Blob object for "${bookFromDB.title}"`);
 	} else {
 		console.warn(`[DexieDB processBookAfterLoad] No file data available for "${bookFromDB.title}" - book won't be readable`);
 	}
 
+	// Add additional properties needed for the reader
+	const path = bookFromDB.path || bookFromDB.fileName || `book-${bookFromDB.id}.epub`;
+	const now = Date.now();
+
 	// Explicitly type the object being returned
-	const processedBook: Book = {
+	const processedBook: {
+		fileName: any;
+		originalCoverImage: any;
+		addedDate: any;
+		originalFile: any;
+		author: any;
+		title: any;
+		coverBlob: any;
+		dateAdded: any;
+		coverUrl: string;
+		path: any;
+		file: File | undefined;
+		lastOpened: number;
+		ribbonData: any;
+		fileSize: number;
+		progress: any;
+		lastAccessed: any;
+		fontSize: number;
+		fileUrl: string;
+		id: any;
+		lastModified: number;
+		fileType: string;
+		ribbonExpiry: any
+	} = {
 		// Ensure all required Book properties are present, provide defaults if necessary
-		id: bookFromDB.id ?? `missing-id-${Date.now()}`,
+		id: bookFromDB.id ?? `missing-id-${now}`,
 		title: bookFromDB.title ?? 'Untitled Book',
 		author: bookFromDB.author ?? 'Unknown Author',
 		coverUrl: coverUrl,
 		coverBlob: coverBlob, // The newly created coverBlob from base64
 		file: file as File | undefined, // The newly created File or Blob from base64
-		fileName: bookFromDB.fileName,
-		fileType: bookFromDB.fileType,
-		fileSize: bookFromDB.fileSize,
-		dateAdded: bookFromDB.dateAdded ?? Date.now(),
-		lastModified: bookFromDB.lastModified,
-		lastAccessed: bookFromDB.lastAccessed ?? 0,
+		fileName: bookFromDB.fileName || path,
+		fileType: bookFromDB.fileType || 'application/epub+zip',
+		fileSize: bookFromDB.fileSize || (file ? file.size : 0),
+		dateAdded: bookFromDB.dateAdded ?? now,
+		lastModified: bookFromDB.lastModified || now,
+		lastAccessed: bookFromDB.lastAccessed ?? now,
 		progress: bookFromDB.progress ?? 0,
-		fontSize: bookFromDB.fontSize,
+		fontSize: bookFromDB.fontSize || 18, // Default font size
 		ribbonData: bookFromDB.ribbonData,
 		ribbonExpiry: bookFromDB.ribbonExpiry,
 		originalFile: bookFromDB.originalFile,
-		originalCoverImage: bookFromDB.originalCoverImage
+		originalCoverImage: bookFromDB.originalCoverImage,
+		// Add reader-specific properties
+		path: path, // Critical for reader functionality
+		fileUrl: fileUrl, // URL for direct file access
+		lastOpened: bookFromDB.lastOpened || now,
+		addedDate: bookFromDB.addedDate || bookFromDB.dateAdded || now
 	};
-	console.log(`[DexieDB processBookAfterLoad] Finished processing book: ${processedBook.title}`);
+	
+	// Debug log all properties
+	console.log(`[DexieDB processBookAfterLoad] Processed book "${processedBook.title}" with properties:`, {
+		id: processedBook.id,
+		file: processedBook.file ? 'File object present' : 'No file object',
+		fileType: processedBook.fileType,
+		fileName: processedBook.fileName,
+		path: processedBook.path,
+		fileUrl: processedBook.fileUrl,
+		coverUrl: processedBook.coverUrl,
+		coverBlob: processedBook.coverBlob ? 'Cover blob present' : 'No cover blob'
+	});
+	
 	return processedBook;
 }
 
@@ -390,15 +452,15 @@ export async function removeBookFromDatabaseById(bookId: string): Promise<boolea
 }
 
 // Returns a book from Dexie.js database by ID
-export async function getBookFromDatabaseById(bookId: string): Promise<Book | undefined> {
+export async function getBookFromDatabaseById(bookId: string): Promise<Book | null> {
 	try {
 		console.log(`[DexieDB] Retrieving book with ID ${bookId} from DB`);
 		let book = await db.books.get(bookId);
 		console.log(`[DexieDB] Book with ID ${bookId} retrieved successfully from DB`);
-		return book;
+		return book? processBookAfterLoad(book): null;
 	} catch (error) {
 		console.error(`[DexieDB] Error retrieving book with ID ${bookId} from DB:`, error);
-		return undefined;
+		return null;
 	}
 }
 

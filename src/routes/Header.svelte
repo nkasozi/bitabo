@@ -36,13 +36,13 @@
 
 	<nav>
 		<ul>
-			<li aria-current={$page && $page.url && $page.url.pathname && ($page.url.pathname === '/library' || $page.url.pathname === '/') ? 'page' : undefined}>
+			<li aria-current={($page?.url?.pathname === '/library' || $page?.url?.pathname === '/') ? 'page' : undefined}>
 				<a href="/library">Library</a>
 			</li>
-			<li class="hide-on-mobile" aria-current={$page && $page.url && $page.url.pathname === '/privacy' ? 'page' : undefined}>
+			<li class="hide-on-mobile" aria-current={$page?.url?.pathname === '/privacy' ? 'page' : undefined}>
 				<a href="/privacy">Privacy</a>
 			</li>
-			<li class="hide-on-mobile" aria-current={$page && $page.url && $page.url.pathname === '/tos' ? 'page' : undefined}>
+			<li class="hide-on-mobile" aria-current={$page?.url?.pathname === '/tos' ? 'page' : undefined}>
 				<a href="/tos">Terms</a>
 			</li>
 		</ul>

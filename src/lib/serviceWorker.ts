@@ -33,17 +33,6 @@ export async function registerServiceWorker(): Promise<boolean> {
       // Wait for the service worker to be ready
       await navigator.serviceWorker.ready;
       console.log('Existing service worker is ready');
-      
-      // Ping the service worker to verify it's active and the right version
-      try {
-        const pongResponse = await sendMessageToSW({ type: 'ping' });
-        console.log('Service worker ping response:', pongResponse);
-        
-        return true;
-      } catch (pingError) {
-        console.error('Error pinging service worker:', pingError);
-        // Continue with registration if ping fails
-      }
     }
     
     // Register the service worker
@@ -120,14 +109,14 @@ export function sendMessageToSW(message: any): Promise<any> {
       resolve({ type: 'sw-not-supported' });
       return;
     }
-    
+
     // Get the active service worker
     const sw = navigator.serviceWorker.controller;
-    
+
     if (!sw) {
       // Instead of rejecting, we'll handle this situation gracefully
       console.info('No active service worker controller found yet, waiting for activation');
-      
+
       // Check if there's a registration in progress
       navigator.serviceWorker.ready.then(() => {
         // Try again after service worker is ready
@@ -143,47 +132,43 @@ export function sendMessageToSW(message: any): Promise<any> {
         console.warn('Service worker registration failed');
         resolve({ type: 'sw-registration-failed' });
       });
-      
+
       return;
     }
-    
+
     // Create a unique message ID
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
+
     // Create message with ID
     const msgWithId = {
       ...message,
       messageId
     };
-    
+
     // Set up a one-time message handler
     const messageHandler = (event: MessageEvent) => {
       // Check if this is the response to our specific message
       if (event.data && event.data.messageId === messageId) {
         // Clean up the event listener
         navigator.serviceWorker.removeEventListener('message', messageHandler);
-        
+
         // Resolve with the response data
         resolve(event.data);
       }
     };
-    
+
     // Add the message handler
     navigator.serviceWorker.addEventListener('message', messageHandler);
-    
+
     // Send the message
     try {
       sw.postMessage(msgWithId);
-    } catch (err: unknown) {
+    } catch {
       // Handle potential errors when posting messages
-      console.warn('Error posting message to service worker:', err);
-      navigator.serviceWorker.removeEventListener('message', messageHandler);
-      
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      resolve({ type: 'message-error', error: errorMessage });
+      console.warn('Error posting message to service worker:');
       return;
     }
-    
+
     // Set a timeout to prevent hanging
     setTimeout(() => {
       navigator.serviceWorker.removeEventListener('message', messageHandler);
@@ -192,108 +177,4 @@ export function sendMessageToSW(message: any): Promise<any> {
       resolve({ type: 'sw-timeout' });
     }, 5000);
   });
-}
-
-// Save reading progress for a book
-export async function saveReadingProgress(
-  bookId: string, 
-  progress: number, 
-  fontSize?: number
-): Promise<boolean> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'save-progress',
-      bookId,
-      progress,
-      fontSize // Include fontSize if provided
-    });
-    
-    return response && response.success === true;
-  } catch (error) {
-    console.error('Error saving reading progress via service worker:', error);
-    return false;
-  }
-}
-
-// Get reading progress for a book
-export async function getReadingProgress(bookId: string): Promise<{ progress: number | null; fontSize?: number | null }> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'get-progress',
-      bookId
-    });
-    
-    if (!response) {
-      return { progress: null };
-    }
-    
-    return {
-      progress: response.progress || null,
-      fontSize: response.fontSize || null
-    };
-  } catch (error) {
-    console.error('Error getting reading progress via service worker:', error);
-    return { progress: null };
-  }
-}
-
-// Note: addBookToLibrary function was removed as it was redundant with direct IndexedDB operations
-// Books are now saved directly to IndexedDB in the page code, not through service worker
-
-// Get a book from the library
-export async function getBook(bookId: string): Promise<any> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'get-book',
-      bookId
-    });
-    
-    return response?.book || null;
-  } catch (error) {
-    console.error('Error getting book via service worker:', error);
-    return null;
-  }
-}
-
-// Get all books from the library
-export async function getAllBooks(): Promise<any[]> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'get-all-books'
-    });
-    
-    return response?.books || [];
-  } catch (error) {
-    console.error('Error getting all books via service worker:', error);
-    return [];
-  }
-}
-
-// Delete a book from the library
-export async function deleteBook(bookId: string): Promise<boolean> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'delete-book',
-      bookId
-    });
-    
-    return response?.success === true;
-  } catch (error) {
-    console.error('Error deleting book via service worker:', error);
-    return false;
-  }
-}
-
-// Migrate data from old schema
-export async function migrateData(): Promise<boolean> {
-  try {
-    const response = await sendMessageToSW({
-      type: 'migrate-data'
-    });
-    
-    return response?.success === true;
-  } catch (error) {
-    console.error('Error migrating data via service worker:', error);
-    return false;
-  }
 }

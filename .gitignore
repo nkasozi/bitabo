@@ -38,3 +38,6 @@ dexie-cloud.key
 
 # Sentry Config File
 .env.sentry-build-plugin
+.env*.local
+
+**/.claude/settings.local.json

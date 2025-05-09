@@ -46,9 +46,11 @@
 		"wrangler": "^4.14.0"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "^3.804.0",
 		"@googleworkspace/drive-picker-element": "^0.4.1",
 		"@sentry/sveltekit": "^9.15.0",
 		"@vercel/analytics": "^1.5.0",
+		"@vercel/blob": "^1.0.1",
 		"@vercel/speed-insights": "^1.2.0",
 		"dexie": "^4.0.11",
 		"fs-extra": "^11.3.0",

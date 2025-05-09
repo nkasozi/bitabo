@@ -5,6 +5,7 @@ import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dex
 import { syncWithGoogleDrive } from './googleDriveSync'; // Google Drive sync
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification } from './ui';
+import { goto } from '$app/navigation';
 
 // --- Types for State Update Callback ---
 type StateUpdateCallback = (
@@ -49,11 +50,6 @@ export async function handleOpenBook(
 
         // Save updated access time to DB
         await saveBook(bookToUpdate);
-        
-        // Trigger Google Drive sync in the background
-        void syncWithGoogleDrive().catch(err => {
-            console.error('[BookAction] Error during Google Drive sync:', err);
-        });
 
         // Re-sort library and find new index
         const currentId = bookToUpdate.id;
@@ -70,11 +66,9 @@ export async function handleOpenBook(
         if (selectedBook.progress > 0) {
             url += `&progress=${encodeURIComponent(selectedBook.progress)}`;
         }
-        // TODO: Add font size if stored per book?
-        // if (selectedBook.fontSize) { url += `&fontSize=${selectedBook.fontSize}`; }
 
-        window.location.href = url;
-        return true; // Navigation initiated
+        await goto(url);
+        return true;
 
     } catch (error) {
         console.error('[BookAction] Error preparing book for reader:', error);
@@ -84,7 +78,6 @@ export async function handleOpenBook(
 }
 
 // --- Remove Book ---
-
 export async function handleRemoveBook(
     selectedBookIndex: number,
     libraryBooks: Book[],

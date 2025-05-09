@@ -5,6 +5,7 @@
 	import { browser } from '$app/environment';
 	import { debounce } from '$lib/library/utils'; // Import debounce
 	import PWAInstallPrompt from '$lib/components/PWAInstallPrompt.svelte';
+	import VercelBlobSync from '$lib/components/library/VercelBlobSync.svelte';
 
 	// Import types and constants
 	import type { Book, DummyBook, CoverflowInstance, ImportSummary } from '$lib/library/types';
@@ -154,6 +155,47 @@
 
 		// Setup global keydown listener
 		window.addEventListener('keydown', handleGlobalKeydown);
+
+			// Setup event listeners for real-time Vercel Blob import updates
+			window.addEventListener('vercel-blob-import-progress', async (event: Event) => {
+				// Type assertion to access custom event details
+				const customEvent = event as CustomEvent;
+				const { mergedBooks, booksImported, booksInBatch } = customEvent.detail;
+				
+				console.log(`[Library] Real-time import update: ${booksInBatch} books in this batch, ${booksImported} total`);
+				
+				// Update local state
+				libraryBooks = mergedBooks;
+				
+				// If library was empty and is now populated, set flag
+				if (!isLibraryLoaded && mergedBooks.length > 0) {
+					isLibraryLoaded = true;
+					console.log('[Library] Library now populated from empty state');
+				}
+				
+				// Initialize or refresh coverflow
+				if (coverflow) {
+					console.log('[Library] Refreshing coverflow with newly imported books');
+					await setupCoverflow(); // Refresh coverflow with new books
+				} else if (isLibraryLoaded) {
+					console.log('[Library] Initializing coverflow for first time');
+					await setupCoverflow(); // Initialize for first time
+				}
+			});
+			
+			// Handle completion event
+			window.addEventListener('vercel-blob-import-complete', (event: Event) => {
+				// Type assertion to access custom event details
+				const customEvent = event as CustomEvent;
+				const { booksImported } = customEvent.detail;
+				
+				console.log(`[Library] Import complete. Total books imported: ${booksImported}`);
+				
+				// Final refresh if needed
+				if (coverflow && booksImported > 0) {
+					setupCoverflow().catch(err => console.error('[Library] Error refreshing coverflow after import:', err));
+				}
+			});
 
 		// Start ribbon check timer
 		ribbonCheckInterval = window.setInterval(() => {
@@ -402,12 +444,6 @@
 			if (currentCoverflowIndex < booksInCoverflow.length - 1) {
 				coverflow.select(currentCoverflowIndex + 1);
 			}
-			event.preventDefault();
-		} else if (event.key === 'Enter') {
-			openSelectedBook().catch((err) => console.error('Error opening book:', err));
-			event.preventDefault();
-		} else if (event.key === 'Delete') {
-			removeSelectedBook(); // This function will be updated later
 			event.preventDefault();
 		} else if (event.key === 'e' || event.key === 'E') {
 			startEditingTitle(); // This function will be updated later
@@ -912,6 +948,11 @@
 					Clear All Books from Library
 				</button>
 			</div>
+			
+			<!-- Cloud Backup Sync Component -->
+			<div class="mb-2 flex justify-center">
+				<VercelBlobSync />
+			</div>
 		{/if}
 	</div>
 
@@ -1226,6 +1267,11 @@
 				<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
 					Add Books to Your Library
 				</button>
+			</div>
+			
+			<!-- Cloud Backup Sync Component -->
+			<div class="mb-2 flex justify-center">
+				<VercelBlobSync />
 			</div>
 
 			<!-- Empty Library State -->

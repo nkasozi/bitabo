@@ -11,6 +11,7 @@
 	import { loadBookIntoReader, determineBookReadingProgress } from '$lib/reader/state'; // Import determineInitialFontSize
 	import { createReader } from './reader'; // Keep local reader creation logic
 	import { preloadFoliateComponents } from './preload-foliate'; // Keep local preload logic
+	import { checkUrlAndInitializeReaderStore } from '$lib/reader/initializeReader';
 
 	// --- State Variables ---
 	let currentBookData: Book | null | undefined = null; // Renamed from currentBookInfo
@@ -18,6 +19,7 @@
 	// --- Instance Variables ---
 	let reader: Reader | null = null; // Reference to the reader instance
 	let cleanupFunctions: (() => void)[] = []; // Store cleanup functions from helpers
+
 
 	// --- Lifecycle ---
 	onMount(async () => {
@@ -29,6 +31,13 @@
 		if (!browser) {
 			console.warn('[DEBUG] Not in browser environment. Reader cannot be initialized.');
 			return; // Exit early if not in browser
+		}
+		
+		// Check if we need to initialize the reader store from URL
+		// This helps when navigating directly to the reader page
+		const urlBookId = await checkUrlAndInitializeReaderStore();
+		if (urlBookId) {
+			console.log(`[DEBUG] Reader: Reader store initialized from URL with book ID: ${urlBookId}`);
 		}
 
 		// Subscribe to dark mode changes
@@ -127,6 +136,17 @@
 
 			// 7. Load Book into Reader (Pass preliminary font size)
 			console.log('[DEBUG] Calling loadBookIntoReader...');
+			
+			// Make sure the reader store has been initialized from URL if needed
+			// If we see an empty bookId in the store, and we're already mounted,
+			// we can trigger a check for URL parameters (but handle it properly without await)
+			if($readerStore.bookId.length === 0) {
+				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initializing from URL`);
+				// Handle this properly without using await in the callback
+				let bookIdFound = await  checkUrlAndInitializeReaderStore();
+				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initialized from URL, ID found: ${bookIdFound}`);
+			}
+			
 			const loadResult = await loadBookIntoReader(
 				reader,
 				readerStore,

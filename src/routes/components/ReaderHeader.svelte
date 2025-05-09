@@ -30,7 +30,7 @@
 
 	// Navigate back to library
 	function returnToLibrary() {
-		window.location.href = '/library';
+		goto('/library');
 	}
 
 	// Toggle TOC dropdown menu
@@ -159,8 +159,12 @@
 		}
 	}
 
+	// Import the utility function for reader initialization
+	import { checkUrlAndInitializeReaderStore } from '$lib/reader/initializeReader';
+	import { goto } from '$app/navigation';
+	
 	// Set up component when mounted
-	onMount(() => {
+	onMount(async () => {
 		if (browser) {
 			console.log('[DEBUG] ReaderHeader component mounted');
 			
@@ -175,6 +179,15 @@
 					document.documentElement.classList.remove('dark-mode');
 				}
 			});
+
+			// If we see an empty bookId in the store, and we're already mounted,
+			// we can trigger a check for URL parameters (but handle it properly without await)
+			if($readerStore.bookId.length === 0) {
+				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initializing from URL`);
+				// Handle this properly without using await in the callback
+				let bookIdFound = await  checkUrlAndInitializeReaderStore();
+				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initialized from URL, ID found: ${bookIdFound}`);
+			}
 			
 			// Subscribe to the reader store to update UI elements
 			const readerStoreUnsubscribe = readerStore.subscribe(state => {

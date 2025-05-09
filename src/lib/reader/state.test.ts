@@ -1,10 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { saveReadingProgress, determineInitialFontSize, determineBookReadingProgress } from './state';
 import type { Book } from '$lib/types/book';
-import type { Reader } from './types';
 
 // Mock browser environment
 vi.mock('$app/environment', () => ({
