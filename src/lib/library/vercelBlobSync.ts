@@ -10,6 +10,91 @@ import {
 import { saveAllBooks, loadLibraryStateFromDB } from './dexieDatabase';
 import { getPremiumMessage } from './premiumUserUtils';
 
+// --- Utility Functions ---
+
+/**
+ * Detect if dark mode is active
+ * @returns boolean indicating if dark mode is active
+ */
+export function isDarkModeActive(): boolean {
+    return typeof document !== 'undefined' && 
+          (document.documentElement.classList.contains('dark') || 
+          (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+}
+
+/**
+ * Show a premium required dialog
+ * @returns Promise that resolves when dialog is dismissed
+ */
+export async function showPremiumDialog(): Promise<void> {
+    const isDarkMode = isDarkModeActive();
+    const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+    const bgColor = isDarkMode ? '#1f2937' : 'white';
+    
+    // Create a custom premium dialog
+    const premiumDialog = document.createElement('dialog');
+    premiumDialog.id = 'premium-required-dialog';
+    premiumDialog.style.padding = '0';
+    premiumDialog.style.borderRadius = '8px';
+    premiumDialog.style.maxWidth = '400px';
+    premiumDialog.style.border = 'none';
+    premiumDialog.style.boxShadow = isDarkMode ? 
+        '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+        '0 4px 12px rgba(0, 0, 0, 0.15)';
+    premiumDialog.style.backgroundColor = 'transparent';
+    
+    // Add premium message content with dark mode aware button
+    premiumDialog.innerHTML = `
+        ${getPremiumMessage()}
+        <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+            <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+        </div>
+    `;
+    
+    document.body.appendChild(premiumDialog);
+    premiumDialog.showModal();
+    
+    // Wait for user to dismiss dialog
+    return new Promise<void>(resolve => {
+        document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+            premiumDialog.close();
+            resolve();
+        });
+        
+        premiumDialog.addEventListener('close', () => {
+            resolve();
+        });
+    });
+}
+
+/**
+ * Check if a request failed due to premium requirements
+ * @param error The error to check
+ * @returns boolean indicating if the error is related to premium requirements
+ */
+export function isPremiumRequiredError(error: Error): boolean {
+    return error.message.includes('Premium subscription required') || 
+        error.message.includes('403') ||
+        error.message.includes('Forbidden');
+}
+
+/**
+ * Check if an HTTP response indicates premium is required
+ * @param response The response to check
+ * @returns boolean indicating if premium is required
+ */
+export async function isPremiumRequiredResponse(response: Response): Promise<boolean> {
+    if (response.status === 403) {
+        try {
+            const data = await response.json();
+            return data.isPremiumRequired === true;
+        } catch (e) {
+            return true; // Assume any 403 is premium related if we can't parse the JSON
+        }
+    }
+    return false;
+}
+
 // Define the PutBlobResult type since we're no longer importing from @vercel/blob
 interface PutBlobResult {
     url: string;
@@ -115,59 +200,16 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
                 // We'll use the list endpoint with the prefix to check premium status
                 const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefixKey)}`);
                 
-                if (response.status === 403) {
+                if (await isPremiumRequiredResponse(response)) {
                     // Close the progress notification
                     closeNotification(notificationId);
+                    console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
                     
-                    const errorData = await response.json();
-                    if (errorData.isPremiumRequired) {
-                        console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
-                        // Check if dark mode is active
-                        const isDarkMode = typeof document !== 'undefined' && 
-                                          (document.documentElement.classList.contains('dark') || 
-                                          (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-                        const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-                        const bgColor = isDarkMode ? '#1f2937' : 'white';
-                        
-                        // Create a custom premium dialog
-                        const premiumDialog = document.createElement('dialog');
-                        premiumDialog.id = 'premium-required-dialog';
-                        premiumDialog.style.padding = '0';
-                        premiumDialog.style.borderRadius = '8px';
-                        premiumDialog.style.maxWidth = '400px';
-                        premiumDialog.style.border = 'none';
-                        premiumDialog.style.boxShadow = isDarkMode ? 
-                            '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-                            '0 4px 12px rgba(0, 0, 0, 0.15)';
-                        premiumDialog.style.backgroundColor = 'transparent';
-                        
-                        // Add premium message content directly with dark mode aware button
-                        premiumDialog.innerHTML = `
-                            ${getPremiumMessage()}
-                            <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-                                <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-                            </div>
-                        `;
-                        
-                        document.body.appendChild(premiumDialog);
-                        premiumDialog.showModal();
-                        
-                        // Wait for user to dismiss dialog
-                        await new Promise<void>(resolve => {
-                            document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-                                premiumDialog.close();
-                                resolve();
-                            });
-                            
-                            premiumDialog.addEventListener('close', () => {
-                                resolve();
-                            });
-                        });
-                        
-                        // The list call will return an empty array if there are no files,
-                        // which is fine for a new sync setup
-                        return false;
-                    }
+                    // Show premium dialog
+                    await showPremiumDialog();
+                    
+                    // Return false to indicate setup failed due to premium requirements
+                    return false;
                 }
             }
         } catch (error) {
@@ -256,52 +298,11 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
             }
             
             // Check if this is a premium error from the server (any 403/Forbidden error)
-            if (error instanceof Error && 
-                (error.message.includes('Premium subscription required') || 
-                 error.message.includes('403') ||
-                 error.message.includes('Forbidden'))) {
+            if (error instanceof Error && isPremiumRequiredError(error)) {
                 console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                // Check if dark mode is active
-                const isDarkMode = typeof document !== 'undefined' && 
-                                  (document.documentElement.classList.contains('dark') || 
-                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-                const bgColor = isDarkMode ? '#1f2937' : 'white';
                 
-                // Create a custom premium dialog
-                const premiumDialog = document.createElement('dialog');
-                premiumDialog.id = 'premium-required-dialog';
-                premiumDialog.style.padding = '0';
-                premiumDialog.style.borderRadius = '8px';
-                premiumDialog.style.maxWidth = '400px';
-                premiumDialog.style.border = 'none';
-                premiumDialog.style.boxShadow = isDarkMode ? 
-                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-                    '0 4px 12px rgba(0, 0, 0, 0.15)';
-                premiumDialog.style.backgroundColor = 'transparent';
-                
-                // Add premium message content directly with dark mode aware button
-                premiumDialog.innerHTML = `
-                    ${getPremiumMessage()}
-                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-                    </div>
-                `;
-                
-                document.body.appendChild(premiumDialog);
-                premiumDialog.showModal();
-                
-                // Wait for user to dismiss dialog
-                await new Promise<void>(resolve => {
-                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-                        premiumDialog.close();
-                        resolve();
-                    });
-                    
-                    premiumDialog.addEventListener('close', () => {
-                        resolve();
-                    });
-                });
+                // Show premium dialog
+                await showPremiumDialog();
                 return { 
                     success: false, 
                     booksAdded: 0, 
@@ -519,54 +520,12 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
             bookFiles = await listBlobsWithPrefix(prefixKey, false); // Show notification if empty
             console.log(`[VercelSync] Found ${bookFiles.length} files with prefix`, bookFiles);
         } catch (error) {
-            // Check if this is a premium error (any 403/Forbidden error)
-            if (error instanceof Error && 
-                (error.message.includes('Premium subscription required') || 
-                 error.message.includes('403') ||
-                 error.message.includes('Forbidden'))) {
+            // Check if this is a premium error
+            if (error instanceof Error && isPremiumRequiredError(error)) {
                 console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
                 
-                // Check if dark mode is active
-                const isDarkMode = typeof document !== 'undefined' && 
-                                  (document.documentElement.classList.contains('dark') || 
-                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-                const bgColor = isDarkMode ? '#1f2937' : 'white';
-                
-                // Create a custom premium dialog
-                const premiumDialog = document.createElement('dialog');
-                premiumDialog.id = 'premium-required-dialog';
-                premiumDialog.style.padding = '0';
-                premiumDialog.style.borderRadius = '8px';
-                premiumDialog.style.maxWidth = '400px';
-                premiumDialog.style.border = 'none';
-                premiumDialog.style.boxShadow = isDarkMode ? 
-                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-                    '0 4px 12px rgba(0, 0, 0, 0.15)';
-                premiumDialog.style.backgroundColor = 'transparent';
-                
-                // Add premium message content directly with dark mode aware button
-                premiumDialog.innerHTML = `
-                    ${getPremiumMessage()}
-                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-                    </div>
-                `;
-                
-                document.body.appendChild(premiumDialog);
-                premiumDialog.showModal();
-                
-                // Wait for user to dismiss dialog
-                await new Promise<void>(resolve => {
-                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-                        premiumDialog.close();
-                        resolve();
-                    });
-                    
-                    premiumDialog.addEventListener('close', () => {
-                        resolve();
-                    });
-                });
+                // Show premium dialog
+                await showPremiumDialog();
                 
                 return false;
             }
@@ -1184,50 +1143,12 @@ export async function deleteBookInVercelBlob(bookId: string): Promise<boolean> {
         if (!response.ok) {
             const errorData = await response.json();
             
-            // Special handling for premium requirement errors - treat ANY 403 as premium required
-            if (response.status === 403) {
+            // Special handling for premium requirement errors
+            if (await isPremiumRequiredResponse(response)) {
                 console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                // Check if dark mode is active
-                const isDarkMode = typeof document !== 'undefined' && 
-                                  (document.documentElement.classList.contains('dark') || 
-                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-                const bgColor = isDarkMode ? '#1f2937' : 'white';
                 
-                // Create a custom premium dialog
-                const premiumDialog = document.createElement('dialog');
-                premiumDialog.id = 'premium-required-dialog';
-                premiumDialog.style.padding = '0';
-                premiumDialog.style.borderRadius = '8px';
-                premiumDialog.style.maxWidth = '400px';
-                premiumDialog.style.border = 'none';
-                premiumDialog.style.boxShadow = isDarkMode ? 
-                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-                    '0 4px 12px rgba(0, 0, 0, 0.15)';
-                premiumDialog.style.backgroundColor = 'transparent';
-                
-                // Add premium message content directly with dark mode aware button
-                premiumDialog.innerHTML = `
-                    ${getPremiumMessage()}
-                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-                    </div>
-                `;
-                
-                document.body.appendChild(premiumDialog);
-                premiumDialog.showModal();
-                
-                // Wait for user to dismiss dialog
-                await new Promise<void>(resolve => {
-                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-                        premiumDialog.close();
-                        resolve();
-                    });
-                    
-                    premiumDialog.addEventListener('close', () => {
-                        resolve();
-                    });
-                });
+                // Show premium dialog
+                await showPremiumDialog();
                 return false;
             }
             
@@ -1304,51 +1225,11 @@ export async function deleteAllBooksInVercelBlob(): Promise<boolean> {
             closeNotification(notificationId);
             
             // Check if this is a premium error
-            if (error instanceof Error && 
-                (error.message.includes('Premium subscription required') || 
-                 error.message.includes('403'))) {
+            if (error instanceof Error && isPremiumRequiredError(error)) {
                 console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                // Check if dark mode is active
-                const isDarkMode = typeof document !== 'undefined' && 
-                                  (document.documentElement.classList.contains('dark') || 
-                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-                const bgColor = isDarkMode ? '#1f2937' : 'white';
                 
-                // Create a custom premium dialog
-                const premiumDialog = document.createElement('dialog');
-                premiumDialog.id = 'premium-required-dialog';
-                premiumDialog.style.padding = '0';
-                premiumDialog.style.borderRadius = '8px';
-                premiumDialog.style.maxWidth = '400px';
-                premiumDialog.style.border = 'none';
-                premiumDialog.style.boxShadow = isDarkMode ? 
-                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-                    '0 4px 12px rgba(0, 0, 0, 0.15)';
-                premiumDialog.style.backgroundColor = 'transparent';
-                
-                // Add premium message content directly with dark mode aware button
-                premiumDialog.innerHTML = `
-                    ${getPremiumMessage()}
-                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-                    </div>
-                `;
-                
-                document.body.appendChild(premiumDialog);
-                premiumDialog.showModal();
-                
-                // Wait for user to dismiss dialog
-                await new Promise<void>(resolve => {
-                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-                        premiumDialog.close();
-                        resolve();
-                    });
-                    
-                    premiumDialog.addEventListener('close', () => {
-                        resolve();
-                    });
-                });
+                // Show premium dialog
+                await showPremiumDialog();
                 return false;
             }
             
