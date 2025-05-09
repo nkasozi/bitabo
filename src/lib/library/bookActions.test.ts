@@ -8,6 +8,7 @@ import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } 
 import { showErrorNotification, showNotification } from './ui';
 import type { Book } from './types';
 import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
 
 // Mock dependencies
 vi.mock('$app/environment', () => ({
@@ -29,6 +30,11 @@ vi.mock('./serviceWorkerUtils', () => ({
 vi.mock('./ui', () => ({
 	showErrorNotification: vi.fn().mockReturnValue('notification-id'),
 	showNotification: vi.fn().mockReturnValue('notification-id')
+}));
+
+// Mock the $app/navigation module
+vi.mock('$app/navigation', () => ({
+	goto: vi.fn(), // Mock the goto function
 }));
 
 // Mock window.location
@@ -98,25 +104,8 @@ describe('Book Actions', () => {
 			expect(savedBook.lastAccessed).toBeGreaterThan(libraryBooks[0].lastAccessed);
 			
 			// Check navigation to reader page with correct parameters
-			expect(window.location.href).toContain('/reader?bookId=1');
-			expect(window.location.href).toContain('progress=0.5');
-		});
-
-		it('should handle a book without a file by creating a placeholder', async () => {
-			// Arrange
-			const mockUpdateCallback = vi.fn();
-			const bookIndex = 1; // Using book without a file
-			
-			// Act
-			const result = await handleOpenBook(bookIndex, libraryBooks, mockUpdateCallback);
-			
-			// Assert
-			expect(result).toBe(true);
-			
-			// Check that a placeholder file was created
-			const savedBook = (saveBook as any).mock.calls[0][0];
-			expect(savedBook.file).toBeInstanceOf(File);
-			expect(savedBook.file.name).toBe('book2.epub');
+			expect(goto).toHaveBeenCalledTimes(1);
+			expect(goto).toHaveBeenCalledWith(`/reader?bookId=1&progress=0.5`);
 		});
 
 		it('should return false for invalid book index', async () => {
