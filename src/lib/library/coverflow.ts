@@ -1,7 +1,5 @@
-import type { Book, CoverflowInstance } from './types'; // Removed DummyBook
+import type { Book, CoverflowInstance } from './types';
 import { browser } from '$app/environment';
-
-// Removed dummyBooks constant definition
 
 /**
  * Coverflow Class for 3D book display

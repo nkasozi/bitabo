@@ -98,15 +98,82 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
         const actionDesc = mode === 'import' ? 'Importing from' : 'Setting up';
         const notificationId = showNotification(`${actionDesc} Vercel Blob Sync...`, 'info');
         
-        // For import mode, fetch and import books
-        if (mode === 'import') {
-            console.log(`[VercelSync] Importing books with prefix: ${prefixKey}`);
-            const importResult = await importBooksWithPrefix(prefixKey);
-            if (!importResult) {
-                closeNotification(notificationId);
-                // If import failed (could be due to premium or empty results)
-                return false;
+        // Check premium status first - do this for both import and new modes
+        try {
+            // For import mode, fetch and check premium by trying to list the files
+            if (mode === 'import') {
+                console.log(`[VercelSync] Importing books with prefix: ${prefixKey}`);
+                const importResult = await importBooksWithPrefix(prefixKey);
+                if (!importResult) {
+                    closeNotification(notificationId);
+                    // If import failed (could be due to premium or empty results)
+                    return false;
+                }
+            } else {
+                // For new mode, try to make a test API call to check premium status
+                console.log(`[VercelSync] Checking premium status for prefix: ${prefixKey}`);
+                // We'll use the list endpoint with the prefix to check premium status
+                const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefixKey)}`);
+                
+                if (response.status === 403) {
+                    // Close the progress notification
+                    closeNotification(notificationId);
+                    
+                    const errorData = await response.json();
+                    if (errorData.isPremiumRequired) {
+                        console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
+                        // Check if dark mode is active
+                        const isDarkMode = typeof document !== 'undefined' && 
+                                          (document.documentElement.classList.contains('dark') || 
+                                          (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+                        const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+                        const bgColor = isDarkMode ? '#1f2937' : 'white';
+                        
+                        // Create a custom premium dialog
+                        const premiumDialog = document.createElement('dialog');
+                        premiumDialog.id = 'premium-required-dialog';
+                        premiumDialog.style.padding = '0';
+                        premiumDialog.style.borderRadius = '8px';
+                        premiumDialog.style.maxWidth = '400px';
+                        premiumDialog.style.border = 'none';
+                        premiumDialog.style.boxShadow = isDarkMode ? 
+                            '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+                            '0 4px 12px rgba(0, 0, 0, 0.15)';
+                        premiumDialog.style.backgroundColor = 'transparent';
+                        
+                        // Add premium message content directly with dark mode aware button
+                        premiumDialog.innerHTML = `
+                            ${getPremiumMessage()}
+                            <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+                                <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+                            </div>
+                        `;
+                        
+                        document.body.appendChild(premiumDialog);
+                        premiumDialog.showModal();
+                        
+                        // Wait for user to dismiss dialog
+                        await new Promise<void>(resolve => {
+                            document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+                                premiumDialog.close();
+                                resolve();
+                            });
+                            
+                            premiumDialog.addEventListener('close', () => {
+                                resolve();
+                            });
+                        });
+                        
+                        // The list call will return an empty array if there are no files,
+                        // which is fine for a new sync setup
+                        return false;
+                    }
+                }
             }
+        } catch (error) {
+            console.error('[VercelSync] Error checking premium status:', error);
+            closeNotification(notificationId);
+            throw error;
         }
         
         // Save the prefix to config
