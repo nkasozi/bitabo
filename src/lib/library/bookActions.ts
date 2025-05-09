@@ -4,8 +4,9 @@ import type { Book } from './types';
 import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
 import { syncWithGoogleDrive } from './googleDriveSync'; // Google Drive sync
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
-import { showErrorNotification, showNotification } from './ui';
+import { showErrorNotification, showNotification, showConfirmDialog } from './ui';
 import { goto } from '$app/navigation';
+import { deleteBookInVercelBlob, deleteAllBooksInVercelBlob } from './vercelBlobSync'; // Vercel Blob sync
 
 // --- Types for State Update Callback ---
 type StateUpdateCallback = (
@@ -125,6 +126,40 @@ export async function handleRemoveBook(
                 console.error('[BookAction] Error deleting book from service worker cache:', err);
             });
         }
+        
+        // 6. Remove from Vercel Blob sync if enabled (fire and forget)
+        const syncWithVercel = localStorage.getItem('bitabo-vercel-blob-sync-config');
+        if (syncWithVercel) {
+            try {
+                const config = JSON.parse(syncWithVercel);
+                if (config.syncEnabled && config.prefixKey) {
+                    // Ask user if they want to delete from cloud backup
+                    showConfirmDialog({
+                        title: 'Cloud Backup Sync',
+                        message: `Do you want to delete "${bookToRemove.title}" from your cloud backup as well?`,
+                        confirmText: 'Yes, delete from cloud',
+                        cancelText: 'No, keep in cloud'
+                    }).then(shouldDelete => {
+                        if (shouldDelete) {
+                            deleteBookInVercelBlob(bookId).then(success => {
+                                if (success) {
+                                    console.log(`[BookAction] Successfully deleted book from Vercel Blob: ${bookId}`);
+                                    showNotification(`Book also removed from cloud backup.`, 'success');
+                                } else {
+                                    console.error(`[BookAction] Failed to delete book from Vercel Blob: ${bookId}`);
+                                }
+                            }).catch(err => {
+                                console.error('[BookAction] Error deleting book from Vercel Blob:', err);
+                            });
+                        } else {
+                            console.log(`[BookAction] User chose to keep book in cloud backup: ${bookId}`);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('[BookAction] Error parsing Vercel Blob sync config:', error);
+            }
+        }
 
         showNotification(`Book "${bookToRemove.title}" removed.`, 'success');
         return true; // Removal successful
@@ -162,6 +197,39 @@ export async function handleClearLibrary(
             clearBooksInSW().catch(err => {
                 console.error('[BookAction] Error clearing books from service worker cache:', err);
             });
+        }
+        
+        // 4. Check for Vercel Blob sync and ask if user wants to clear cloud backup too
+        const syncWithVercel = localStorage.getItem('bitabo-vercel-blob-sync-config');
+        if (syncWithVercel) {
+            try {
+                const config = JSON.parse(syncWithVercel);
+                if (config.syncEnabled && config.prefixKey) {
+                    // Ask user if they want to delete from cloud backup
+                    showConfirmDialog({
+                        title: 'Cloud Backup Sync',
+                        message: 'Do you want to delete all books from your cloud backup as well?',
+                        confirmText: 'Yes, delete from cloud',
+                        cancelText: 'No, keep in cloud'
+                    }).then(shouldDelete => {
+                        if (shouldDelete) {
+                            deleteAllBooksInVercelBlob().then(success => {
+                                if (success) {
+                                    console.log('[BookAction] Successfully deleted all books from Vercel Blob');
+                                } else {
+                                    console.error('[BookAction] Failed to delete all books from Vercel Blob');
+                                }
+                            }).catch(err => {
+                                console.error('[BookAction] Error deleting all books from Vercel Blob:', err);
+                            });
+                        } else {
+                            console.log('[BookAction] User chose to keep books in cloud backup');
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('[BookAction] Error parsing Vercel Blob sync config:', error);
+            }
         }
 
         showNotification('Library cleared successfully.', 'success');

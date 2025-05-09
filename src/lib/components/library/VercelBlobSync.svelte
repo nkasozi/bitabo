@@ -54,13 +54,19 @@
                 existingDialog.remove();
             }
             
+            // Check if dark mode is active
+            const isDarkMode = document.documentElement.classList.contains('dark') || 
+                               window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
             const dialog = document.createElement('dialog');
             dialog.id = 'prefix-input-dialog';
             dialog.style.padding = '20px';
             dialog.style.borderRadius = '8px';
             dialog.style.maxWidth = '400px';
-            dialog.style.border = '1px solid #eaeaea';
-            dialog.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+            dialog.style.backgroundColor = isDarkMode ? '#1f2937' : 'white';
+            dialog.style.color = isDarkMode ? '#e5e7eb' : '#333';
+            dialog.style.border = isDarkMode ? '1px solid #374151' : '1px solid #eaeaea';
+            dialog.style.boxShadow = isDarkMode ? '0 4px 12px rgba(0, 0, 0, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.15)';
             
             const title = mode === 'import' ? 'Import Books from Backup' : 'Set Backup Prefix';
             const desc = mode === 'import' 
@@ -68,16 +74,16 @@
                 : 'Set a unique prefix for your backups. Use letters, numbers, and underscores only';
             
             dialog.innerHTML = `
-                <h2 style="margin-top: 0; font-size: 1.3rem; color: #333;">${title}</h2>
-                <p style="margin: 15px 0; line-height: 1.5; color: #555;">${desc}</p>
+                <h2 style="margin-top: 0; font-size: 1.3rem; color: ${isDarkMode ? '#e5e7eb' : '#333'};">${title}</h2>
+                <p style="margin: 15px 0; line-height: 1.5; color: ${isDarkMode ? '#9ca3af' : '#555'};">${desc}</p>
                 <div style="margin-bottom: 20px;">
-                    <label for="prefix-input" style="display: block; margin-bottom: 8px; font-weight: 500;">Prefix:</label>
-                    <input id="prefix-input" type="text" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #dadce0;" 
+                    <label for="prefix-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Prefix:</label>
+                    <input id="prefix-input" type="text" style="width: 100%; padding: 8px; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background-color: ${isDarkMode ? '#374151' : 'white'}; color: ${isDarkMode ? '#e5e7eb' : '#333'};" 
                         placeholder="e.g. user123" value="${prefixKey}" />
-                    <div id="prefix-error" style="color: #d32f2f; font-size: 12px; margin-top: 4px; display: none;"></div>
+                    <div id="prefix-error" style="color: #ef4444; font-size: 12px; margin-top: 4px; display: none;"></div>
                 </div>
                 <div style="display: flex; justify-content: flex-end; gap: 12px;">
-                    <button id="prefix-cancel" style="padding: 8px 16px; border-radius: 4px; border: none; background: #f5f5f5; color: #333; cursor: pointer;">Cancel</button>
+                    <button id="prefix-cancel" style="padding: 8px 16px; border-radius: 4px; border: none; background: ${isDarkMode ? '#374151' : '#f5f5f5'}; color: ${isDarkMode ? '#e5e7eb' : '#333'}; cursor: pointer;">Cancel</button>
                     <button id="prefix-submit" style="padding: 8px 16px; border-radius: 4px; border: none; background: #4285f4; color: white; cursor: pointer;">Continue</button>
                 </div>
             `;
@@ -258,21 +264,27 @@
                 existingDialog.remove();
             }
             
+            // Check if dark mode is active
+            const isDarkMode = document.documentElement.classList.contains('dark') || 
+                               window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
             const dialog = document.createElement('dialog');
             dialog.id = 'sync-options-dialog';
             dialog.style.padding = '20px';
             dialog.style.borderRadius = '8px';
             dialog.style.maxWidth = '400px';
-            dialog.style.border = '1px solid #eaeaea';
-            dialog.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+            dialog.style.backgroundColor = isDarkMode ? '#1f2937' : 'white';
+            dialog.style.color = isDarkMode ? '#e5e7eb' : '#333';
+            dialog.style.border = isDarkMode ? '1px solid #374151' : '1px solid #eaeaea';
+            dialog.style.boxShadow = isDarkMode ? '0 4px 12px rgba(0, 0, 0, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.15)';
             
             dialog.innerHTML = `
-                <h2 style="margin-top: 0; font-size: 1.3rem; color: #333;">Cloud Sync Options</h2>
-                <p style="margin: 15px 0; line-height: 1.5; color: #555;">How would you like to sync your library?</p>
+                <h2 style="margin-top: 0; font-size: 1.3rem; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Cloud Sync Options</h2>
+                <p style="margin: 15px 0; line-height: 1.5; color: ${isDarkMode ? '#9ca3af' : '#555'};">How would you like to sync your library?</p>
                 <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
                     <button id="sync-option-new" style="padding: 10px; border-radius: 4px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500;">Create New Backup</button>
-                    <button id="sync-option-import" style="padding: 10px; border-radius: 4px; border: 1px solid #dadce0; background: white; color: #333; cursor: pointer;">Import from Existing Backup</button>
-                    <button id="sync-option-cancel" style="padding: 10px; border-radius: 4px; border: none; background: #f5f5f5; color: #333; cursor: pointer; margin-top: 10px;">Cancel</button>
+                    <button id="sync-option-import" style="padding: 10px; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background: ${isDarkMode ? '#374151' : 'white'}; color: ${isDarkMode ? '#e5e7eb' : '#333'}; cursor: pointer;">Import from Existing Backup</button>
+                    <button id="sync-option-cancel" style="padding: 10px; border-radius: 4px; border: none; background: ${isDarkMode ? '#374151' : '#f5f5f5'}; color: ${isDarkMode ? '#e5e7eb' : '#333'}; cursor: pointer; margin-top: 10px;">Cancel</button>
                 </div>
             `;
             

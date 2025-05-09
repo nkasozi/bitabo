@@ -268,7 +268,7 @@ export function checkExpiredRibbons(
 }
 
 // Interface for confirm dialog options
-interface ConfirmDialogOptions {
+export interface ConfirmDialogOptions {
 	title: string;
 	message: string;
 	confirmText?: string;
@@ -276,7 +276,12 @@ interface ConfirmDialogOptions {
 }
 
 // Function to show a confirmation dialog
-export function showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
+export function showConfirmDialog(options: {
+	cancelText: null;
+	confirmText: string;
+	title: string;
+	message: string
+}): Promise<boolean> {
 	if (!browser) return Promise.resolve(false);
 	
 	return new Promise((resolve) => {

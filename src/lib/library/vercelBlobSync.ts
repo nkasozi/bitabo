@@ -8,6 +8,7 @@ import {
     showConfirmDialog
 } from './ui';
 import { saveAllBooks, loadLibraryStateFromDB } from './dexieDatabase';
+import { getPremiumMessage } from './premiumUserUtils';
 
 // Define the PutBlobResult type since we're no longer importing from @vercel/blob
 interface PutBlobResult {
@@ -100,7 +101,12 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
         // For import mode, fetch and import books
         if (mode === 'import') {
             console.log(`[VercelSync] Importing books with prefix: ${prefixKey}`);
-            await importBooksWithPrefix(prefixKey);
+            const importResult = await importBooksWithPrefix(prefixKey);
+            if (!importResult) {
+                closeNotification(notificationId);
+                // If import failed (could be due to premium or empty results)
+                return false;
+            }
         }
         
         // Save the prefix to config
@@ -172,8 +178,75 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
         }));
         
         // 1. List all existing files with this prefix in Vercel Blob
-        const remoteFiles = await listBlobsWithPrefix(currentConfig.prefixKey);
-        console.log(`[VercelSync] Found ${remoteFiles.length} book files with prefix: ${currentConfig.prefixKey}`);
+        let remoteFiles = [];
+        try {
+            remoteFiles = await listBlobsWithPrefix(currentConfig.prefixKey, true); // Suppress error message
+            console.log(`[VercelSync] Found ${remoteFiles.length} book files with prefix: ${currentConfig.prefixKey}`);
+        } catch (error) {
+            // Close the progress notification
+            if (progressId) {
+                closeNotification(progressId);
+            }
+            
+            // Check if this is a premium error from the server (any 403/Forbidden error)
+            if (error instanceof Error && 
+                (error.message.includes('Premium subscription required') || 
+                 error.message.includes('403') ||
+                 error.message.includes('Forbidden'))) {
+                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
+                // Check if dark mode is active
+                const isDarkMode = typeof document !== 'undefined' && 
+                                  (document.documentElement.classList.contains('dark') || 
+                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+                const bgColor = isDarkMode ? '#1f2937' : 'white';
+                
+                // Create a custom premium dialog
+                const premiumDialog = document.createElement('dialog');
+                premiumDialog.id = 'premium-required-dialog';
+                premiumDialog.style.padding = '0';
+                premiumDialog.style.borderRadius = '8px';
+                premiumDialog.style.maxWidth = '400px';
+                premiumDialog.style.border = 'none';
+                premiumDialog.style.boxShadow = isDarkMode ? 
+                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+                    '0 4px 12px rgba(0, 0, 0, 0.15)';
+                premiumDialog.style.backgroundColor = 'transparent';
+                
+                // Add premium message content directly with dark mode aware button
+                premiumDialog.innerHTML = `
+                    ${getPremiumMessage()}
+                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(premiumDialog);
+                premiumDialog.showModal();
+                
+                // Wait for user to dismiss dialog
+                await new Promise<void>(resolve => {
+                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+                        premiumDialog.close();
+                        resolve();
+                    });
+                    
+                    premiumDialog.addEventListener('close', () => {
+                        resolve();
+                    });
+                });
+                return { 
+                    success: false, 
+                    booksAdded: 0, 
+                    booksUpdated: 0, 
+                    booksRemoved: 0, 
+                    error: 'Premium subscription required' 
+                };
+            }
+            
+            // Re-throw other errors
+            throw error;
+        }
         
         // Create a map of remote files by book ID for easy lookup
         const remoteFileMap = new Map();
@@ -373,11 +446,69 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
     try {
         // 1. List all files with this prefix in Vercel Blob
         console.log(`[VercelSync] Listing all files with prefix: ${prefixKey}`);
-        const bookFiles = await listBlobsWithPrefix(prefixKey);
-        console.log(`[VercelSync] Found ${bookFiles.length} files with prefix`, bookFiles);
+        
+        let bookFiles = [];
+        try {
+            bookFiles = await listBlobsWithPrefix(prefixKey, false); // Show notification if empty
+            console.log(`[VercelSync] Found ${bookFiles.length} files with prefix`, bookFiles);
+        } catch (error) {
+            // Check if this is a premium error (any 403/Forbidden error)
+            if (error instanceof Error && 
+                (error.message.includes('Premium subscription required') || 
+                 error.message.includes('403') ||
+                 error.message.includes('Forbidden'))) {
+                console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
+                
+                // Check if dark mode is active
+                const isDarkMode = typeof document !== 'undefined' && 
+                                  (document.documentElement.classList.contains('dark') || 
+                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+                const bgColor = isDarkMode ? '#1f2937' : 'white';
+                
+                // Create a custom premium dialog
+                const premiumDialog = document.createElement('dialog');
+                premiumDialog.id = 'premium-required-dialog';
+                premiumDialog.style.padding = '0';
+                premiumDialog.style.borderRadius = '8px';
+                premiumDialog.style.maxWidth = '400px';
+                premiumDialog.style.border = 'none';
+                premiumDialog.style.boxShadow = isDarkMode ? 
+                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+                    '0 4px 12px rgba(0, 0, 0, 0.15)';
+                premiumDialog.style.backgroundColor = 'transparent';
+                
+                // Add premium message content directly with dark mode aware button
+                premiumDialog.innerHTML = `
+                    ${getPremiumMessage()}
+                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(premiumDialog);
+                premiumDialog.showModal();
+                
+                // Wait for user to dismiss dialog
+                await new Promise<void>(resolve => {
+                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+                        premiumDialog.close();
+                        resolve();
+                    });
+                    
+                    premiumDialog.addEventListener('close', () => {
+                        resolve();
+                    });
+                });
+                
+                return false;
+            }
+            
+            // Re-throw other errors
+            throw error;
+        }
         
         if (bookFiles.length === 0) {
-            showNotification('No book files found with the specified prefix', 'info');
             return false;
         }
         
@@ -546,7 +677,7 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
         // Show import summary
         showNotification(
             `Imported ${importedCount} books from Vercel Blob. ${errorCount > 0 ? `${errorCount} errors.` : ''}`,
-            errorCount > 0 ? 'warning' : 'success'
+            errorCount > 0 ? 'error' : 'success'
         );
         
         // Additional processing to ensure all books are properly initialized
@@ -790,11 +921,36 @@ async function confirmConflictResolution(localBook: Book, remoteBook: Book): Pro
     const localDate = new Date(localBook.lastModified || 0).toLocaleString();
     const remoteDate = new Date(remoteBook.lastModified || 0).toLocaleString();
     
+    // Check if dark mode is active
+    const isDarkMode = typeof document !== 'undefined' && 
+                        (document.documentElement.classList.contains('dark') || 
+                        (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+    
+    const textColor = isDarkMode ? '#e5e7eb' : '#333';
+    const highlightColor = isDarkMode ? '#60a5fa' : '#4285f4';
+    const mutedColor = isDarkMode ? '#9ca3af' : '#666';
+    
     const message = `
-    <p>There's a conflict with book: <strong>${localBook.title}</strong></p>
-    <p>Local version: <em>${localDate}</em> - Progress: ${Math.round(localBook.progress * 100)}%</p>
-    <p>Remote version: <em>${remoteDate}</em> - Progress: ${Math.round(remoteBook.progress * 100)}%</p>
-    <p>Which version would you like to keep?</p>
+    <div style="color: ${textColor}; text-align: center;">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="${highlightColor}" stroke-width="2" style="margin: 0 auto 12px; display: block;">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        <p style="font-size: 16px; margin-bottom: 12px;">There's a conflict with book: <strong style="color: ${highlightColor};">${localBook.title}</strong></p>
+        <div style="display: flex; justify-content: space-around; margin: 16px 0; text-align: left; gap: 12px;">
+            <div style="flex: 1; padding: 12px; border: 1px solid ${isDarkMode ? '#4b5563' : '#e0e0e0'}; border-radius: 4px;">
+                <h4 style="margin: 0 0 8px; font-size: 14px; color: ${textColor};">Local Version</h4>
+                <p style="margin: 4px 0; font-size: 13px; color: ${mutedColor};">Last Modified: <em>${localDate}</em></p>
+                <p style="margin: 4px 0; font-size: 13px; color: ${mutedColor};">Progress: <strong>${Math.round(localBook.progress * 100)}%</strong></p>
+            </div>
+            <div style="flex: 1; padding: 12px; border: 1px solid ${isDarkMode ? '#4b5563' : '#e0e0e0'}; border-radius: 4px;">
+                <h4 style="margin: 0 0 8px; font-size: 14px; color: ${textColor};">Remote Version</h4>
+                <p style="margin: 4px 0; font-size: 13px; color: ${mutedColor};">Last Modified: <em>${remoteDate}</em></p>
+                <p style="margin: 4px 0; font-size: 13px; color: ${mutedColor};">Progress: <strong>${Math.round(remoteBook.progress * 100)}%</strong></p>
+            </div>
+        </div>
+        <p style="margin: 16px 0 8px; font-size: 14px;">Which version would you like to keep?</p>
+    </div>
   `;
     
     const result = await showConfirmDialog({
@@ -889,8 +1045,10 @@ async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult> {
 
 /**
  * List all blobs with a specific prefix
+ * @param prefix The prefix to search for
+ * @param suppressErrorMessage If true, don't show error notification for no files found
  */
-async function listBlobsWithPrefix(prefix: string): Promise<any[]> {
+async function listBlobsWithPrefix(prefix: string, suppressErrorMessage: boolean = false): Promise<any[]> {
     try {
         // List blobs with the prefix using our server endpoint
         console.log(`[VercelSync] Listing blobs with prefix: ${prefix}`);
@@ -899,16 +1057,285 @@ async function listBlobsWithPrefix(prefix: string): Promise<any[]> {
         
         if (!response.ok) {
             const errorData = await response.json();
+            
+            // Special handling for premium requirement errors
+            if (response.status === 403) {
+                if (errorData.isPremiumRequired) {
+                    throw new Error('Premium subscription required');
+                } else {
+                    throw new Error('Forbidden: ' + (errorData.error || 'Server returned 403'));
+                }
+            }
+            
             throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
         }
         
         const result = await response.json();
         console.log(`[VercelSync] List result:`, result);
         
-        return result.blobs;
+        // Check if no blobs were found
+        if (!result.blobs || result.blobs.length === 0) {
+            console.log(`[VercelSync] No blobs found with prefix: ${prefix}`);
+            
+            // Only show notification if not suppressed
+            if (!suppressErrorMessage) {
+                // Show notification about no files found - use regular notification instead of error
+                showNotification(
+                    `No files found with the prefix "${prefix}". If this is your first time using cloud sync, this is normal and you can proceed with uploading your books.`,
+                    'info'
+                );
+            }
+        }
+        
+        return result.blobs || [];
     } catch (error) {
         console.error(`[VercelSync] Error listing blobs with prefix ${prefix}:`, error);
         throw error;
+    }
+}
+
+/**
+ * Delete a book in Vercel Blob
+ * @param bookId The ID of the book to delete
+ */
+export async function deleteBookInVercelBlob(bookId: string): Promise<boolean> {
+    if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
+        console.log('[VercelSync] Sync not enabled, skipping deletion');
+        return false;
+    }
+    
+    try {
+        // Construct the filename
+        const filename = `${currentConfig.prefixKey}_${bookId}.json`;
+        console.log(`[VercelSync] Deleting book from Vercel Blob: ${filename}`);
+        
+        // Call server endpoint to delete the blob
+        const response = await fetch(`/api/vercel-blob/delete?pathname=${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            
+            // Special handling for premium requirement errors - treat ANY 403 as premium required
+            if (response.status === 403) {
+                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
+                // Check if dark mode is active
+                const isDarkMode = typeof document !== 'undefined' && 
+                                  (document.documentElement.classList.contains('dark') || 
+                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+                const bgColor = isDarkMode ? '#1f2937' : 'white';
+                
+                // Create a custom premium dialog
+                const premiumDialog = document.createElement('dialog');
+                premiumDialog.id = 'premium-required-dialog';
+                premiumDialog.style.padding = '0';
+                premiumDialog.style.borderRadius = '8px';
+                premiumDialog.style.maxWidth = '400px';
+                premiumDialog.style.border = 'none';
+                premiumDialog.style.boxShadow = isDarkMode ? 
+                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+                    '0 4px 12px rgba(0, 0, 0, 0.15)';
+                premiumDialog.style.backgroundColor = 'transparent';
+                
+                // Add premium message content directly with dark mode aware button
+                premiumDialog.innerHTML = `
+                    ${getPremiumMessage()}
+                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(premiumDialog);
+                premiumDialog.showModal();
+                
+                // Wait for user to dismiss dialog
+                await new Promise<void>(resolve => {
+                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+                        premiumDialog.close();
+                        resolve();
+                    });
+                    
+                    premiumDialog.addEventListener('close', () => {
+                        resolve();
+                    });
+                });
+                return false;
+            }
+            
+            throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log(`[VercelSync] Delete result:`, result);
+        
+        return true;
+    } catch (error) {
+        console.error(`[VercelSync] Error deleting book from Vercel Blob:`, error);
+        return false;
+    }
+}
+
+/**
+ * Delete all books with the current prefix from Vercel Blob
+ */
+export async function deleteAllBooksInVercelBlob(): Promise<boolean> {
+    if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
+        console.log('[VercelSync] Sync not enabled, skipping deletion');
+        return false;
+    }
+    
+    try {
+        // Check if dark mode is active
+        const isDarkMode = typeof document !== 'undefined' && 
+                           (document.documentElement.classList.contains('dark') || 
+                           (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+        
+        const textColor = isDarkMode ? '#e5e7eb' : '#333';
+        const warningColor = '#ef4444';
+        const mutedColor = isDarkMode ? '#9ca3af' : '#666';
+        
+        // Confirm with user before proceeding
+        const shouldDelete = await showConfirmDialog({
+            title: 'Delete Cloud Backup',
+            message: `
+            <div style="text-align: center; color: ${textColor};">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="${warningColor}" stroke-width="2" style="margin: 0 auto 16px; display: block;">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <p style="font-size: 16px; margin-bottom: 12px; font-weight: 500;">Are you sure you want to delete all books?</p>
+                <p style="margin: 8px 0; color: ${mutedColor};">
+                    All books from your cloud backup with prefix 
+                    <strong style="color: ${textColor};">${currentConfig.prefixKey}</strong> will be deleted.
+                </p>
+                <p style="margin: 16px 0 8px; color: ${warningColor}; font-size: 14px;">
+                    This action cannot be undone.
+                </p>
+            </div>
+            `,
+            confirmText: 'Delete',
+            cancelText: 'Cancel'
+        });
+        
+        if (!shouldDelete) {
+            console.log('[VercelSync] User cancelled deletion');
+            return false;
+        }
+        
+        // Show notification
+        const notificationId = showNotification('Deleting cloud backup...', 'info');
+        
+        // List all blobs with this prefix
+        let blobs = [];
+        try {
+            blobs = await listBlobsWithPrefix(currentConfig.prefixKey);
+            console.log(`[VercelSync] Found ${blobs.length} blobs to delete`);
+        } catch (error) {
+            closeNotification(notificationId);
+            
+            // Check if this is a premium error
+            if (error instanceof Error && 
+                (error.message.includes('Premium subscription required') || 
+                 error.message.includes('403'))) {
+                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
+                // Check if dark mode is active
+                const isDarkMode = typeof document !== 'undefined' && 
+                                  (document.documentElement.classList.contains('dark') || 
+                                  (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+                const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+                const bgColor = isDarkMode ? '#1f2937' : 'white';
+                
+                // Create a custom premium dialog
+                const premiumDialog = document.createElement('dialog');
+                premiumDialog.id = 'premium-required-dialog';
+                premiumDialog.style.padding = '0';
+                premiumDialog.style.borderRadius = '8px';
+                premiumDialog.style.maxWidth = '400px';
+                premiumDialog.style.border = 'none';
+                premiumDialog.style.boxShadow = isDarkMode ? 
+                    '0 4px 12px rgba(0, 0, 0, 0.3)' : 
+                    '0 4px 12px rgba(0, 0, 0, 0.15)';
+                premiumDialog.style.backgroundColor = 'transparent';
+                
+                // Add premium message content directly with dark mode aware button
+                premiumDialog.innerHTML = `
+                    ${getPremiumMessage()}
+                    <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+                        <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(premiumDialog);
+                premiumDialog.showModal();
+                
+                // Wait for user to dismiss dialog
+                await new Promise<void>(resolve => {
+                    document.getElementById('premium-ok-button')?.addEventListener('click', () => {
+                        premiumDialog.close();
+                        resolve();
+                    });
+                    
+                    premiumDialog.addEventListener('close', () => {
+                        resolve();
+                    });
+                });
+                return false;
+            }
+            
+            // Re-throw other errors
+            throw error;
+        }
+        
+        if (blobs.length === 0) {
+            closeNotification(notificationId);
+            showNotification('No files to delete in cloud backup', 'info');
+            return true;
+        }
+        
+        // Delete each blob
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const blob of blobs) {
+            try {
+                const response = await fetch(`/api/vercel-blob/delete?pathname=${encodeURIComponent(blob.pathname)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                    console.error(`[VercelSync] Error deleting blob ${blob.pathname}:`, await response.json());
+                }
+            } catch (error) {
+                errorCount++;
+                console.error(`[VercelSync] Error deleting blob ${blob.pathname}:`, error);
+            }
+        }
+        
+        // Close notification
+        closeNotification(notificationId);
+        
+        // Show result
+        if (errorCount > 0) {
+            showErrorNotification(
+                'Cloud Backup Deletion', 
+                'Partial Success', 
+                `Deleted ${successCount} files, but encountered errors with ${errorCount} files.`
+            );
+        } else {
+            showNotification(`Successfully deleted all ${successCount} files from cloud backup`, 'success');
+        }
+        
+        return successCount > 0;
+    } catch (error) {
+        console.error(`[VercelSync] Error deleting all books from Vercel Blob:`, error);
+        showErrorNotification('Cloud Backup Deletion', 'Error', (error as Error).message);
+        return false;
     }
 }
 

@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { put } from '@vercel/blob';
 import type { RequestHandler } from './$types';
+import { isPremiumUser, extractPrefixFromPathname } from '../premium-check';
 
 // Vercel Blob token from environment or hardcoded (for development)
 const VERCEL_BLOB_TOKEN = "vercel_blob_rw_KG2Dv9vgTuohDWvm_S97qGfCHPMF3ukp6lOvxSNLw9okBVC";
@@ -14,6 +15,25 @@ export const POST = (async ({ request }) => {
         
         if (!file || !(file instanceof Blob) || !filename || typeof filename !== 'string') {
             return json({ error: 'File and filename are required' }, { status: 400 });
+        }
+        
+        // Extract prefix from filename (format: prefix_bookid.json)
+        const prefix = extractPrefixFromPathname(filename);
+        if (!prefix) {
+            return json({ error: 'Invalid filename format. Expected format: prefix_bookid.json' }, { status: 400 });
+        }
+        
+        // Check if this is a premium user
+        const premium = isPremiumUser(prefix);
+        if (!premium) {
+            console.log(`[API] Non-premium user attempted to upload blob with prefix: ${prefix}`);
+            return json(
+                { 
+                    error: 'Premium subscription required',
+                    isPremiumRequired: true
+                }, 
+                { status: 403 }
+            );
         }
         
         console.log(`[API] Uploading blob: ${filename}`);
