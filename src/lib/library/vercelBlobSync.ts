@@ -7,8 +7,49 @@ import {
     showErrorNotification,
     showConfirmDialog
 } from './ui';
-import { saveAllBooks, loadLibraryStateFromDB } from './dexieDatabase';
+import { saveAllBooks, loadLibraryStateFromDB, processBookAfterLoad } from './dexieDatabase'; 
 import { getPremiumMessage } from './premiumUserUtils';
+
+// --- Type Definitions ---
+interface VercelBlobError {
+    code?: string;
+    message?: string;
+    isPremiumRequired?: boolean;
+    error?: string; // General error message
+}
+
+interface VercelPutBlobResult {
+    url: string;
+    downloadUrl: string;
+    pathname: string;
+    contentType: string;
+    contentDisposition: string;
+}
+
+interface VercelListBlobResult {
+    blobs: VercelBlob[];
+    hasMore: boolean;
+    cursor?: string;
+}
+
+interface VercelBlob {
+    url: string;
+    downloadUrl: string;
+    pathname: string;
+    size: number;
+    uploadedAt: string; // ISO 8601 date string
+}
+
+interface VercelBlobErrorResponse {
+    error: string;
+    isPremiumRequired?: boolean;
+}
+
+interface VercelListBlobResult {
+    blobs: VercelBlob[];
+    hasMore: boolean;
+    cursor?: string;
+}
 
 // --- Utility Functions ---
 
@@ -86,7 +127,7 @@ export function isPremiumRequiredError(error: Error): boolean {
 export async function isPremiumRequiredResponse(response: Response): Promise<boolean> {
     if (response.status === 403) {
         try {
-            const data = await response.json();
+            const data = await response.json() as VercelBlobErrorResponse; // Cast to VercelBlobErrorResponse
             return data.isPremiumRequired === true;
         } catch (e) {
             return true; // Assume any 403 is premium related if we can't parse the JSON
@@ -99,7 +140,7 @@ export async function isPremiumRequiredResponse(response: Response): Promise<boo
 interface PutBlobResult {
     url: string;
     pathname: string;
-    contentType: string;
+    contentType?: string;
     contentDisposition: string;
     downloadUrl: string;
     size: number;
@@ -175,7 +216,7 @@ export async function initVercelBlobSync(): Promise<boolean> {
 export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new'): Promise<boolean> {
     if (!browser) return false;
     
-    const initialNotificationId = showNotification(`Setting up Vercel Blob Sync (${mode})...`, 'info');
+    const initialNotificationId = showNotification(`Setting up Cloud Sync (${mode})...`, 'info');
 
     try {
         prefixKey = prefixKey.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -197,7 +238,7 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
                 if (error instanceof Error && isPremiumRequiredError(error)) {
                     await showPremiumDialog();
                 } else {
-                    showErrorNotification('Vercel Blob Sync Error', 'Prefix Verification', (error as Error).message);
+                    showErrorNotification('Cloud Sync Error', 'Prefix Verification', (error as Error).message);
                 }
                 return false;
             }
@@ -216,7 +257,7 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
             } catch (error) {
                  closeNotification(checkMsgId);
                  closeNotification(initialNotificationId);
-                 showErrorNotification('Vercel Blob Sync Error', 'Premium Check', (error as Error).message);
+                 showErrorNotification('Cloud Sync Error', 'Premium Check', (error as Error).message);
                  return false;
             }
         }
@@ -240,14 +281,14 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
             // Regardless of importSuccess, setup itself is done.
             showNotification(`Import attempt from '${prefixKey}' finished.`, 'info');
         } else { // mode === 'new'
-            showNotification('Vercel Blob sync set up successfully. You can sync your library now.', 'success');
+            showNotification('Cloud sync set up successfully. You can sync your library now.', 'success');
         }
         
         return true;
 
     } catch (error) {
         closeNotification(initialNotificationId);
-        showErrorNotification('Vercel Blob Sync Error', 'Setup', (error as Error).message);
+        showErrorNotification('Cloud Sync Error', 'Setup', (error as Error).message);
         return false;
     }
 }
@@ -292,36 +333,27 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
     activeOperation = 'sync';
     currentSyncStatus = [];
     
-    // Create progress notification
-    const progressId = showProgressNotification('Syncing library with Vercel Blob...', 0);
+    const progressId = showProgressNotification('Syncing library with Cloud Storage...', 0);
     
     try {
-        // Get current library state from Dexie
         const { books: localBooks } = await loadLibraryStateFromDB();
         
-        // Initialize sync status
         currentSyncStatus = localBooks.map(book => ({
             id: book.id,
             title: book.title || 'Unknown',
             status: 'pending'
         }));
         
-        // 1. List all existing files with this prefix in Vercel Blob
-        let remoteFiles = [];
+        let remoteFiles: VercelBlob[] = []; // Explicitly type remoteFiles
         try {
-            remoteFiles = await listBlobsWithPrefix(currentConfig.prefixKey, true); // Suppress error message
+            remoteFiles = await listBlobsWithPrefix(currentConfig.prefixKey, true); 
             console.log(`[VercelSync] Found ${remoteFiles.length} book files with prefix: ${currentConfig.prefixKey}`);
         } catch (error) {
-            // Close the progress notification
             if (progressId) {
                 closeNotification(progressId);
             }
-            
-            // Check if this is a premium error from the server (any 403/Forbidden error)
             if (error instanceof Error && isPremiumRequiredError(error)) {
                 console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                
-                // Show premium dialog
                 await showPremiumDialog();
                 return { 
                     success: false, 
@@ -331,172 +363,108 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
                     error: 'Premium subscription required' 
                 };
             }
-            
-            // Re-throw other errors
             throw error;
         }
         
-        // Create a map of remote files by book ID for easy lookup
-        const remoteFileMap = new Map();
+        const remoteFileMap = new Map<string, VercelBlob>(); // Specify Map types
         for (const file of remoteFiles) {
-            // Extract book ID from filename (prefix_bookID.json)
             const bookId = extractBookIdFromPath(file.pathname);
             if (bookId) {
                 remoteFileMap.set(bookId, file);
             }
         }
         
-        // Track changes
         let booksAdded = 0;
         let booksUpdated = 0;
         let booksRemoved = 0;
+       
         
-        // 2. Calculate approximate size of each book's JSON representation for sorting
-        const booksWithSize = await Promise.all(localBooks.map(async (book) => {
-            // Simulate what we do in uploadBookToVercelBlob to get an approximate size
-            let bookForBackup = { ...book };
-            
-            // Handle file as base64 if present
-            if (book.file instanceof Blob) {
-                try {
-                    const buffer = await book.file.arrayBuffer();
-                    const binary = String.fromCharCode(...new Uint8Array(buffer));
-                    bookForBackup.originalFile = btoa(binary);
-                    bookForBackup.fileName = book.file.name;
-                    bookForBackup.fileType = book.file.type;
-                    bookForBackup.lastModified = book.file.lastModified;
-                } catch (error) {
-                    console.error(`[VercelSync] Error processing file blob for size calculation: ${book.title}`, error);
-                }
-            }
-            
-            // Handle cover as base64 if present
-            if (book.coverBlob instanceof Blob) {
-                try {
-                    const buffer = await book.coverBlob.arrayBuffer();
-                    const binary = String.fromCharCode(...new Uint8Array(buffer));
-                    bookForBackup.originalCoverImage = btoa(binary);
-                } catch (error) {
-                    console.error(`[VercelSync] Error processing cover blob for size calculation: ${book.title}`, error);
-                }
-            }
-            
-            // Remove non-serializable properties
-            const bookCopy = { ...bookForBackup };
-            delete bookCopy.file;
-            delete bookCopy.coverBlob;
-            
-            // Calculate approximate size
-            const jsonSize = JSON.stringify(bookCopy).length;
-            
-            return {
-                book,
-                size: jsonSize
-            };
-        }));
+        const BATCH_SIZE = 5; 
+        const booksToProcess = localBooks;//renamed for clarity
+        const totalBooksToProcess = booksToProcess.length;
         
-        // Sort books by size (smallest to largest)
-        booksWithSize.sort((a, b) => a.size - b.size);
-        
-        console.log(`[VercelSync] Sorted books by size, smallest: ${booksWithSize[0]?.book.title} (${booksWithSize[0]?.size} bytes), largest: ${booksWithSize[booksWithSize.length-1]?.book.title} (${booksWithSize[booksWithSize.length-1]?.size} bytes)`);
-        
-        // 3. Process books in parallel batches
-        const BATCH_SIZE = 5; // Number of books to process in parallel
-        const books = booksWithSize.map(item => item.book);
-        const totalBooks = books.length;
-        
-        // Process books in batches
-        for (let batchStart = 0; batchStart < books.length; batchStart += BATCH_SIZE) {
-            const batch = books.slice(batchStart, batchStart + BATCH_SIZE);
-            const batchEnd = Math.min(batchStart + BATCH_SIZE, books.length);
+        for (let batchStart = 0; batchStart < totalBooksToProcess; batchStart += BATCH_SIZE) {
+            const batch = booksToProcess.slice(batchStart, batchStart + BATCH_SIZE);
+            const batchEnd = Math.min(batchStart + BATCH_SIZE, totalBooksToProcess);
             
-            console.log(`[VercelSync] Processing batch ${batchStart/BATCH_SIZE + 1}: books ${batchStart+1} to ${batchEnd} of ${totalBooks}`);
+            console.log(`[VercelSync] Processing batch ${batchStart/BATCH_SIZE + 1}: books ${batchStart+1} to ${batchEnd} of ${totalBooksToProcess}`);
             
-            // Update progress notification for the batch
             if (progressId) {
-                const progress = Math.round((batchStart / totalBooks) * 100);
+                const progress = Math.round((batchStart / totalBooksToProcess) * 100);
                 updateProgressNotification(
                     progressId, 
-                    `Processing book ${batchStart+1} out of ${totalBooks}`, 
+                    `Syncing local books: ${batchStart+1} of ${totalBooksToProcess}`, 
                     progress
                 );
             }
             
-            // Mark all books in the batch as syncing
             batch.forEach(book => {
                 updateBookSyncStatus(book.id, 'syncing');
             });
             
-            // Process all books in this batch in parallel
             const results = await Promise.allSettled(
               batch.map(async (book) => {
                 try {
-                    // Check if book exists in remote
                     const remoteFile = remoteFileMap.get(book.id);
                     
-                    if (remoteFile) {
-                        // Book exists in remote, check for updates
-                        console.log(`[VercelSync] Book already exists remotely: ${book.title}`);
-                        
-                        // For simplicity, we'll always update the remote with the local version
+                    if (shouldUpdateBook(remoteFile, book)) {
+                        console.log(`[VercelSync] Book already exists remotely: ${book.title}. Updating.`);
                         await uploadBookToVercelBlob(book);
-                        remoteFileMap.delete(book.id); // Remove from map to track processed files
+                        remoteFileMap.delete(book.id); 
                         return { book, status: 'updated' };
-                    } else {
-                        // Book doesn't exist in remote, create it
+                    } else if (!remoteFile) {
                         console.log(`[VercelSync] Adding new book to Vercel Blob: ${book.title}`);
                         await uploadBookToVercelBlob(book);
                         return { book, status: 'added' };
+                    } else {
+                        console.log(`[VercelSync] Book already exists remotely and is up to date: ${book.title}`);
+                        return { book, status: 'skipped' };
                     }
                 } catch (error) {
                     console.error(`[VercelSync] Error processing book ${book.title}:`, error);
-                    throw { book, error };
+                    // Ensure the error is an instance of Error for consistent handling
+                    const processedError = error instanceof Error ? error : new Error(String(error));
+                    throw { book, error: processedError };
                 }
             }));
             
-            // Process results from this batch
             results.forEach(result => {
                 if (result.status === 'fulfilled') {
                     const { book, status } = result.value;
-                    // Mark book as completed
                     updateBookSyncStatus(book.id, 'completed');
-                    
-                    // Update counters
                     if (status === 'added') {
                         booksAdded++;
                     } else if (status === 'updated') {
                         booksUpdated++;
                     }
                 } else {
-                    const { book, error } = result.reason;
-                    updateBookSyncStatus(book.id, 'error', (error as Error).message);
+                    // result.reason is { book, error }
+                    const { book, error } = result.reason as { book: Book; error: Error };
+                    updateBookSyncStatus(book.id, 'error', error.message);
                 }
             });
             
-            // Update progress after each batch
             if (progressId) {
-                const progress = Math.round(((batchEnd) / totalBooks) * 100);
+                const progress = Math.round(((batchEnd) / totalBooksToProcess) * 100);
                 updateProgressNotification(
                     progressId, 
-                    `Completed ${booksAdded + booksUpdated} out of ${totalBooks} books`, 
+                    `Synced ${booksAdded + booksUpdated} local books out of ${totalBooksToProcess}`, 
                     progress
                 );
             }
         }
+
         
-        // 3. Update last sync time
         updateConfig({
             lastSyncTime: Date.now()
         });
         
-        // Close progress notification
         if (progressId) {
             closeNotification(progressId);
         }
         
-        // Show success notification
         showNotification(
-            `Sync completed: ${booksAdded} added, ${booksUpdated} updated`, 
+            `Sync completed: ${booksAdded} added, ${booksUpdated} updated, ${booksRemoved} removed.`, 
             'success'
         );
         
@@ -509,13 +477,11 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
     } catch (error) {
         console.error('[VercelSync] Sync error:', error);
         
-        // Close progress notification
         if (progressId) {
             closeNotification(progressId);
         }
         
-        // Show error notification
-        showErrorNotification('Vercel Blob Sync Error', 'Sync', (error as Error).message);
+        showErrorNotification('Cloud Sync Error', 'Sync', (error as Error).message);
         
         return { 
             success: false, 
@@ -527,6 +493,10 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
     } finally {
         activeOperation = null;
         console.log('[VercelSync] Sync operation finished. Active operation set to null.');
+    }
+
+    function shouldUpdateBook(remoteFile: VercelBlob | undefined, book: Book) {
+        return remoteFile?.uploadedAt && book.lastModified && Date.parse(remoteFile.uploadedAt) < book.lastModified;
     }
 }
 
@@ -649,8 +619,13 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
                         if (useRemote) {
                             console.log(`[VercelSync] Using remote version for: ${remoteBook.title}`);
                             // Process remote book (restore blobs, etc.)
-                            const processedBook = await processBookBlobs(remoteBook);
-                            updateBookImportStatus(processedBook.id, 'completed', undefined, processedBook.title);
+                            const processedBook = await processBookAfterLoad(remoteBook);
+                            updateBookImportStatus(
+                              processedBook?.id??remoteBook.id,
+                              'completed',
+                              undefined,
+                              processedBook?.title??remoteBook.title
+                            );
                             return { action: 'update', index: existingIndex, book: processedBook };
                         } else {
                             console.log(`[VercelSync] Keeping local version for: ${localBook.title}`);
@@ -660,8 +635,13 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
                     } else {
                         console.log(`[VercelSync] New book found, adding: ${remoteBook.title}`);
                         // New book - process and add
-                        const processedBook = await processBookBlobs(remoteBook);
-                        updateBookImportStatus(processedBook.id, 'completed', undefined, processedBook.title);
+                        const processedBook = await processBookAfterLoad(remoteBook);
+                        updateBookImportStatus(
+                          processedBook?.id??remoteBook.id,
+                          'completed',
+                          undefined,
+                          processedBook?.title??remoteBook.title
+                        );
                         return { action: 'add', book: processedBook };
                     }
                 } catch (error) {
@@ -748,37 +728,17 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
             `Imported ${importedCount} books from Vercel Blob. ${errorCount > 0 ? `${errorCount} errors.` : ''}`,
             errorCount > 0 ? 'error' : 'success'
         );
-        
-        // Additional processing to ensure all books are properly initialized
-        const fullyValidatedBooks = finalState.books.map(book => {
-            // Final verification of critical properties before dispatch
-            if (!book.path && book.fileName) {
-                console.log(`[VercelSync] Final check: Setting missing path for book: ${book.title}`);
-                book.path = book.fileName;
-            }
-            
-            // Ensure file objects have proper URLs
-            if (book.file instanceof Blob && !book.fileUrl) {
-                try {
-                    console.log(`[VercelSync] Final check: Creating missing fileUrl for book: ${book.title}`);
-                    book.fileUrl = URL.createObjectURL(book.file);
-                } catch (error) {
-                    console.error(`[VercelSync] Final check: Error creating fileUrl for book ${book.title}:`, error);
-                }
-            }
-            
-            return book;
-        });
+
         
         // Dispatch a final completion event with the refreshed state
         const finalEvent = new CustomEvent('vercel-blob-import-complete', { 
             detail: { 
                 booksImported: importedCount,
-                mergedBooks: fullyValidatedBooks
+                mergedBooks: finalState.books
             } 
         });
         
-        console.log(`[VercelSync] Dispatching final completion event with ${fullyValidatedBooks.length} fully validated books`);
+        console.log(`[VercelSync] Dispatching final completion event with ${finalState.books.length} fully validated books`);
         window.dispatchEvent(finalEvent);
         
         return importedCount > 0;
@@ -796,181 +756,6 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
         activeOperation = null;
         console.log('[VercelSync] Import operation finished. Active operation set to null.');
     }
-}
-
-/**
- * Process a book to ensure blobs and files are properly handled
- * This function is critical for ensuring books are properly initialized for the reader
- */
-async function processBookBlobs(book: Book): Promise<Book> {
-    const processedBook: Book = { ...book };
-    
-    // Always revoke any existing URL to prevent memory leaks
-    if (processedBook.coverUrl && processedBook.coverUrl.startsWith('blob:')) {
-        try {
-            URL.revokeObjectURL(processedBook.coverUrl);
-            console.log(`[VercelSync] Revoked existing coverUrl for "${processedBook.title}"`);
-        } catch (error) {
-            console.error(`[VercelSync] Error revoking URL for "${processedBook.title}":`, error);
-        }
-        processedBook.coverUrl = ''; // Clear the URL so we'll regenerate it
-    }
-    
-    // Similarly, revoke any existing file URL to prevent memory leaks
-    if (processedBook.fileUrl && processedBook.fileUrl.startsWith('blob:')) {
-        try {
-            URL.revokeObjectURL(processedBook.fileUrl);
-            console.log(`[VercelSync] Revoked existing fileUrl for "${processedBook.title}"`);
-        } catch (error) {
-            console.error(`[VercelSync] Error revoking file URL for "${processedBook.title}":`, error);
-        }
-        processedBook.fileUrl = ''; // Clear the URL so we'll regenerate it
-    }
-    
-    // Process book with base64 backups if available
-    // ALWAYS recreate the file from base64 if available, regardless of whether we have a file property
-    // This ensures we have a fresh File object for each book
-    if (processedBook.originalFile) {
-        try {
-            console.log(`[VercelSync] Restoring file from base64 for "${processedBook.title}"`);
-            const binaryString = atob(processedBook.originalFile);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            // Create a File from the binary data
-            if (processedBook.fileName) {
-                // Create a new File object regardless of whether one exists
-                processedBook.file = new File([bytes.buffer], processedBook.fileName, {
-                    type: processedBook.fileType || 'application/octet-stream',
-                    lastModified: processedBook.lastModified || Date.now()
-                });
-                
-                // VERY IMPORTANT: Always generate a fileUrl for the reader to access the file
-                processedBook.fileUrl = URL.createObjectURL(processedBook.file);
-                
-                // Ensure we set the required properties needed for the reader
-                if (!processedBook.path && processedBook.fileName) {
-                    processedBook.path = processedBook.fileName;
-                }
-                
-                console.log(`[VercelSync] Successfully restored file from base64 for "${processedBook.title}" with URL: ${processedBook.fileUrl}`);
-            } else {
-                console.warn(`[VercelSync] Could not restore file for "${processedBook.title}" - missing fileName`);
-            }
-        } catch (error) {
-            console.error(`[VercelSync] Error restoring file from base64 for "${processedBook.title}":`, error);
-        }
-    } else {
-        console.warn(`[VercelSync] No original file data available for "${processedBook.title}"`);
-    }
-    
-    // Always recreate cover blob from base64 if available
-    // This ensures we have fresh objects rather than potentially corrupted references
-    if (processedBook.originalCoverImage) {
-        try {
-            console.log(`[VercelSync] Restoring cover from base64 for "${processedBook.title}"`);
-            const binaryString = atob(processedBook.originalCoverImage);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            // Create a blob from the binary data
-            processedBook.coverBlob = new Blob([bytes.buffer], { type: 'image/jpeg' }); // Assume JPEG for compatibility
-            console.log(`[VercelSync] Successfully restored cover from base64 for "${processedBook.title}"`);
-            
-            // Always regenerate the coverUrl
-            processedBook.coverUrl = URL.createObjectURL(processedBook.coverBlob);
-            console.log(`[VercelSync] Generated new cover URL: ${processedBook.coverUrl}`);
-        } catch (error) {
-            console.error(`[VercelSync] Error restoring cover from base64 for "${processedBook.title}":`, error);
-        }
-    } else if (processedBook.coverBlob) {
-        // If we have a coverBlob but no base64 backup, still regenerate the URL
-        processedBook.coverUrl = URL.createObjectURL(processedBook.coverBlob);
-        console.log(`[VercelSync] Generated new cover URL from existing blob: ${processedBook.coverUrl}`);
-    }
-    
-    // Double-check that file is properly stored and accessible
-    if (processedBook.file instanceof Blob) {
-        // Create a proper File object if it's just a Blob
-        if (!(processedBook.file instanceof File) && processedBook.fileName) {
-            processedBook.file = new File([processedBook.file], processedBook.fileName, {
-                type: processedBook.fileType || 'application/octet-stream',
-                lastModified: processedBook.lastModified || Date.now()
-            });
-        }
-        
-        // CRITICAL: Ensure path property is set - this is essential for the reader to work correctly
-        // The reader uses this to determine the file type and how to render it
-        if (!processedBook.path && processedBook.fileName) {
-            processedBook.path = processedBook.fileName;
-        }
-        
-        // ALWAYS regenerate fileUrl to ensure it's fresh and valid
-        // Even if we have an existing one, regenerate it to be safe
-        try {
-            processedBook.fileUrl = URL.createObjectURL(processedBook.file);
-            console.log(`[VercelSync] Generated fileUrl for book: ${processedBook.title} (${processedBook.fileUrl})`);
-        } catch (error) {
-            console.error(`[VercelSync] Error creating URL for file: ${error}`);
-        }
-    } else {
-        console.warn(`[VercelSync] Critical: No file blob available for book: ${processedBook.title} - book won't be readable`);
-    }
-    
-    // Ensure the book has ALL critical properties needed for all operations
-    // These are essential for the book reader to function correctly
-    const now = Date.now();
-    processedBook.lastOpened = processedBook.lastOpened || now;
-    processedBook.lastModified = processedBook.lastModified || now;
-    processedBook.addedDate = processedBook.addedDate || now;
-    processedBook.lastAccessed = processedBook.lastAccessed || now;
-    processedBook.progress = processedBook.progress || 0;
-    processedBook.fontSize = processedBook.fontSize || 18; // Default font size
-
-    // Ensure file-related properties are set correctly
-    if (processedBook.file instanceof File || processedBook.file instanceof Blob) {
-        // Make sure we know what type of file it is
-        if (!processedBook.fileType && processedBook.file.type) {
-            processedBook.fileType = processedBook.file.type;
-        }
-        
-        // CRITICAL: Ensure path property is set - used by the reader to identify the file
-        if (!processedBook.path && processedBook.fileName) {
-            processedBook.path = processedBook.fileName;
-        }
-        
-        // Set a size if we have one
-        if (!processedBook.fileSize && processedBook.file.size) {
-            processedBook.fileSize = processedBook.file.size;
-        }
-    }
-    
-    // Log warnings for any missing critical properties
-    if (!processedBook.file) {
-        console.warn(`[VercelSync] Critical: Book "${processedBook.title}" is missing file data - reader will fail`);
-    }
-    
-    if (!processedBook.path) {
-        console.warn(`[VercelSync] Critical: Book "${processedBook.title}" is missing path property - reader will fail`);
-    }
-    
-    if (!processedBook.fileUrl) {
-        console.warn(`[VercelSync] Critical: Book "${processedBook.title}" is missing fileUrl - reader will fail`);
-    }
-    
-    // Final diagnostic log
-    console.log(`[VercelSync] Book "${processedBook.title}" fully processed with all required properties:
-      - path: ${processedBook.path || 'MISSING'}
-      - fileUrl: ${processedBook.fileUrl || 'MISSING'}
-      - file: ${processedBook.file ? 'Present' : 'MISSING'}
-      - fileType: ${processedBook.fileType || 'MISSING'}
-    `);
-    
-    return processedBook;
 }
 
 /**
@@ -1081,78 +866,56 @@ async function confirmConflictResolution(localBook: Book, remoteBook: Book): Pro
 /**
  * Upload a book to Vercel Blob
  */
-async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult> {
-    if (!currentConfig.prefixKey) {
-        throw new Error('No prefix key configured');
-    }
+async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult | null> {
+    if (!browser || !currentConfig.prefixKey) return null;
+
+    // const bookDataForUpload = await prepareBookForUpload(book); // Temporarily comment out until defined
+    // if (!bookDataForUpload) {
+    //     console.warn('[VercelSync] Failed to prepare book for upload:', book.title);
+    //     return null;
+    // }
+    // const { jsonData, fileName } = bookDataForUpload;
     
+    // Placeholder for prepareBookForUpload logic:
+    const fileName = `${currentConfig.prefixKey}_${book.id}.json`;
+    const jsonData = book; // Assuming the whole book object is the jsonData for now
+
+    const blob = new Blob([JSON.stringify(jsonData)], { type: 'application/json' });
+
+    console.log(`[VercelSync] Uploading book: ${fileName}`);
+
+    const formData = new FormData();
+    formData.append('file', blob, fileName);
+    formData.append('filename', fileName); 
+
     try {
-        // Prepare book data - we need to store binary data as base64
-        let bookForBackup = { ...book };
-        
-        // Handle file as base64
-        if (book.file instanceof Blob) {
-            try {
-                const buffer = await book.file.arrayBuffer();
-                const binary = String.fromCharCode(...new Uint8Array(buffer));
-                bookForBackup.originalFile = btoa(binary);
-                bookForBackup.fileName = book.file.name;
-                bookForBackup.fileType = book.file.type;
-                bookForBackup.lastModified = book.file.lastModified;
-            } catch (error) {
-                console.error(`[VercelSync] Error processing file blob for "${book.title}":`, error);
-            }
-        }
-        
-        // Handle cover as base64
-        if (book.coverBlob instanceof Blob) {
-            try {
-                const buffer = await book.coverBlob.arrayBuffer();
-                const binary = String.fromCharCode(...new Uint8Array(buffer));
-                bookForBackup.originalCoverImage = btoa(binary);
-            } catch (error) {
-                console.error(`[VercelSync] Error processing cover blob for "${book.title}":`, error);
-            }
-        }
-        
-        // Remove non-serializable properties
-        delete bookForBackup.file;
-        delete bookForBackup.coverBlob;
-        
-        // Convert to JSON
-        const bookJson = JSON.stringify(bookForBackup);
-        
-        // Create a blob from the JSON
-        const jsonBlob = new Blob([bookJson], { type: 'application/json' });
-        
-        // Upload to Vercel Blob via our server endpoint
-        const filename = `${currentConfig.prefixKey}_${book.id}.json`;
-        
-        console.log(`[VercelSync] Uploading ${filename} to Vercel Blob`);
-        
-        // Create FormData for the file upload
-        const formData = new FormData();
-        formData.append('file', jsonBlob);
-        formData.append('filename', filename);
-        
-        // Send the request to our Vercel API endpoint
         const response = await fetch('/api/vercel-blob/put', {
             method: 'POST',
-            body: formData
+            body: formData,
         });
-        
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
+            const errorData: VercelBlobErrorResponse = await response.json();
+            console.error('[VercelSync] Error uploading book:', errorData);
+            if (errorData.isPremiumRequired) {
+                throw new PremiumRequiredError(errorData.error);
+            }
+            throw new Error(errorData.error || `Failed to upload book with status: ${response.status}`);
         }
-        
-        const result = await response.json();
-        console.log(`[VercelSync] Upload successful:`, result);
-        
+
+        const result: PutBlobResult = await response.json();
+        console.log('[VercelSync] Successfully uploaded book:', result.pathname);
         return result;
     } catch (error) {
-        console.error(`[VercelSync] Error uploading book to Vercel Blob:`, error);
-        throw error;
+        console.error('[VercelSync] Exception in uploadBookToVercelBlob for book:', book.title, error);
+        if (error instanceof PremiumRequiredError) {
+            throw error; 
+        }
+        // Do not re-throw generic errors here if you want batch processing to continue for other books
+        // The main sync function will handle individual book errors based on Promise.allSettled
+        // However, for direct calls or if specific handling is needed, re-throwing might be appropriate.
+        // For now, let's ensure the error is propagated for the batch handler.
+        throw new Error(`Failed to upload book ${book.title}: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -1161,7 +924,7 @@ async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult> {
  * @param prefix The prefix to search for
  * @param suppressErrorMessage If true, don't show error notification for no files found
  */
-async function listBlobsWithPrefix(prefix: string, suppressErrorMessage: boolean = false): Promise<any[]> {
+async function listBlobsWithPrefix(prefix: string, suppressErrorMessage: boolean = false): Promise<VercelBlob[]> {
     try {
         // List blobs with the prefix using our server endpoint
         console.log(`[VercelSync] Listing blobs with prefix: ${prefix}`);
@@ -1169,24 +932,18 @@ async function listBlobsWithPrefix(prefix: string, suppressErrorMessage: boolean
         const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefix)}`);
         
         if (!response.ok) {
-            const errorData = await response.json();
-            
-            // Special handling for premium requirement errors
-            if (response.status === 403) {
-                if (errorData.isPremiumRequired) {
-                    throw new Error('Premium subscription required');
-                } else {
-                    throw new Error('Forbidden: ' + (errorData.error || 'Server returned 403'));
-                }
+            let errorData: VercelBlobError = {};
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                // Ignore if response is not JSON
             }
-            
+            console.error("[VercelSync] Error listing blobs with prefix:", errorData.message || response.statusText);
             throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
         }
+
+        const result: VercelListBlobResult = await response.json();
         
-        const result = await response.json();
-        console.log(`[VercelSync] List result:`, result);
-        
-        // Check if no blobs were found
         if (!result.blobs || result.blobs.length === 0) {
             console.log(`[VercelSync] No blobs found with prefix: ${prefix}`);
             
@@ -1228,7 +985,7 @@ export async function deleteBookInVercelBlob(bookId: string): Promise<boolean> {
         });
         
         if (!response.ok) {
-            const errorData = await response.json();
+            const errorData: VercelBlobErrorResponse = await response.json();
             
             // Special handling for premium requirement errors
             if (await isPremiumRequiredResponse(response)) {
@@ -1522,5 +1279,13 @@ function updateProgressNotification(id: string, message: string, progress: numbe
     
     if (statsElement) {
         statsElement.textContent = `${progress}% complete`;
+    }
+}
+
+export class PremiumRequiredError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'PremiumRequiredError';
+        Object.setPrototypeOf(this, PremiumRequiredError.prototype);
     }
 }
