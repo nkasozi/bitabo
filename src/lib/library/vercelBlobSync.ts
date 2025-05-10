@@ -128,6 +128,8 @@ interface BookSyncStatus {
     error?: string;
 }
 
+type ActiveOperationType = 'sync' | 'import' | null;
+
 // Default config
 const DEFAULT_CONFIG: VercelBlobSyncConfig = {
     syncEnabled: false,
@@ -142,6 +144,8 @@ const DEFAULT_CONFIG: VercelBlobSyncConfig = {
 let currentConfig: VercelBlobSyncConfig = { ...DEFAULT_CONFIG };
 let isInitialized = false;
 let currentSyncStatus: BookSyncStatus[] = [];
+let currentImportStatus: BookSyncStatus[] = [];
+let activeOperation: ActiveOperationType = null;
 
 // --- Core Functionality ---
 
@@ -253,6 +257,11 @@ export function disableVercelBlobSync(): void {
  * Get the current sync status for all books
  */
 export function getSyncStatus(): BookSyncStatus[] {
+    if (activeOperation === 'import') {
+        console.log('[VercelSync] Getting import status:', currentImportStatus);
+        return [...currentImportStatus];
+    }
+    console.log('[VercelSync] Getting sync status:', currentSyncStatus);
     return [...currentSyncStatus];
 }
 
@@ -271,6 +280,8 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
     }
     
     console.log('[VercelSync] Starting sync with Vercel Blob');
+    activeOperation = 'sync';
+    currentSyncStatus = [];
     
     // Create progress notification
     const progressId = showProgressNotification('Syncing library with Vercel Blob...', 0);
@@ -397,7 +408,7 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
                 const progress = Math.round((batchStart / totalBooks) * 100);
                 updateProgressNotification(
                     progressId, 
-                    `Processing books ${batchStart+1} to ${batchEnd} of ${totalBooks}`, 
+                    `Processing book ${batchStart+1} out of ${totalBooks}`, 
                     progress
                 );
             }
@@ -458,7 +469,7 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
                 const progress = Math.round(((batchEnd) / totalBooks) * 100);
                 updateProgressNotification(
                     progressId, 
-                    `Completed books ${batchStart+1} to ${batchEnd} of ${totalBooks}`, 
+                    `Completed ${booksAdded + booksUpdated} out of ${totalBooks} books`, 
                     progress
                 );
             }
@@ -504,6 +515,9 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
             booksRemoved: 0, 
             error: (error as Error).message 
         };
+    } finally {
+        activeOperation = null;
+        console.log('[VercelSync] Sync operation finished. Active operation set to null.');
     }
 }
 
@@ -511,6 +525,9 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
  * Import books with a specific prefix from Vercel Blob
  */
 async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
+    activeOperation = 'import';
+    currentImportStatus = [];
+    console.log(`[VercelSync] Import operation started. Active operation: ${activeOperation}`);
     try {
         // 1. List all files with this prefix in Vercel Blob
         console.log(`[VercelSync] Listing all files with prefix: ${prefixKey}`);
@@ -538,6 +555,16 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
             return false;
         }
         
+        currentImportStatus = bookFiles.map(file => {
+            const bookId = extractBookIdFromPath(file.pathname) || file.pathname;
+            return {
+                id: bookId,
+                title: file.pathname, 
+                status: 'pending'
+            };
+        });
+        console.log('[VercelSync] Initialized import status:', currentImportStatus);
+
         // Create progress notification
         const progressId = showProgressNotification('Importing books from Vercel Blob...', 0);
         
@@ -564,12 +591,14 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
             // Update progress notification for the batch
             updateProgressNotification(
                 progressId,
-                `Importing books ${batchStart+1} to ${batchEnd} of ${sortedFiles.length}`,
+                `Importing book ${batchStart+1} out of ${sortedFiles.length}`,
                 Math.round((batchStart / sortedFiles.length) * 100)
             );
             
             // Process all files in this batch in parallel
             const results = await Promise.allSettled(batch.map(async (file) => {
+                const bookIdForStatus = extractBookIdFromPath(file.pathname) || file.pathname;
+                updateBookImportStatus(bookIdForStatus, 'syncing', undefined, file.pathname);
                 try {
                     console.log(`[VercelSync] Processing book file: ${file.pathname}`);
                     
@@ -588,6 +617,7 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
                     
                     const remoteBook = JSON.parse(bookJson) as Book;
                     console.log(`[VercelSync] Successfully parsed book: ${remoteBook.title || 'Unknown'}`);
+                    updateBookImportStatus(bookId, 'syncing', undefined, remoteBook.title || file.pathname);
                     
                     // Check if book already exists
                     const existingIndex = mergedBooks.findIndex(b => b.id === remoteBook.id);
@@ -611,19 +641,23 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
                             console.log(`[VercelSync] Using remote version for: ${remoteBook.title}`);
                             // Process remote book (restore blobs, etc.)
                             const processedBook = await processBookBlobs(remoteBook);
+                            updateBookImportStatus(processedBook.id, 'completed', undefined, processedBook.title);
                             return { action: 'update', index: existingIndex, book: processedBook };
                         } else {
                             console.log(`[VercelSync] Keeping local version for: ${localBook.title}`);
+                            updateBookImportStatus(localBook.id, 'completed', undefined, localBook.title); 
                             return { action: 'skip', book: localBook };
                         }
                     } else {
                         console.log(`[VercelSync] New book found, adding: ${remoteBook.title}`);
                         // New book - process and add
                         const processedBook = await processBookBlobs(remoteBook);
+                        updateBookImportStatus(processedBook.id, 'completed', undefined, processedBook.title);
                         return { action: 'add', book: processedBook };
                     }
                 } catch (error) {
                     console.error(`[VercelSync] Error importing book file ${file.pathname}:`, error);
+                    updateBookImportStatus(bookIdForStatus, 'error', (error as Error).message, file.pathname);
                     throw error;
                 }
             }));
@@ -685,7 +719,7 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
             // Update progress after each batch
             updateProgressNotification(
                 progressId,
-                `Imported ${importedCount} books so far (${batchEnd} of ${sortedFiles.length} processed)`,
+                `Imported ${importedCount} out of ${sortedFiles.length} books`,
                 Math.round((batchEnd / sortedFiles.length) * 100)
             );
         }
@@ -742,7 +776,16 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
     } catch (error) {
         console.error('[VercelSync] Error importing books:', error);
         showErrorNotification('Vercel Blob Import Error', 'Import', (error as Error).message);
+        currentImportStatus.forEach(item => {
+            if (item.status === 'pending' || item.status === 'syncing') {
+                item.status = 'error';
+                item.error = 'Import process failed';
+            }
+        });
         return false;
+    } finally {
+        activeOperation = null;
+        console.log('[VercelSync] Import operation finished. Active operation set to null.');
     }
 }
 
@@ -929,13 +972,48 @@ function updateBookSyncStatus(
     status: 'pending' | 'syncing' | 'completed' | 'error', 
     error?: string
 ): void {
-    const index = currentSyncStatus.findIndex(item => item.id === bookId);
+    const statusArray = activeOperation === 'import' ? currentImportStatus : currentSyncStatus;
+    const index = statusArray.findIndex(item => item.id === bookId);
     if (index >= 0) {
-        currentSyncStatus[index] = {
-            ...currentSyncStatus[index],
+        statusArray[index] = {
+            ...statusArray[index],
             status,
             error
         };
+        if (activeOperation === 'import') {
+            console.log('[VercelSync] Updated import status for bookId:', bookId, statusArray[index]);
+        } else {
+            console.log('[VercelSync] Updated sync status for bookId:', bookId, statusArray[index]);
+        }
+    } else {
+        console.warn(`[VercelSync] Book status item not found for ID: ${bookId} in ${activeOperation || 'current'} operation.`);
+    }
+}
+
+/**
+ * Update the import status for a book specifically.
+ */
+function updateBookImportStatus(
+    bookId: string,
+    status: 'pending' | 'syncing' | 'completed' | 'error',
+    error?: string,
+    title?: string // Optional title to update if it changes from pathname
+): void {
+    const index = currentImportStatus.findIndex(item => item.id === bookId);
+    if (index >= 0) {
+        currentImportStatus[index].status = status;
+        if (error) currentImportStatus[index].error = error;
+        if (title) currentImportStatus[index].title = title; // Update title if provided
+        console.log('[VercelSync] Updated import status for bookId:', bookId, currentImportStatus[index]);
+    } else {
+        // If not found, it might be a new book being added during import, or an ID mismatch.
+        // For now, we'll log a warning. If this happens frequently, we might need to add it.
+        console.warn(`[VercelSync] Book status item not found for ID during import: ${bookId}. Current title: ${title}`);
+        // Optionally, add it if it's missing and status is not 'pending'
+        // if (status !== 'pending') {
+        // currentImportStatus.push({ id: bookId, title: title || bookId, status, error });
+        // console.log('[VercelSync] Added new status item during import for bookId:', bookId);
+        // }
     }
 }
 
