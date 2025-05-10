@@ -12,18 +12,64 @@
 
 	injectSpeedInsights();
 	injectAnalytics();
-	
+
 	let { children } = $props();
-	
+
 	// Check if we're on the reader page to show appropriate header
-	let isReaderPage = $derived(
-		page?.url?.pathname?.startsWith('/reader') || false
-	);
-	
+	let isReaderPage = $derived(page?.url?.pathname?.startsWith('/reader') || false);
+
+	let touchstartY: number = 0;
+	let touchmoveY: number = 0;
+	let isPulling: boolean = false;
+	const pullThreshold: number = 70; // Pixels to pull before refresh
+
+	function handleTouchStart(event: TouchEvent): boolean {
+		if (window.scrollY === 0 && event.touches.length === 1) {
+			touchstartY = event.touches[0].clientY;
+			isPulling = true;
+			console.log('Pull-to-refresh: touchstart', { touchstartY });
+			return true;
+		}
+		return false;
+	}
+
+	function handleTouchMove(event: TouchEvent): boolean {
+		if (!isPulling || event.touches.length !== 1) {
+			return false;
+		}
+		touchmoveY = event.touches[0].clientY;
+		const pullDistance = touchmoveY - touchstartY;
+		console.log('Pull-to-refresh: touchmove', { touchmoveY, pullDistance });
+
+		if (pullDistance < 0) {
+			isPulling = false; // User scrolled up, cancel pull
+			return false;
+		}
+		// Optionally, add visual feedback here based on pullDistance
+		return true;
+	}
+
+	function handleTouchEnd(): boolean {
+		if (!isPulling) {
+			return false;
+		}
+		const pullDistance = touchmoveY - touchstartY;
+		console.log('Pull-to-refresh: touchend', { pullDistance, threshold: pullThreshold });
+		if (pullDistance > pullThreshold) {
+			console.log('Pull-to-refresh: Threshold met, reloading...');
+			window.location.reload();
+			return true;
+		}
+		isPulling = false;
+		touchstartY = 0;
+		touchmoveY = 0;
+		return false;
+	}
+
 	// Register service worker on app load
 	onMount(async () => {
 		if (browser) {
-			 // Added service worker registration call back here
+			// Added service worker registration call back here
 			try {
 				const registered = await registerServiceWorker();
 				console.log('Service worker registered from layout:', registered);
@@ -48,13 +94,13 @@
 	<meta name="google-site-verification" content="RygAY8A4JWo4RgLpPXbpOJnfQnlnvW0_CzmbttSNrws" />
 	<!-- Preload critical foliate-js scripts for development environment -->
 	{#if browser && window.location.hostname === 'localhost'}
-		<link rel="modulepreload" href="/foliate-js/view.js">
-		<link rel="modulepreload" href="/foliate-js/ui/menu.js">
-		<link rel="modulepreload" href="/foliate-js/ui/tree.js">
-		<link rel="modulepreload" href="/foliate-js/overlayer.js">
-		<link rel="modulepreload" href="/foliate-js/epubcfi.js">
+		<link rel="modulepreload" href="/foliate-js/view.js" />
+		<link rel="modulepreload" href="/foliate-js/ui/menu.js" />
+		<link rel="modulepreload" href="/foliate-js/ui/tree.js" />
+		<link rel="modulepreload" href="/foliate-js/overlayer.js" />
+		<link rel="modulepreload" href="/foliate-js/epubcfi.js" />
 	{/if}
-	
+
 	<!-- Load reader scripts when on reader page -->
 	{#if isReaderPage}
 		<script src="/foliate-js/view.js" defer></script>
@@ -65,10 +111,23 @@
 	{/if}
 </svelte:head>
 
-<div class="app">
+<div
+	class="app"
+	ontouchstart={handleTouchStart}
+	ontouchmove={handleTouchMove}
+	ontouchend={handleTouchEnd}
+	ontouchcancel={handleTouchEnd}
+>
 	{#if isReaderPage}
 		<!-- Reader-specific header and layout -->
-		<ReaderHeader bookInfo={page.data?.bookInfo || {title: 'Loading Book...', author: '', id: '', progress: 0}} />
+		<ReaderHeader
+			bookInfo={page.data?.bookInfo || {
+				title: 'Loading Book...',
+				author: '',
+				id: '',
+				progress: 0
+			}}
+		/>
 		<main class="reader-main">
 			{@render children()}
 		</main>
@@ -106,7 +165,7 @@
 		margin: 0 auto;
 		box-sizing: border-box;
 	}
-	
+
 	.reader-main {
 		padding: 0 !important;
 		margin: 0 !important;
@@ -153,7 +212,7 @@
 			padding: 12px 0;
 		}
 	}
-	
+
 	/* Reader page styles */
 	:global(body.reader-page) {
 		min-height: 100dvh;
