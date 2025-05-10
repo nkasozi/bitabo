@@ -277,7 +277,7 @@ export interface ConfirmDialogOptions {
 
 // Function to show a confirmation dialog
 export function showConfirmDialog(options: {
-	cancelText: null;
+	cancelText: string | null;
 	confirmText: string;
 	title: string;
 	message: string

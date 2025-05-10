@@ -5,7 +5,8 @@
 		disableVercelBlobSync,
 		syncWithVercelBlob,
 		initVercelBlobSync,
-		getSyncStatus
+		getSyncStatus,
+		checkActiveOperation
 	} from '$lib/library/vercelBlobSync';
 	import { browser } from '$app/environment';
 
@@ -18,6 +19,8 @@
 
 	// Create an interval to update status during sync
 	let statusCheckInterval: number | null = null;
+	// Create an interval to regularly check active operation status
+	let operationCheckInterval: number | null = null;
 
 	// Load sync state on mount
 	onMount(async () => {
@@ -34,6 +37,29 @@
 
 				// Initialize Vercel Blob sync
 				await initVercelBlobSync();
+
+				// Check if there's an active sync operation
+				const operation = checkActiveOperation();
+				if (operation) {
+					// If there's an active operation, set syncing to true
+					syncing = true;
+					startStatusCheck();
+				}
+
+				// Set up regular checking of operation status
+				operationCheckInterval = window.setInterval(() => {
+					const operation = checkActiveOperation();
+					syncing = !!operation;
+					if (!operation && statusCheckInterval) {
+						// If there's no active operation but we have a status check interval, clear it
+						clearInterval(statusCheckInterval);
+						statusCheckInterval = null;
+						syncProgress = 0;
+					} else if (operation && !statusCheckInterval) {
+						// If there's an active operation but no status check interval, start it
+						startStatusCheck();
+					}
+				}, 1000); // Check every second
 			} catch (err) {
 				console.error('Error loading sync config:', err);
 			}
@@ -44,7 +70,27 @@
 		if (statusCheckInterval) {
 			clearInterval(statusCheckInterval);
 		}
+		if (operationCheckInterval) {
+			clearInterval(operationCheckInterval);
+		}
 	});
+
+	function startStatusCheck() {
+		if (statusCheckInterval) {
+			clearInterval(statusCheckInterval);
+		}
+
+		statusCheckInterval = window.setInterval(() => {
+			const status = getSyncStatus(); // This will now get import or sync status
+			if (status.length > 0) {
+				const completed = status.filter((item) => item.status === 'completed').length;
+				const total = status.length;
+				syncProgress = Math.round((completed / total) * 100);
+			} else {
+				syncProgress = 0; // Reset if no status
+			}
+		}, 500);
+	}
 
 	// Show prefix input dialog
 	function showPrefixDialog(mode: string): Promise<string | null> {
@@ -169,21 +215,8 @@
 			syncing = true;
 			syncProgress = 0;
 
-			// Start status check interval
-			if (statusCheckInterval) {
-				clearInterval(statusCheckInterval);
-			}
-
-			statusCheckInterval = window.setInterval(() => {
-				const status = getSyncStatus(); // This will now get import or sync status
-				if (status.length > 0) {
-					const completed = status.filter((item) => item.status === 'completed').length;
-					const total = status.length;
-					syncProgress = Math.round((completed / total) * 100);
-				} else {
-					syncProgress = 0; // Reset if no status (e.g. operation just started)
-				}
-			}, 500);
+			// Start status check
+			startStatusCheck();
 
 			try {
 				// Setup sync with the prefix and mode
@@ -222,21 +255,8 @@
 		syncProgress = 0;
 		console.log('[VercelBlobSync] Starting sync process');
 
-		// Start status check interval
-		if (statusCheckInterval) {
-			clearInterval(statusCheckInterval);
-		}
-
-		statusCheckInterval = window.setInterval(() => {
-			const status = getSyncStatus(); // This will now get import or sync status
-			if (status.length > 0) {
-				const completed = status.filter((item) => item.status === 'completed').length;
-				const total = status.length;
-				syncProgress = Math.round((completed / total) * 100);
-			} else {
-				syncProgress = 0; // Reset if no status
-			}
-		}, 500);
+		// Start status check
+		startStatusCheck();
 
 		try {
 			// Manual sync

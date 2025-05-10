@@ -175,69 +175,78 @@ export async function initVercelBlobSync(): Promise<boolean> {
 export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new'): Promise<boolean> {
     if (!browser) return false;
     
+    const initialNotificationId = showNotification(`Setting up Vercel Blob Sync (${mode})...`, 'info');
+
     try {
-        // Validate prefix - ensure it's suitable for file names
         prefixKey = prefixKey.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-        
         if (prefixKey.length < 3) {
             throw new Error("Prefix must be at least 3 characters long");
         }
-        
-        // Show notification for what we're doing
-        const actionDesc = mode === 'import' ? 'Importing from' : 'Setting up';
-        const notificationId = showNotification(`${actionDesc} Vercel Blob Sync...`, 'info');
-        
-        // Check premium status first - do this for both import and new modes
-        try {
-            // For import mode, fetch and check premium by trying to list the files
-            if (mode === 'import') {
-                console.log(`[VercelSync] Importing books with prefix: ${prefixKey}`);
-                const importResult = await importBooksWithPrefix(prefixKey);
-                if (!importResult) {
-                    closeNotification(notificationId);
-                    // If import failed (could be due to premium or empty results)
-                    return false;
-                }
-            } else {
-                // For new mode, try to make a test API call to check premium status
-                console.log(`[VercelSync] Checking premium status for prefix: ${prefixKey}`);
-                // We'll use the list endpoint with the prefix to check premium status
-                const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefixKey)}`);
-                
-                if (await isPremiumRequiredResponse(response)) {
-                    // Close the progress notification
-                    closeNotification(notificationId);
-                    console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
-                    
-                    // Show premium dialog
+
+        let checksPassed = false;
+
+        if (mode === 'import') {
+            const checkMsgId = showNotification(`Verifying backup prefix '${prefixKey}'...`, 'info');
+            try {
+                await listBlobsWithPrefix(prefixKey, true); // true to suppress "no files found" message from listBlobsWithPrefix
+                checksPassed = true;
+                closeNotification(checkMsgId);
+            } catch (error) {
+                closeNotification(checkMsgId);
+                closeNotification(initialNotificationId);
+                if (error instanceof Error && isPremiumRequiredError(error)) {
                     await showPremiumDialog();
-                    
-                    // Return false to indicate setup failed due to premium requirements
+                } else {
+                    showErrorNotification('Vercel Blob Sync Error', 'Prefix Verification', (error as Error).message);
+                }
+                return false;
+            }
+        } else { // mode === 'new'
+            const checkMsgId = showNotification(`Checking premium status for prefix: ${prefixKey}`, 'info');
+            try {
+                const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefixKey)}`);
+                if (await isPremiumRequiredResponse(response)) {
+                    closeNotification(checkMsgId);
+                    closeNotification(initialNotificationId);
+                    await showPremiumDialog();
                     return false;
                 }
+                checksPassed = true;
+                closeNotification(checkMsgId);
+            } catch (error) {
+                 closeNotification(checkMsgId);
+                 closeNotification(initialNotificationId);
+                 showErrorNotification('Vercel Blob Sync Error', 'Premium Check', (error as Error).message);
+                 return false;
             }
-        } catch (error) {
-            console.error('[VercelSync] Error checking premium status:', error);
-            closeNotification(notificationId);
-            throw error;
         }
-        
-        // Save the prefix to config
+
+        if (!checksPassed) {
+            // This case should ideally be covered by returns within the if/else block
+            closeNotification(initialNotificationId);
+            return false;
+        }
+
         updateConfig({
             syncEnabled: true,
             prefixKey: prefixKey
         });
         
-        closeNotification(notificationId);
+        closeNotification(initialNotificationId);
+
         if (mode === 'import') {
-            showNotification('Books imported from Vercel Blob successfully', 'success');
-        } else {
-            showNotification('Vercel Blob sync set up successfully', 'success');
+            // importBooksWithPrefix handles its own notifications regarding import results
+            await importBooksWithPrefix(prefixKey);
+            // Regardless of importSuccess, setup itself is done.
+            showNotification(`Import attempt from '${prefixKey}' finished.`, 'info');
+        } else { // mode === 'new'
+            showNotification('Vercel Blob sync set up successfully. You can sync your library now.', 'success');
         }
         
         return true;
+
     } catch (error) {
-        console.error('[VercelSync] Setup error:', error);
+        closeNotification(initialNotificationId);
         showErrorNotification('Vercel Blob Sync Error', 'Setup', (error as Error).message);
         return false;
     }
@@ -250,7 +259,7 @@ export function disableVercelBlobSync(): void {
     updateConfig({
         syncEnabled: false
     });
-    showNotification('Vercel Blob sync disabled', 'info');
+    showNotification('Cloud Sync disabled', 'info');
 }
 
 /**
@@ -1395,18 +1404,81 @@ function extractBookIdFromPath(path: string): string | null {
 // --- Helper Functions ---
 
 /**
+ * Terminate any active operations (sync or import)
+ * @returns boolean indicating if an operation was terminated
+ */
+export function terminateActiveOperations(): boolean {
+
+    console.log(`[VercelSync] Terminating active operation: ${activeOperation}`);
+    
+    updateConfig({
+        syncEnabled: false
+    });
+
+    console.log('[VercelSync] Sync disabled in config');
+    
+    // Close any open progress notifications
+    const progressNotifications = document.querySelectorAll('.bitabo-progress-notification');
+    progressNotifications.forEach(notification => {
+        const id = notification.id;
+        if (id) {
+            closeNotification(id);
+        }
+    });
+    
+    // Reset statuses
+    if (activeOperation === 'sync') {
+        currentSyncStatus = [];
+    } else if (activeOperation === 'import') {
+        currentImportStatus = [];
+    }
+    
+    // Set active operation to null to indicate termination
+    const wasActive = activeOperation !== null;
+    activeOperation = null;
+    
+    // Show notification that operation was terminated
+    showNotification('Cloud sync disabled', 'info');
+    
+    return wasActive;
+}
+
+/**
+ * Check if there's an active operation and return its type
+ * @returns The type of active operation or null if none
+ */
+export function checkActiveOperation(): ActiveOperationType {
+    return activeOperation;
+}
+
+/**
+ * Get the current Vercel Blob sync configuration.
+ * @returns A copy of the current configuration.
+ */
+export function getCurrentConfig(): VercelBlobSyncConfig {
+    return { ...currentConfig };
+}
+
+/**
  * Load configuration from localStorage
  */
 function loadConfig(): void {
     try {
         const savedConfig = localStorage.getItem('bitabo-vercel-blob-sync-config');
         if (savedConfig) {
-            currentConfig = { ...DEFAULT_CONFIG, ...JSON.parse(savedConfig) };
+            const parsed = JSON.parse(savedConfig);
+            currentConfig = {
+                syncEnabled: !!parsed.syncEnabled, // Ensure boolean
+                prefixKey: parsed.prefixKey || null,
+                lastSyncTime: parsed.lastSyncTime || 0
+            };
+        } else {
+            currentConfig = { ...DEFAULT_CONFIG }; // Use a fresh copy of defaults
         }
         console.log('[VercelSync] Loaded config:', currentConfig);
     } catch (error) {
         console.error('[VercelSync] Error loading config:', error);
-        currentConfig = { ...DEFAULT_CONFIG };
+        currentConfig = { ...DEFAULT_CONFIG }; // Fallback to fresh defaults
     }
 }
 

@@ -1,4 +1,3 @@
-
 import { browser } from '$app/environment';
 import type { Book } from './types';
 import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
@@ -23,13 +22,19 @@ export async function handleOpenBook(
     updateStateCallback: StateUpdateCallback
 ): Promise<boolean> {
     if (!browser || selectedBookIndex < 0 || selectedBookIndex >= libraryBooks.length) {
-        console.warn('[BookAction] Invalid state for opening book.');
+        console.warn('[BookAction] Invalid state for opening book. Index out of bounds or not in browser.');
         return false;
     }
 
     const selectedBook = libraryBooks[selectedBookIndex];
     if (!selectedBook) {
-        console.warn('[BookAction] Selected book not found.');
+        console.warn('[BookAction] Selected book not found at index:', selectedBookIndex);
+        return false;
+    }
+
+    if (!selectedBook.id) {
+        console.error('[BookAction] Selected book has no ID. Cannot proceed.', selectedBook);
+        showErrorNotification('Error Opening Book', selectedBook.title || 'Unknown Title', 'Book ID is missing.');
         return false;
     }
 
@@ -37,20 +42,24 @@ export async function handleOpenBook(
 
     try {
         // Ensure file object exists or can be reconstructed (placeholder is fine for navigation)
-        // This check might be less critical if navigation only relies on ID
         if (!selectedBook.file && selectedBook.fileName) {
+            console.log(`[BookAction] Reconstructing file object for "${selectedBook.title}" from fileName.`);
             selectedBook.file = new File([''], selectedBook.fileName, { type: selectedBook.fileType, lastModified: selectedBook.lastModified });
         } else if (!selectedBook.file) {
-            // If file is truly needed here, throw error. Otherwise, maybe just log warning.
-            console.warn('[BookAction] Book file data is missing.');
-            // throw new Error('Book file data is missing and cannot be reconstructed.');
+            console.warn(`[BookAction] Book file data is missing for "${selectedBook.title}". This might be okay if only ID is needed for navigation.`);
+            // Not throwing an error here as the reader might fetch the book by ID from DB
         }
 
         // Update lastAccessed time
-        const bookToUpdate = { ...selectedBook, lastAccessed: Date.now() };
+        const bookToUpdate: Book = { ...selectedBook, lastAccessed: Date.now() };
 
         // Save updated access time to DB
-        await saveBook(bookToUpdate);
+        const saveSuccess = await saveBook(bookToUpdate);
+        if (!saveSuccess) {
+            console.warn(`[BookAction] Failed to update lastAccessed time for book "${bookToUpdate.title}" in DB. Proceeding with navigation.`);
+            // Not returning false here, as navigation might still be possible.
+            // showErrorNotification('Warning', selectedBook.title, 'Could not update last access time. Book may not sort correctly.');
+        }
 
         // Re-sort library and find new index
         const currentId = bookToUpdate.id;
@@ -68,12 +77,13 @@ export async function handleOpenBook(
             url += `&progress=${encodeURIComponent(selectedBook.progress)}`;
         }
 
+        console.log(`[BookAction] Navigating to: ${url}`);
         await goto(url);
         return true;
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('[BookAction] Error preparing book for reader:', error);
-        showErrorNotification('Error Opening Book', selectedBook.title, (error as Error).message);
+        showErrorNotification('Error Opening Book', selectedBook.title || 'Unknown Title', error.message || 'An unexpected error occurred.');
         return false;
     }
 }
@@ -138,7 +148,7 @@ export async function handleRemoveBook(
                         title: 'Cloud Backup Sync',
                         message: `Do you want to delete "${bookToRemove.title}" from your cloud backup as well?`,
                         confirmText: 'Yes, delete from cloud',
-                        cancelText: 'No, keep in cloud'
+                        cancelText: null // Changed from 'No, keep in cloud' to null
                     }).then(shouldDelete => {
                         if (shouldDelete) {
                             deleteBookInVercelBlob(bookId).then(success => {
@@ -178,8 +188,15 @@ export async function handleClearLibrary(
         return false;
     }
 
+    // Import needed function to check and terminate active sync operations
+    const { terminateActiveOperations } = await import('./vercelBlobSync');
+
     if (confirm('Are you sure you want to clear your entire library? This action cannot be undone.')) {
         console.log('[BookAction] Clearing entire library...');
+
+        // Terminate any active sync operation before proceeding
+        terminateActiveOperations();
+
         const bookIds = libraryBooks.map(b => b.id); // Get IDs before clearing
 
         // 1. Clear from database
@@ -199,7 +216,7 @@ export async function handleClearLibrary(
             });
         }
         
-        // 4. Check for Vercel Blob sync and ask if user wants to clear cloud backup too
+        // 4. Check for Vercel Blob sync and delete from cloud backup if enabled
         const syncWithVercel = localStorage.getItem('bitabo-vercel-blob-sync-config');
         if (syncWithVercel) {
             try {
@@ -208,22 +225,25 @@ export async function handleClearLibrary(
                     // Ask user if they want to delete from cloud backup
                     showConfirmDialog({
                         title: 'Cloud Backup Sync',
-                        message: 'Do you want to delete all books from your cloud backup as well?',
-                        confirmText: 'Yes, delete from cloud',
-                        cancelText: 'No, keep in cloud'
-                    }).then(shouldDelete => {
-                        if (shouldDelete) {
+                        message: 'Do you also want to delete the books from your cloud store?',
+                        confirmText: 'Yes',
+                        cancelText: 'No',
+                    }).then(shouldDeleteFromCloud => {
+                        if (shouldDeleteFromCloud) {
                             deleteAllBooksInVercelBlob().then(success => {
                                 if (success) {
                                     console.log('[BookAction] Successfully deleted all books from Vercel Blob');
+                                    showNotification('All books also removed from cloud backup.', 'success');
                                 } else {
                                     console.error('[BookAction] Failed to delete all books from Vercel Blob');
+                                    showErrorNotification('Cloud Deletion Failed', 'Vercel Blob', 'Could not remove all books from cloud backup.');
                                 }
                             }).catch(err => {
                                 console.error('[BookAction] Error deleting all books from Vercel Blob:', err);
+                                showErrorNotification('Cloud Deletion Error', 'Vercel Blob', (err as Error).message);
                             });
                         } else {
-                            console.log('[BookAction] User chose to keep books in cloud backup');
+                            console.log('[BookAction] User chose not to delete books from cloud backup.');
                         }
                     });
                 }

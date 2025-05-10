@@ -101,7 +101,7 @@ const db = new BitaboDatabase();
 
 // Helper to prepare book data for storage (removes File, fetches Blob)
 async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Book> {
-	const bookToStore: any = { ...bookData }; // Use 'any' temporarily for flexibility
+	const bookToStore: any = { ...bookData };
 
 	// Fetch and store coverBlob if coverUrl is a blob URL
 	if (bookToStore.coverUrl && bookToStore.coverUrl.startsWith('blob:')) {
@@ -140,16 +140,19 @@ async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Bo
 	}
 
 	// Store the File object's content as file, keep metadata
-	if (bookToStore.file instanceof File || bookToStore.file instanceof Blob) {
-		// Check if it's a File or Blob
+	if (bookToStore.file && (bookToStore.file instanceof File || bookToStore.file instanceof Blob)) {
 		console.log(`[DexieDB] Storing file blob for \"${bookToStore.title}\"`);
-		bookToStore.file = bookToStore.file; // Store the actual Blob/File content
-		bookToStore.fileName = bookToStore.file.name;
-		bookToStore.fileType = bookToStore.file.type;
-		bookToStore.fileSize = bookToStore.file.size;
-		// Only update lastModified if it's a File object
-		if (bookToStore.file instanceof File) {
+		// bookToStore.file is already the Blob/File content, no need to reassign
+		bookToStore.fileName = bookToStore.file.name || bookData.fileName || 'Unknown Filename';
+		bookToStore.fileType = bookToStore.file.type || bookData.fileType || 'application/octet-stream';
+		bookToStore.fileSize = bookToStore.file.size || 0;
+		
+		if (bookToStore.file instanceof File && bookToStore.file.lastModified) {
 			bookToStore.lastModified = bookToStore.file.lastModified;
+		} else if (bookData.lastModified) {
+			bookToStore.lastModified = bookData.lastModified;
+		} else {
+			bookToStore.lastModified = Date.now();
 		}
 		
 		// Create base64 backup of the file if not already present
@@ -167,14 +170,14 @@ async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Bo
 			}
 		}
 	} else {
-		// Ensure file metadata exists if file object is already gone or wasn't provided
 		console.log(
-			`[DexieDB] No File object found for \"${bookToStore.title}\", ensuring metadata exists.`
+			`[DexieDB] No File/Blob object found for \"${bookToStore.title}\", ensuring metadata exists from bookData or defaults.`
 		);
-		bookToStore.fileName = bookToStore.fileName || 'Unknown Filename';
-		bookToStore.fileType = bookToStore.fileType || 'application/octet-stream';
-		bookToStore.fileSize = bookToStore.fileSize || 0;
-		bookToStore.lastModified = bookToStore.lastModified || Date.now();
+		bookToStore.fileName = bookData.fileName || 'Unknown Filename';
+		bookToStore.fileType = bookData.fileType || 'application/octet-stream';
+		bookToStore.fileSize = bookData.fileSize || 0;
+		bookToStore.lastModified = bookData.lastModified || Date.now();
+		// bookToStore.file will remain undefined or as it was
 	}
 
 	// Ensure all required fields are present before returning
