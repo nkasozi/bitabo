@@ -11,6 +11,9 @@
  */
 export function isPremiumUser(prefixKey) {
     if (!prefixKey) return false;
+
+    //allow creation of test keys
+    if(prefixKey.startsWith('testy')) return true;
     
     // For now, only "kasozi" and "esther" are premium users
     // In future this would connect to a real subscription database
