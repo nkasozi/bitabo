@@ -1,13 +1,13 @@
 import { browser } from '$app/environment';
 import type { Book } from './types';
-import { 
-    showNotification, 
-    showProgressNotification, 
+import {
     closeNotification,
+    showConfirmDialog,
     showErrorNotification,
-    showConfirmDialog
+    showNotification,
+    showProgressNotification
 } from './ui';
-import { saveAllBooks, loadLibraryStateFromDB, processBookAfterLoad } from './dexieDatabase'; 
+import { loadLibraryStateFromDB, processBookAfterLoad, saveAllBooks } from './dexieDatabase';
 import { getPremiumMessage } from './premiumUserUtils';
 
 // --- Type Definitions ---
@@ -16,14 +16,6 @@ interface VercelBlobError {
     message?: string;
     isPremiumRequired?: boolean;
     error?: string; // General error message
-}
-
-interface VercelPutBlobResult {
-    url: string;
-    downloadUrl: string;
-    pathname: string;
-    contentType: string;
-    contentDisposition: string;
 }
 
 interface VercelListBlobResult {
@@ -45,22 +37,73 @@ interface VercelBlobErrorResponse {
     isPremiumRequired?: boolean;
 }
 
-interface VercelListBlobResult {
-    blobs: VercelBlob[];
-    hasMore: boolean;
-    cursor?: string;
+// --- Utility Functions ---
+export function getDocumentElementClassName(): string | undefined {
+    if (typeof document !== 'undefined' && document.documentElement) {
+        return document.documentElement.className;
+    }
+    return undefined;
 }
 
-// --- Utility Functions ---
+export function getPrefersColorScheme(): string | undefined {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return undefined;
+}
+
+export function isDarkModeActive(
+    docElementClassName?: string,
+    prefersColorScheme?: string
+): boolean {
+    const currentDocElementClassName = docElementClassName ?? getDocumentElementClassName();
+    const currentPrefersColorScheme = prefersColorScheme ?? getPrefersColorScheme();
+
+    if (currentDocElementClassName && currentDocElementClassName.includes('dark')) {
+        return true;
+    }
+    if (currentPrefersColorScheme === 'dark') {
+        return true;
+    }
+    return false;
+}
 
 /**
- * Detect if dark mode is active
- * @returns boolean indicating if dark mode is active
+ * Creates the HTML content for the premium dialog.
+ * @param isDarkMode - Whether dark mode is active.
+ * @param premiumMessage - The message to display in the dialog.
+ * @returns string - The HTML string for the dialog content.
  */
-export function isDarkModeActive(): boolean {
-    return typeof document !== 'undefined' && 
-          (document.documentElement.classList.contains('dark') || 
-          (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+export function createPremiumDialogContent(isDarkMode: boolean, premiumMessage: string): string {
+    const borderColor = isDarkMode ? '#374151' : '#eaeaea';
+    const bgColor = isDarkMode ? '#1f2937' : 'white';
+
+    return `
+        ${premiumMessage}
+        <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
+            <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
+        </div>
+    `;
+}
+
+/**
+ * Creates and configures a dialog element.
+ * @param id - The ID for the dialog element.
+ * @param isDarkMode - Whether dark mode is active.
+ * @returns HTMLDialogElement - The configured dialog element.
+ */
+export function createDialogElement(id: string, isDarkMode: boolean): HTMLDialogElement {
+    const dialogElement = document.createElement('dialog');
+    dialogElement.id = id;
+    dialogElement.style.padding = '0';
+    dialogElement.style.borderRadius = '8px';
+    dialogElement.style.maxWidth = '400px';
+    dialogElement.style.border = 'none';
+    dialogElement.style.boxShadow = isDarkMode ?
+        '0 4px 12px rgba(0, 0, 0, 0.3)' :
+        '0 4px 12px rgba(0, 0, 0, 0.15)';
+    dialogElement.style.backgroundColor = 'transparent';
+    return dialogElement;
 }
 
 /**
@@ -68,43 +111,39 @@ export function isDarkModeActive(): boolean {
  * @returns Promise that resolves when dialog is dismissed
  */
 export async function showPremiumDialog(): Promise<void> {
-    const isDarkMode = isDarkModeActive();
-    const borderColor = isDarkMode ? '#374151' : '#eaeaea';
-    const bgColor = isDarkMode ? '#1f2937' : 'white';
+    if (!browser) return Promise.resolve();
+
+    const darkModeActive = isDarkModeActive();
+    const premiumMessage = getPremiumMessage();
     
-    // Create a custom premium dialog
-    const premiumDialog = document.createElement('dialog');
-    premiumDialog.id = 'premium-required-dialog';
-    premiumDialog.style.padding = '0';
-    premiumDialog.style.borderRadius = '8px';
-    premiumDialog.style.maxWidth = '400px';
-    premiumDialog.style.border = 'none';
-    premiumDialog.style.boxShadow = isDarkMode ? 
-        '0 4px 12px rgba(0, 0, 0, 0.3)' : 
-        '0 4px 12px rgba(0, 0, 0, 0.15)';
-    premiumDialog.style.backgroundColor = 'transparent';
-    
-    // Add premium message content with dark mode aware button
-    premiumDialog.innerHTML = `
-        ${getPremiumMessage()}
-        <div style="padding: 16px; text-align: center; border-top: 1px solid ${borderColor}; background-color: ${bgColor}; border-radius: 0 0 8px 8px;">
-            <button id="premium-ok-button" style="padding: 10px 24px; border-radius: 6px; border: none; background: #4285f4; color: white; cursor: pointer; font-weight: 500; font-size: 16px;">OK</button>
-        </div>
-    `;
+    const premiumDialog = createDialogElement('premium-required-dialog', darkModeActive);
+    premiumDialog.innerHTML = createPremiumDialogContent(darkModeActive, premiumMessage);
     
     document.body.appendChild(premiumDialog);
     premiumDialog.showModal();
     
-    // Wait for user to dismiss dialog
     return new Promise<void>(resolve => {
-        document.getElementById('premium-ok-button')?.addEventListener('click', () => {
-            premiumDialog.close();
-            resolve();
-        });
+        const okButton = document.getElementById('premium-ok-button');
         
-        premiumDialog.addEventListener('close', () => {
+        const closeListener = () => {
+            premiumDialog.removeEventListener('close', closeListener);
+            if (okButton) {
+                okButton.removeEventListener('click', buttonClickListener);
+            }
+            if (premiumDialog.parentNode) {
+                premiumDialog.parentNode.removeChild(premiumDialog);
+            }
             resolve();
-        });
+        };
+
+        const buttonClickListener = () => {
+            premiumDialog.close();
+        };
+
+        if (okButton) {
+            okButton.addEventListener('click', buttonClickListener);
+        }
+        premiumDialog.addEventListener('close', closeListener);
     });
 }
 
@@ -114,30 +153,39 @@ export async function showPremiumDialog(): Promise<void> {
  * @returns boolean indicating if the error is related to premium requirements
  */
 export function isPremiumRequiredError(error: Error): boolean {
-    return error.message.includes('Premium subscription required') || 
+    console.error(`console error: ${error}`)
+    return error.message.toLowerCase().includes('premium subscription required') ||
+        error.message.toLowerCase().includes('premium-message') ||
         error.message.includes('403') ||
-        error.message.includes('Forbidden');
+        error.message.toLowerCase().includes('forbidden');
 }
 
 /**
  * Check if an HTTP response indicates premium is required
  * @param response The response to check
+ * @param parseJsonFunction A function to parse the JSON from the response, defaults to response.json()
  * @returns boolean indicating if premium is required
  */
-export async function isPremiumRequiredResponse(response: Response): Promise<boolean> {
+export async function isPremiumRequiredResponse(
+    response: Response,
+    parseJsonFunction?: (res: Response) => Promise<VercelBlobErrorResponse>
+): Promise<boolean> {
     if (response.status === 403) {
         try {
-            const data = await response.json() as VercelBlobErrorResponse; // Cast to VercelBlobErrorResponse
+            const data = parseJsonFunction ? 
+                await parseJsonFunction(response) : 
+                await response.json() as VercelBlobErrorResponse;
             return data.isPremiumRequired === true;
         } catch (e) {
-            return true; // Assume any 403 is premium related if we can't parse the JSON
+            console.warn('[VercelSync] Failed to parse JSON from 403 response, assuming premium required:', e);
+            return true; 
         }
     }
     return false;
 }
 
 // Define the PutBlobResult type since we're no longer importing from @vercel/blob
-interface PutBlobResult {
+interface VercelPutBlobResult {
     url: string;
     pathname: string;
     contentType?: string;
@@ -224,47 +272,18 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
             throw new Error("Prefix must be at least 3 characters long");
         }
 
-        let checksPassed = false;
-
-        if (mode === 'import') {
-            const checkMsgId = showNotification(`Verifying backup prefix '${prefixKey}'...`, 'info');
-            try {
-                await listBlobsWithPrefix(prefixKey, true); // true to suppress "no files found" message from listBlobsWithPrefix
-                checksPassed = true;
-                closeNotification(checkMsgId);
-            } catch (error) {
-                closeNotification(checkMsgId);
-                closeNotification(initialNotificationId);
-                if (error instanceof Error && isPremiumRequiredError(error)) {
-                    await showPremiumDialog();
-                } else {
-                    showErrorNotification('Cloud Sync Error', 'Prefix Verification', (error as Error).message);
-                }
-                return false;
-            }
-        } else { // mode === 'new'
-            const checkMsgId = showNotification(`Checking premium status for prefix: ${prefixKey}`, 'info');
-            try {
-                const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefixKey)}`);
-                if (await isPremiumRequiredResponse(response)) {
-                    closeNotification(checkMsgId);
-                    closeNotification(initialNotificationId);
-                    await showPremiumDialog();
-                    return false;
-                }
-                checksPassed = true;
-                closeNotification(checkMsgId);
-            } catch (error) {
-                 closeNotification(checkMsgId);
-                 closeNotification(initialNotificationId);
-                 showErrorNotification('Cloud Sync Error', 'Premium Check', (error as Error).message);
-                 return false;
-            }
-        }
-
-        if (!checksPassed) {
-            // This case should ideally be covered by returns within the if/else block
+        const checkMsgId = showNotification(`Verifying backup prefix '${prefixKey}'...`, 'info');
+        try {
+            const response = await listBlobsWithPrefix(prefixKey);
+            closeNotification(checkMsgId);
+        } catch (error) {
+            closeNotification(checkMsgId);
             closeNotification(initialNotificationId);
+            if (error instanceof Error && isPremiumRequiredError(error)) {
+                await showPremiumDialog();
+            } else {
+                showErrorNotification('Cloud Sync Error', 'Prefix Verification', (error as Error).message);
+            }
             return false;
         }
 
@@ -344,9 +363,10 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
             status: 'pending'
         }));
         
-        let remoteFiles: VercelBlob[] = []; // Explicitly type remoteFiles
+        let remoteFiles: VercelBlob[] = [];
         try {
-            remoteFiles = await listBlobsWithPrefix(currentConfig.prefixKey, true); 
+            let vercelListBlobResult = await listBlobsWithPrefix(currentConfig.prefixKey);
+            remoteFiles = vercelListBlobResult.blobs
             console.log(`[VercelSync] Found ${remoteFiles.length} book files with prefix: ${currentConfig.prefixKey}`);
         } catch (error) {
             if (progressId) {
@@ -513,7 +533,8 @@ async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
         
         let bookFiles = [];
         try {
-            bookFiles = await listBlobsWithPrefix(prefixKey, false); // Show notification if empty
+            let vercelListBlobResult = await listBlobsWithPrefix(prefixKey);
+            bookFiles = vercelListBlobResult.blobs
             console.log(`[VercelSync] Found ${bookFiles.length} files with prefix`, bookFiles);
         } catch (error) {
             // Check if this is a premium error
@@ -850,15 +871,86 @@ async function confirmConflictResolution(localBook: Book, remoteBook: Book): Pro
         <p style="margin: 16px 0 8px; font-size: 14px;">Which version would you like to keep?</p>
     </div>
   `;
-    
-    const result = await showConfirmDialog({
+
+    return await showConfirmDialog({
         title: 'Book Sync Conflict',
         message,
         confirmText: 'Use Remote Version',
         cancelText: 'Keep Local Version'
     });
-    
-    return result;
+}
+
+// --- Vercel Blob API Interaction Helper ---
+export interface VercelBlobApiResponse {
+    // Define common expected fields if any, or keep it generic
+    [key: string]: any;
+}
+
+export class VercelBlobApiError extends Error {
+    public isPremiumError: boolean;
+    public status: number;
+
+    constructor(message: string, status: number, isPremiumError: boolean = false) {
+        super(message);
+        this.name = 'VercelBlobApiError';
+        this.status = status;
+        this.isPremiumError = isPremiumError;
+        Object.setPrototypeOf(this, VercelBlobApiError.prototype);
+    }
+}
+
+export async function makeVercelBlobApiCall<T extends VercelBlobApiResponse>(
+    url: string,
+    options: RequestInit,
+    fetchFunction: typeof fetch = fetch,
+    parseJsonFunction?: (res: Response) => Promise<VercelBlobErrorResponse> 
+): Promise<T> {
+    console.debug(`[VercelSync] Making API call to: ${url}`, { options });
+    let response: Response;
+    try {
+        response = await fetchFunction(url, options);
+    } catch (networkError: any) {
+        console.error('[VercelSync] Network error during API call:', networkError);
+        throw new VercelBlobApiError(
+            `Network error: ${networkError.message || 'Failed to fetch'}`,
+            0 // Status 0 for network errors
+        );
+    }
+
+    console.debug(`[VercelSync] API call response status: ${response.status} for URL: ${url}`);
+
+    if (!response.ok) {
+        const isPremium = await isPremiumRequiredResponse(response.clone(), parseJsonFunction);
+        if (isPremium) {
+            console.warn('[VercelSync] Premium required for API call to:', url);
+            throw new VercelBlobApiError(
+                getPremiumMessage() || 'Premium subscription required to sync this book.',
+                response.status,
+                true
+            );
+        }
+        let errorData: any = null;
+        try {
+            errorData = await response.clone().json();
+        } catch (e) {
+            // Ignore if error response is not JSON
+        }
+        const errorMessage = errorData?.error?.message || `API request failed with status ${response.status}`;
+        console.error('[VercelSync] API call failed:', { url, status: response.status, errorData });
+        throw new VercelBlobApiError(errorMessage, response.status);
+    }
+
+    try {
+        const data = await response.json() as T;
+        console.debug('[VercelSync] API call successful and JSON parsed for URL:', url);
+        return data;
+    } catch (e: any) {
+        console.error('[VercelSync] Failed to parse JSON response from API call to:', url, e);
+        throw new VercelBlobApiError(
+            `Failed to parse JSON response: ${e.message || 'Invalid JSON'}`,
+            response.status
+        );
+    }
 }
 
 // --- Vercel Blob API Functions ---
@@ -866,21 +958,11 @@ async function confirmConflictResolution(localBook: Book, remoteBook: Book): Pro
 /**
  * Upload a book to Vercel Blob
  */
-async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult | null> {
-    if (!browser || !currentConfig.prefixKey) return null;
-
-    // const bookDataForUpload = await prepareBookForUpload(book); // Temporarily comment out until defined
-    // if (!bookDataForUpload) {
-    //     console.warn('[VercelSync] Failed to prepare book for upload:', book.title);
-    //     return null;
-    // }
-    // const { jsonData, fileName } = bookDataForUpload;
+async function uploadBookToVercelBlob(book: Book): Promise<VercelPutBlobResult> {
     
     // Placeholder for prepareBookForUpload logic:
     const fileName = `${currentConfig.prefixKey}_${book.id}.json`;
-    const jsonData = book; // Assuming the whole book object is the jsonData for now
-
-    const blob = new Blob([JSON.stringify(jsonData)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(book)], { type: 'application/json' });
 
     console.log(`[VercelSync] Uploading book: ${fileName}`);
 
@@ -889,32 +971,21 @@ async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult | null>
     formData.append('filename', fileName); 
 
     try {
-        const response = await fetch('/api/vercel-blob/put', {
-            method: 'POST',
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorData: VercelBlobErrorResponse = await response.json();
-            console.error('[VercelSync] Error uploading book:', errorData);
-            if (errorData.isPremiumRequired) {
-                throw new PremiumRequiredError(errorData.error);
+        const responseData = await makeVercelBlobApiCall<VercelPutBlobResult>(
+            '/api/vercel-blob/put',
+            {
+                method: 'POST',
+                body: formData,
             }
-            throw new Error(errorData.error || `Failed to upload book with status: ${response.status}`);
-        }
+        );
 
-        const result: PutBlobResult = await response.json();
-        console.log('[VercelSync] Successfully uploaded book:', result.pathname);
-        return result;
+        console.log('[VercelSync] Successfully uploaded book:', responseData.pathname);
+        return responseData;
     } catch (error) {
         console.error('[VercelSync] Exception in uploadBookToVercelBlob for book:', book.title, error);
-        if (error instanceof PremiumRequiredError) {
-            throw error; 
+        if (error instanceof VercelBlobApiError && error.isPremiumError) {
+            await showPremiumDialog();
         }
-        // Do not re-throw generic errors here if you want batch processing to continue for other books
-        // The main sync function will handle individual book errors based on Promise.allSettled
-        // However, for direct calls or if specific handling is needed, re-throwing might be appropriate.
-        // For now, let's ensure the error is propagated for the batch handler.
         throw new Error(`Failed to upload book ${book.title}: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
@@ -922,90 +993,72 @@ async function uploadBookToVercelBlob(book: Book): Promise<PutBlobResult | null>
 /**
  * List all blobs with a specific prefix
  * @param prefix The prefix to search for
- * @param suppressErrorMessage If true, don't show error notification for no files found
+ * @param fetchFn
  */
-async function listBlobsWithPrefix(prefix: string, suppressErrorMessage: boolean = false): Promise<VercelBlob[]> {
-    try {
-        // List blobs with the prefix using our server endpoint
-        console.log(`[VercelSync] Listing blobs with prefix: ${prefix}`);
-        
-        const response = await fetch(`/api/vercel-blob/list?prefix=${encodeURIComponent(prefix)}`);
-        
-        if (!response.ok) {
-            let errorData: VercelBlobError = {};
-            try {
-                errorData = await response.json();
-            } catch (e) {
-                // Ignore if response is not JSON
-            }
-            console.error("[VercelSync] Error listing blobs with prefix:", errorData.message || response.statusText);
-            throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
-        }
+export async function listBlobsWithPrefix(
+    prefix: string,
+    fetchFn?: typeof fetch
 
-        const result: VercelListBlobResult = await response.json();
-        
-        if (!result.blobs || result.blobs.length === 0) {
-            console.log(`[VercelSync] No blobs found with prefix: ${prefix}`);
-            
-            // Only show notification if not suppressed
-            if (!suppressErrorMessage) {
-                // Show notification about no files found - use regular notification instead of error
-                showNotification(
-                    `No files found with the prefix "${prefix}". If this is your first time using cloud sync, this is normal and you can proceed with uploading your books.`,
-                    'info'
-                );
-            }
+): Promise<VercelListBlobResult> {
+
+    const encodedPrefix = encodeURIComponent(prefix);
+    const url = `/api/vercel-blob/list?prefix=${encodedPrefix}`;
+    console.debug(`[VercelSync] Listing blobs with prefix: ${prefix} from URL: ${url}`);
+
+    try {
+        const responseData = await makeVercelBlobApiCall<VercelListBlobResult>(
+            url, 
+            { method: 'GET' },
+            fetchFn
+        );
+        console.debug('[VercelSync] Successfully listed blobs with prefix:', prefix);
+        return responseData;
+    } catch (error: any) {
+        console.error('[VercelSync] Error listing blobs with prefix:', { prefix, error });
+        if (error instanceof VercelBlobApiError && error.isPremiumError) {
+            //await showPremiumDialog();
+            console.warn('[VercelSync] Premium required for listing blobs.');
         }
-        
-        return result.blobs || [];
-    } catch (error) {
-        console.error(`[VercelSync] Error listing blobs with prefix ${prefix}:`, error);
+        // Do not show generic notification here, let caller decide
         throw error;
     }
 }
 
 /**
- * Delete a book in Vercel Blob
- * @param bookId The ID of the book to delete
+ * Deletes a book from Vercel Blob storage.
+ * @param bookPathname The full pathname of the book in Vercel Blob.
+ * @param bookTitle The title of the book for notifications.
+ * @param currentConfig The current sync configuration.
+ * @param fetchFn Optional fetch function for testing.
+ * @returns Promise resolving to VercelBlobDeleteResponse or null if not in browser.
  */
-export async function deleteBookInVercelBlob(bookId: string): Promise<boolean> {
-    if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
-        console.log('[VercelSync] Sync not enabled, skipping deletion');
-        return false;
-    }
-    
+export async function deleteBookInVercelBlob(
+    bookPathname: string,
+    bookTitle: string,
+    fetchFn?: typeof fetch
+): Promise<VercelBlobApiResponse> {
+
+    const encodedPathname = encodeURIComponent(bookPathname);
+    const url = `/api/vercel-blob/delete?pathname=${encodedPathname}`;
+    console.debug(`[VercelSync] Deleting book: ${bookPathname} via URL: ${url}`);
+
     try {
-        // Construct the filename
-        const filename = `${currentConfig.prefixKey}_${bookId}.json`;
-        console.log(`[VercelSync] Deleting book from Vercel Blob: ${filename}`);
-        
-        // Call server endpoint to delete the blob
-        const response = await fetch(`/api/vercel-blob/delete?pathname=${encodeURIComponent(filename)}`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            const errorData: VercelBlobErrorResponse = await response.json();
-            
-            // Special handling for premium requirement errors
-            if (await isPremiumRequiredResponse(response)) {
-                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                
-                // Show premium dialog
-                await showPremiumDialog();
-                return false;
-            }
-            
-            throw new Error(errorData.error || `Server returned ${response.status}: ${response.statusText}`);
+        const responseData = await makeVercelBlobApiCall<VercelBlobApiResponse>(
+            url, 
+            { method: 'DELETE' },
+            fetchFn
+        );
+        console.log('[VercelSync] Book deleted successfully:', bookPathname);
+        showNotification(`Successfully deleted from cloud: ${bookTitle}`);
+        return responseData;
+    } catch (error: any) {
+        console.error('[VercelSync] Error deleting book from Vercel Blob:', { bookPathname, error });
+        if (error instanceof VercelBlobApiError && error.isPremiumError) {
+            await showPremiumDialog();
+        } else {
+            showNotification(`Error deleting ${bookTitle} from cloud: ${error.message}`, 'error');
         }
-        
-        const result = await response.json();
-        console.log(`[VercelSync] Delete result:`, result);
-        
-        return true;
-    } catch (error) {
-        console.error(`[VercelSync] Error deleting book from Vercel Blob:`, error);
-        return false;
+        throw error; // Re-throw to be handled by the caller
     }
 }
 
@@ -1063,7 +1116,8 @@ export async function deleteAllBooksInVercelBlob(): Promise<boolean> {
         // List all blobs with this prefix
         let blobs = [];
         try {
-            blobs = await listBlobsWithPrefix(currentConfig.prefixKey);
+            let vercelListBlobResult = await listBlobsWithPrefix(currentConfig.prefixKey);
+            blobs = vercelListBlobResult.blobs;
             console.log(`[VercelSync] Found ${blobs.length} blobs to delete`);
         } catch (error) {
             closeNotification(notificationId);

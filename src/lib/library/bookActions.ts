@@ -1,11 +1,10 @@
 import { browser } from '$app/environment';
 import type { Book } from './types';
-import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase'; // Using standard IndexedDB implementation
-import { syncWithGoogleDrive } from './googleDriveSync'; // Google Drive sync
+import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dexieDatabase';
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification, showConfirmDialog } from './ui';
 import { goto } from '$app/navigation';
-import { deleteBookInVercelBlob, deleteAllBooksInVercelBlob } from './vercelBlobSync'; // Vercel Blob sync
+import { deleteBookInVercelBlob, deleteAllBooksInVercelBlob } from './vercelBlobSync';
 
 // --- Types for State Update Callback ---
 type StateUpdateCallback = (
@@ -40,6 +39,12 @@ export async function handleOpenBook(
 
     console.log(`[BookAction] Opening book: "${selectedBook.title}" (ID: ${selectedBook.id})`);
 
+    // Navigate to reader page
+    let readerNavigationUrl = `/reader?bookId=${encodeURIComponent(selectedBook.id)}`;
+    if (selectedBook?.progress > 0) {
+        readerNavigationUrl += `&progress=${encodeURIComponent(selectedBook.progress)}`;
+    }
+
     try {
         // Ensure file object exists or can be reconstructed (placeholder is fine for navigation)
         if (!selectedBook.file && selectedBook.fileName) {
@@ -72,19 +77,58 @@ export async function handleOpenBook(
         updateStateCallback(sortedBooks, newIndex);
 
         // Navigate to reader page
-        let url = `/reader?bookId=${encodeURIComponent(selectedBook.id)}`;
-        if (selectedBook.progress > 0) {
-            url += `&progress=${encodeURIComponent(selectedBook.progress)}`;
-        }
-
-        console.log(`[BookAction] Navigating to: ${url}`);
-        await goto(url);
+        console.log(`[BookAction] Navigating to: ${readerNavigationUrl}`);
+        await goto(readerNavigationUrl);
         return true;
 
     } catch (error: any) {
-        console.error('[BookAction] Error preparing book for reader:', error);
-        showErrorNotification('Error Opening Book', selectedBook.title || 'Unknown Title', error.message || 'An unexpected error occurred.');
-        return false;
+        console.error('[BookAction] Encountered error during book opening attempt:', error); // Log the main error here
+
+        handleReadBookNavigationError(
+          error,
+          readerNavigationUrl,
+          selectedBook?.title,
+          showErrorNotification
+        );
+        return false; // The main function always returns false if an error is caught
+    }
+}
+
+// Helper function to handle navigation errors
+function handleReadBookNavigationError(
+  error: any,
+  fallback_navigation_url: string,
+  book_title_for_notification: string | undefined,
+  show_error_notification_function: (title: string, subtitle: string, message: string) => void
+): void {
+    // You can choose to log the raw error here or in the calling function's catch block
+     console.error('[BookNavigationErrorHandler] Processing error:', error);
+
+    const error_message_string = String(error?.message || '');
+    const error_stack_string = String(error?.stack || '');
+
+    // Check for the specific SvelteKit internal error related to 'app.hash'
+    const is_svelte_kit_internal_app_hash_error =
+      error_message_string.includes("Cannot read properties of undefined (reading 'hash')") &&
+      (error_stack_string.includes('get_navigation_intent') || error_stack_string.includes('is_external_url'));
+
+    if (is_svelte_kit_internal_app_hash_error) {
+        console.warn(
+          `[BookNavigationErrorHandler] SvelteKit's SPA navigation failed due to 'app.hash' issue. ` +
+          `Attempting full page load fallback to: ${fallback_navigation_url}`
+        );
+        if (typeof window !== 'undefined') {
+            // Perform the fallback full page navigation
+            window.location.href = fallback_navigation_url;
+        }
+        // Note: The page will navigate away, so further JS execution in this context stops.
+    } else {
+        // Handle other types of errors by showing a notification
+        show_error_notification_function(
+          'Error Opening Book',
+          book_title_for_notification || 'Unknown Title',
+          error_message_string || 'An unexpected error occurred while trying to open the book.'
+        );
     }
 }
 

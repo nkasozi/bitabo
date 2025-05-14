@@ -9,9 +9,13 @@
  * @param prefixKey The user's prefix key for cloud sync
  * @returns Boolean indicating if the user is a premium user
  */
-export function isPremiumUser(prefixKey: string): boolean {
+export function isPremiumUser(prefixKey) {
     if (!prefixKey) return false;
-    
+
+    //allow creation of test keys
+    console.log(`checking if user is premium enabled: ${prefixKey}`)
+    if(prefixKey.startsWith('testy')) return true;
+
     // For now, only "kasozi" and "esther" are premium users
     // In future this would connect to a real subscription database
     const premiumPrefixes = ['kasozi', 'esther'];
