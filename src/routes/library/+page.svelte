@@ -287,6 +287,12 @@
 			// return;
 		}
 
+		 // If first load with default index 0, set to middle book
+		if (selectedBookIndex === 0 && !isSearching && libraryBooks.length > 2 && booksToDisplay.length > 2) {
+			selectedBookIndex = Math.floor(booksToDisplay.length / 2);
+			console.log(`[setupCoverflow] Setting initial selectedBookIndex to middle: ${selectedBookIndex}`);
+		}
+
 		// Use the imported utility function
 		const initialCoverflowIndex = findCoverflowIndex(
 			selectedBookIndex,

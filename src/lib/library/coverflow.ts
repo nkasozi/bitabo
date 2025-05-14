@@ -486,15 +486,13 @@ export class Coverflow implements CoverflowInstance {
 
 			// Original logic for transform and style
 			const xTranslate = offset * 200; // Original used 200
-			const zTranslate = (offset === 0) ? 60 : 0; // Original logic
+			const zTranslate = (offset === 0) ? 100 : 0; // Increased from 60 to 100 to bring selected book forward
 			const rotateY = offset * 15; // Original used 15
-			// Original used scale 5 for active, 0.8 for inactive - this seems extreme, maybe a typo?
-			// Let's use the params defined earlier for scale, but original logic for translate/rotate
-			// const scale = (offset === 0) ? this.params.scale.active : this.params.scale.inactive;
-			// Reverting to the exact (but possibly odd) scale from the original JS snippet provided
-			const scale = (offset === 0) ? 1.05 : 0.9; // Using the scale values from the original constructor params section seems more sensible than 5/0.8
+			
+			// Increase the scale difference between active and inactive books
+			const scale = (offset === 0) ? 1.2 : 0.8; // Increased active from 1.05 to 1.2, decreased inactive from 0.9 to 0.8
 
-			const zIndex = this.bookData.length - Math.abs(offset); // Higher z-index for closer books (original used 3 - abs(offset)) - let's use the length based one for better layering with more books
+			const zIndex = this.bookData.length - Math.abs(offset); // Higher z-index for closer books
 
 			// Apply transform using translate3d for hardware acceleration
 			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${scale})`;
@@ -578,33 +576,32 @@ export class Coverflow implements CoverflowInstance {
 
 
 // Helper function to initialize coverflow for the main library
-// Keep this, but ensure it uses the updated Coverflow class correctly
 export function initCoverflow(
 	bookshelfElement: HTMLElement | null,
-	booksData: Book[], // Expects Book[] now
+	booksData: Book[], 
 	initialIndex: number,
-	onSelect: (index: number) => void // Keep onSelect for the component's use
+	onSelect: (index: number) => void
 ): CoverflowInstance | null {
-	if (!browser || !bookshelfElement || !booksData /* Removed length check, allow empty */) {
+	if (!browser || !bookshelfElement || !booksData) {
 		console.log('[Coverflow Init] Skipping initialization (no browser, element, or data).');
-		// If no data, maybe initialize the empty state instead? Or let the caller handle it.
-		// For now, just return null if no data.
-		if (!booksData || booksData.length === 0) {
-			// Add null check before accessing innerHTML
-			if (bookshelfElement) {
-				bookshelfElement.innerHTML = ''; // Clear the container if no books
-			}
-			return null;
-		}
-		// If element exists but no data, clear it.
 		if (bookshelfElement && (!booksData || booksData.length === 0)) {
 			bookshelfElement.innerHTML = '';
 		}
 		return null;
 	}
 
+	// Calculate middle book index if initialIndex is not explicitly set
+	// If initialIndex is -1 or not provided, use the middle book
+	let selectedIndex = initialIndex;
+	if (initialIndex === -1 || initialIndex === undefined) {
+		selectedIndex = Math.floor(booksData.length / 2);
+		console.log(`[Coverflow Init] Using middle book as default: ${selectedIndex}`);
+	}
 
-	console.log('[Coverflow Init] Initializing 3D Coverflow with', booksData.length, 'books. Initial index:', initialIndex);
+	// Ensure the index is valid within the bounds of the book collection
+	selectedIndex = Math.max(0, Math.min(selectedIndex, booksData.length - 1));
+
+	console.log('[Coverflow Init] Initializing 3D Coverflow with', booksData.length, 'books. Initial index:', selectedIndex);
 
 	try {
 		// Create a container for the 3D books if it doesn't exist (or clear existing)
@@ -619,24 +616,19 @@ export function initCoverflow(
 			alignContainer.innerHTML = '';
 		}
 
-
 		// Create coverflow instance - Pass only container and data
 		const coverflow = new Coverflow(alignContainer, booksData);
-		// Manually set the initial index if needed (constructor now defaults differently)
-		if (initialIndex >= 0 && initialIndex < booksData.length) {
-			coverflow.currentIndex = initialIndex;
-		}
+		// Set the initial index
+		coverflow.currentIndex = selectedIndex;
 		coverflow.initialize(); // Initialize calls positionBooks with currentIndex
 
 		// Add event listener for the component's onSelect callback
-		// This bridges the gap since the class no longer takes the callback directly
 		if (onSelect) {
 			alignContainer.addEventListener('coverselect', (event: Event) => {
 				const customEvent = event as CustomEvent;
 				onSelect(customEvent.detail.index);
 			});
 		}
-
 
 		console.log('[Coverflow Init] Coverflow initialized successfully.');
 		return coverflow; // Return the instance
