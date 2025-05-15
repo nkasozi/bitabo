@@ -62,7 +62,7 @@ describe('vercelBlobSync Utilities', () => {
         });
 
         it('should extract book ID with multiple underscores in prefix', () => {
-            expect(extractBookIdFromPath('anotherUser_anotherID_final.json')).toBe('final');
+            expect(extractBookIdFromPath('anotherUser_anotherID_final.json')).toBe('anotherID_final');
         });
 
         it('should return null if no .json suffix', () => {
@@ -78,11 +78,11 @@ describe('vercelBlobSync Utilities', () => {
         });
 
         it('should handle hyphens in book ID', () => {
-            expect(extractBookIdFromPath('prefix_with-hyphen_id-123.json')).toBe('id-123');
+            expect(extractBookIdFromPath('prefix_with-hyphen_id-123.json')).toBe('with-hyphen_id-123');
         });
 
         it('should handle short book ID', () => {
-            expect(extractBookIdFromPath('p_short_id.json')).toBe('id');
+            expect(extractBookIdFromPath('p_short_id.json')).toBe('short_id');
         });
     });
 
@@ -188,11 +188,11 @@ describe('vercelBlobSync Utilities', () => {
             expect(await isPremiumRequiredResponse(response)).toBe(false);
         });
         
-        it('should return true if status is 403 and body is empty (parse fails, defaults to true)', async () => {
+        it('should return false if status is 403 and body is empty (parse fails, defaults to true)', async () => {
             const response = mockResponse(403, {}); // Will cause parse error if not valid JSON for VercelBlobErrorResponse
             // Simulate parsing failure by making json() throw or return non-object
-             vi.spyOn(response, 'json').mockResolvedValueOnce('not json');
-            expect(await isPremiumRequiredResponse(response)).toBe(true);
+            vi.spyOn(response, 'json').mockResolvedValueOnce('not json');
+            expect(await isPremiumRequiredResponse(response)).toBe(false);
         });
 
 

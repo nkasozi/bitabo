@@ -1206,7 +1206,7 @@ async function downloadBookFromUrl(url: string): Promise<string | null> {
 /**
  * Extract book ID from a file path
  */
-function extractBookIdFromPath(path: string): string | null {
+export function extractBookIdFromPath(path: string): string | null {
     // Extract book ID from filename (prefix_bookID.json)
     const match = path.match(/[^_]+_([^.]+)\.json$/);
     return match ? match[1] : null;

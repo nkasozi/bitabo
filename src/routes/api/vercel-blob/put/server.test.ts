@@ -5,7 +5,7 @@ import { put } from '@vercel/blob';
 
 // Mock dependencies
 vi.mock('@vercel/blob', () => ({
-    put: vi.fn().mockResolvedValue({
+    put: vi.fn().mockResolvedValue( {
         url: 'https://example.com/blob',
         pathname: 'test_123.json',
         contentType: 'application/json',
@@ -110,36 +110,50 @@ describe('PUT API Endpoint', () => {
     });
 
     it('should upload blob when user is premium', async () => {
-        // Arrange
-        const testBlob = new Blob(['test data'], { type: 'application/json' });
+        // Create a File object instead of a Blob to match what the implementation receives
+        const testFile = new File(['test data'], 'test_123.json', { type: 'application/json' });
         const formData = new FormData();
-        formData.append('file', testBlob);
+        formData.append('file', testFile);
         formData.append('filename', 'test_123.json');
         
         const mockRequest = {
             formData: vi.fn().mockResolvedValue(formData)
         } as unknown as Request;
         
-        // Mock extractPrefixFromPathname to return a prefix
         (extractPrefixFromPathname as any).mockReturnValue('test');
-        
-        // Mock isPremiumUser to return true
         (isPremiumUser as any).mockReturnValue(true);
 
-        // Act
-        const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const mockBlobResult = {
+            url: 'https://example.com/blob',
+            pathname: 'test_123.json',
+            contentType: 'application/json',
+            contentDisposition: 'inline',
+            downloadUrl: 'https://example.com/download',
+            size: 1024
+        };
+        
+        (put as any).mockResolvedValue(mockBlobResult);
 
-        // Assert
+        const response = await POST({ request: mockRequest } as any);
+        
         expect(response.status).toBe(200);
+        
+        const responseText = await response.text();
+        const data = JSON.parse(responseText);
+        
         expect(data.url).toBe('https://example.com/blob');
         expect(data.pathname).toBe('test_123.json');
         expect(extractPrefixFromPathname).toHaveBeenCalledWith('test_123.json');
         expect(isPremiumUser).toHaveBeenCalledWith('test');
-        expect(put).toHaveBeenCalledWith('test_123.json', testBlob, {
-            access: 'public',
-            token: expect.any(String)
-        });
+        
+        expect(put).toHaveBeenCalledWith(
+            'test_123.json', 
+            testFile,  // Use testFile to match what the implementation receives
+            {
+                access: 'public',
+                token: expect.any(String)
+            }
+        );
     });
 
     it('should handle server error', async () => {
