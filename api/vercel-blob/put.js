@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         const file = formData.get('file');
         const filename = formData.get('filename');
         
-        if (!file || !(file instanceof Blob) || !filename || typeof filename !== 'string') {
+        if (!file || !filename || typeof filename !== 'string') {
             return res.status(400).json({ error: 'File and filename are required' });
         }
         

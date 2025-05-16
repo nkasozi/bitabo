@@ -12,8 +12,8 @@ export const POST = (async ({ request }) => {
         const formData = await request.formData();
         const file = formData.get('file');
         const filename = formData.get('filename');
-        
-        if (!file || !(file instanceof Blob) || !filename || typeof filename !== 'string') {
+
+        if (!file || !filename || typeof filename !== 'string') {
             return json({ error: 'File and filename are required' }, { status: 400 });
         }
         
