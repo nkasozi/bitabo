@@ -299,7 +299,7 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
 
         if (mode === 'import') {
             console.log(`[VercelSync] Starting import from prefix '${trimmed_prefix_key}'.`);
-            await importBooksWithPrefix(trimmed_prefix_key, true); // Pass true for silent mode
+            await importBooksWithPrefix(trimmed_prefix_key, false);
             console.log(`[VercelSync] Import attempt from '${trimmed_prefix_key}' finished.`);
         }
         
@@ -338,8 +338,14 @@ export function getSyncStatus(): BookSyncStatus[] {
 /**
  * Sync with Vercel Blob Storage - Main sync function
  * @param silent - If true, suppress UI notifications.
+ * @param specific_book_id - Optional ID of a specific book to sync.
+ * @param operation_type - Optional operation type ('save' or 'delete') for the specific book.
  */
-export async function syncWithVercelBlob(silent: boolean = false): Promise<SyncResult> {
+export async function syncWithVercelBlob(
+    silent: boolean = false,
+    specific_book_id?: string,
+    operation_type?: 'save' | 'delete'
+): Promise<SyncResult> {
     if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
         const error_message = 'Sync not enabled or no prefix configured';
         console.warn(`[VercelSync] Sync skipped: ${error_message}`);
@@ -402,6 +408,76 @@ export async function syncWithVercelBlob(silent: boolean = false): Promise<SyncR
         const books_to_process = local_books;
         const total_books_to_process = books_to_process.length;
         
+        if (specific_book_id && operation_type === 'delete') {
+            console.log(`[VercelSync] Initiating delete operation for specific book ID: ${specific_book_id}`);
+            try {
+                const book_to_delete_pathname = `${currentConfig.prefixKey}_${specific_book_id}.json`;
+                await deleteBookInVercelBlob(book_to_delete_pathname, `Book ID: ${specific_book_id}`, undefined, true);
+                console.log(`[VercelSync] Successfully deleted specific book from Vercel Blob: ${specific_book_id}`);
+                updateConfig({ lastSyncTime: Date.now() });
+                return {
+                    success: true,
+                    booksAdded: 0,
+                    booksUpdated: 0,
+                    booksRemoved: 1
+                };
+            } catch (error_instance) {
+                const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+                console.error(`[VercelSync] Error deleting specific book ${specific_book_id} from Vercel Blob:`, error_message);
+                return { 
+                    success: false, 
+                    booksAdded: 0, 
+                    booksUpdated: 0, 
+                    booksRemoved: 0, 
+                    error: `Failed to delete book ${specific_book_id}: ${error_message}`
+                };
+            }
+        }
+
+        if (specific_book_id && operation_type === 'save') {
+            console.log(`[VercelSync] Initiating save operation for specific book ID: ${specific_book_id}`);
+            const book_to_sync = local_books.find(book => book.id === specific_book_id);
+            if (book_to_sync) {
+                updateBookSyncStatus(book_to_sync.id, 'syncing');
+                try {
+                    console.log(`[VercelSync] Uploading specific book to Vercel Blob: ${book_to_sync.title}`);
+                    await uploadBookToVercelBlob(book_to_sync);
+                    updateBookSyncStatus(book_to_sync.id, 'completed');
+                    updateConfig({ lastSyncTime: Date.now() });
+                    console.log(`[VercelSync] Successfully synced specific book: ${book_to_sync.title}`);
+                    return {
+                        success: true,
+                        booksAdded: 1, // Assuming it's a new or updated book
+                        booksUpdated: 0, // Or 1 if you can differentiate between add/update
+                        booksRemoved: 0
+                    };
+                } catch (error_instance) {
+                    const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+                    console.error(`[VercelSync] Error syncing specific book ${book_to_sync.title}:`, error_message);
+                    updateBookSyncStatus(book_to_sync.id, 'error', error_message);
+                    return { 
+                        success: false, 
+                        booksAdded: 0, 
+                        booksUpdated: 0, 
+                        booksRemoved: 0, 
+                        error: `Failed to sync book ${book_to_sync.title}: ${error_message}`
+                    };
+                }
+            } else {
+                console.warn(`[VercelSync] Specific book ID ${specific_book_id} not found in local books for saving.`);
+                return { 
+                    success: false, 
+                    booksAdded: 0, 
+                    booksUpdated: 0, 
+                    booksRemoved: 0, 
+                    error: `Book ID ${specific_book_id} not found locally.`
+                };
+            }
+        }
+
+        // Fallback to full sync if no specific book ID or operation is provided
+        console.log('[VercelSync] Proceeding with full library sync as no specific book operation was requested or applicable.');
+
         for (let batch_start_index = 0; batch_start_index < total_books_to_process; batch_start_index += batch_size) {
             const batch_items = books_to_process.slice(batch_start_index, batch_start_index + batch_size);
             const batch_end_index = Math.min(batch_start_index + batch_size, total_books_to_process);
@@ -550,7 +626,7 @@ async function importBooksWithPrefix(prefixKey: string, silent: boolean = false)
         const { books: local_books } = await loadLibraryStateFromDB();
         let merged_books_collection = [...local_books]; 
         
-        const sorted_files_for_import = [...book_files].sort((file_a, file_b) => a.pathname.length - file_b.pathname.length);
+        const sorted_files_for_import = [...book_files].sort((file_a, file_b) => file_a.pathname.length - file_b.pathname.length);
         
         const batch_size = 5;
         
@@ -1188,6 +1264,10 @@ export function checkActiveOperation(): ActiveOperationType {
  * @returns A copy of the current configuration.
  */
 export function getCurrentConfig(): VercelBlobSyncConfig {
+    if (!browser) {
+        return { ...DEFAULT_CONFIG };
+    }
+    loadConfig(); 
     return { ...currentConfig };
 }
 

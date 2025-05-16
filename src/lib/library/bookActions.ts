@@ -4,7 +4,7 @@ import { saveBook, removeBookFromDatabaseById, clearAllBooksFromDB } from './dex
 import { deleteBookInSW, clearBooksInSW, checkServiceWorkerRegistrationStatus } from './serviceWorkerUtils';
 import { showErrorNotification, showNotification, showConfirmDialog } from './ui';
 import { goto } from '$app/navigation';
-import { deleteBookInVercelBlob, deleteAllBooksInVercelBlob } from './vercelBlobSync';
+import { deleteBookInVercelBlob, deleteAllBooksInVercelBlob, getCurrentConfig } from './vercelBlobSync';
 
 // --- Types for State Update Callback ---
 type StateUpdateCallback = (
@@ -90,7 +90,7 @@ export async function handleOpenBook(
           selectedBook?.title,
           showErrorNotification
         );
-        return false; 
+        return false;
     }
 }
 
@@ -182,10 +182,9 @@ export async function handleRemoveBook(
         }
         
         // 6. Remove from Vercel Blob sync if enabled (fire and forget)
-        const syncWithVercel = localStorage.getItem('bitabo-vercel-blob-sync-config');
-        if (syncWithVercel) {
+        const config = getCurrentConfig();
+        if (config) {
             try {
-                const config = JSON.parse(syncWithVercel);
                 if (config.syncEnabled && config.prefixKey) {
                     // Ask user if they want to delete from cloud backup
                     showConfirmDialog({
@@ -195,7 +194,8 @@ export async function handleRemoveBook(
                         cancelText: null // Changed from 'No, keep in cloud' to null
                     }).then(shouldDelete => {
                         if (shouldDelete) {
-                            deleteBookInVercelBlob(bookId).then(success => {
+                            let cloudBookId = `${config.prefixKey}_${bookId}`
+                            deleteBookInVercelBlob(cloudBookId, bookToRemove.title).then(success => {
                                 if (success) {
                                     console.log(`[BookAction] Successfully deleted book from Vercel Blob: ${bookId}`);
                                     showNotification(`Book also removed from cloud backup.`, 'success');

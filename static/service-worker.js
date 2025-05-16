@@ -943,8 +943,8 @@ self.addEventListener('fetch', (event) => {
         .then(response => {
           // Cache the latest version
           let responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
+          caches.open(CACHE_NAME).then(async cache => {
+            await cache.put(event.request, responseClone);
           });
           return response;
         })
@@ -976,8 +976,17 @@ self.addEventListener('fetch', (event) => {
         return fetch(event.request).then(response => {
           if (response.ok) {
             let responseClone = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseClone);
+            caches.open(CACHE_NAME).then(async cache => {
+              await cache.put(event.request, responseClone);
+            }).catch(() => {
+              // If network fails, try cache
+              return caches.match(event.request).then(cachedResponse => {
+                if (cachedResponse) {
+                  return cachedResponse;
+                }
+                // If not in cache, try the root page as fallback
+                return caches.match('/');
+              });
             });
           }
           return response;
@@ -994,8 +1003,17 @@ self.addEventListener('fetch', (event) => {
         // Only cache successful responses
         if (response.ok) {
           let responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
+          caches.open(CACHE_NAME).then(async cache => {
+            await cache.put(event.request, responseClone);
+          }).catch(() => {
+            // If network fails, try cache
+            return caches.match(event.request).then(cachedResponse => {
+              if (cachedResponse) {
+                return cachedResponse;
+              }
+              // If not in cache, try the root page as fallback
+              return caches.match('/');
+            });
           });
         }
         return response;
