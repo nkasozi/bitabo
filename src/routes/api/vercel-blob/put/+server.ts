@@ -41,7 +41,8 @@ export const POST = (async ({ request }) => {
         // Upload file to Vercel Blob
         const result = await put(filename, file, {
             access: 'public',
-            token: VERCEL_BLOB_TOKEN
+            token: VERCEL_BLOB_TOKEN,
+            allowOverwrite: true // Added to allow overwriting existing blobs
         });
         
         return json(result);

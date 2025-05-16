@@ -29,34 +29,36 @@
 	}
 
 	// Navigate back to library
-	function returnToLibrary() {
-		try {
-				goto('/library');
-		} catch (error: any) {
+	function returnToLibrary(): void {
+		const fallback_navigation_url: string = '/library';
 
-			// You can choose to log the raw error here or in the calling function's catch block
-			console.error('[ReturnToLibrary] Processing error:', error);
+		goto(fallback_navigation_url)
+			.catch((error: any) => { // Catch errors from the goto Promise
+				console.error('[ReturnToLibrary] Processing error:', error);
 
-			const error_message_string = String(error?.message || '');
-			const error_stack_string = String(error?.stack || '');
+				const error_message_string: string = String(error?.message || '');
+				const error_stack_string: string = String(error?.stack || '');
 
-			// Check for the specific SvelteKit internal error related to 'app.hash'
-			const is_svelte_kit_internal_app_hash_error =
-				error_message_string.includes("Cannot read properties of undefined (reading 'hash')") &&
-				(error_stack_string.includes('get_navigation_intent') || error_stack_string.includes('is_external_url'));
+				// Check for the specific SvelteKit internal error related to 'app.hash'
+				const is_svelte_kit_internal_app_hash_error: boolean =
+					error_message_string.includes("Cannot read properties of undefined (reading 'hash')") &&
+					(error_stack_string.includes('get_navigation_intent') || error_stack_string.includes('is_external_url'));
 
-			if (is_svelte_kit_internal_app_hash_error) {
-				console.warn(
-					`[ReturnToLibrary] SvelteKit's SPA navigation failed due to 'app.hash' issue. ` +
-					`Attempting full page load fallback to: ${fallback_navigation_url}`
-				);
-				if (typeof window !== 'undefined') {
-					// Perform the fallback full page navigation
-					window.location.href = fallback_navigation_url;
+				if (is_svelte_kit_internal_app_hash_error) {
+					console.warn(
+						`[ReturnToLibrary] SvelteKit's SPA navigation failed due to 'app.hash' issue. ` +
+						`Attempting full page load fallback to: ${fallback_navigation_url}`
+					);
+					if (typeof window !== 'undefined') {
+						// Perform the fallback full page navigation
+						window.location.href = fallback_navigation_url;
+					}
+					// Note: The page will navigate away, so further JS execution in this context stops.
+				} else {
+					// Handle other potential errors
+					console.error('[ReturnToLibrary] An unexpected error occurred during navigation:', error);
 				}
-				// Note: The page will navigate away, so further JS execution in this context stops.
-			}
-		}
+			});
 	}
 
 	// Toggle TOC dropdown menu

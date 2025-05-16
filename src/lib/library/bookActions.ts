@@ -90,7 +90,7 @@ export async function handleOpenBook(
           selectedBook?.title,
           showErrorNotification
         );
-        return false; // The main function always returns false if an error is caught
+        return false; 
     }
 }
 
