@@ -26,7 +26,7 @@ export function getPremiumMessage(): string {
         </div>
         <h3 style="margin: 0 0 20px; font-size: 22px; font-weight: 600; color: ${accentColor}; line-height: 1.4;">Premium Feature Required</h3>
         <div style="background-color: ${isDarkMode ? '#374151' : '#f8fafc'}; border-radius: 8px; padding: 16px; margin: 0 0 24px;">
-            <p style="margin: 0 0 12px; line-height: 1.6; font-size: 16px;">Cloud backup synchronization is a premium feature of Bitabo.</p>
+            <p style="margin: 0 0 12px; line-height: 1.6; font-size: 16px;">Cloud backup synchronization is a premium feature of ReadStash (3$ (USD) dollars a month).</p>
             <p style="margin: 0; line-height: 1.6; font-size: 16px;">To enable this feature, please contact us by clicking:</p>
         </div>
         <div style="margin: 0 auto 16px; max-width: 240px;">
