@@ -1,97 +1,115 @@
 import { put } from '@vercel/blob';
+import formidable from 'formidable';
+import fs from 'fs';
 import { isPremiumUser, extractPrefixFromPathname } from './premium-check.js';
 
 const VERCEL_BLOB_TOKEN = process.env.VERCEL_BLOB_TOKEN || "vercel_blob_rw_KG2Dv9vgTuohDWvm_S97qGfCHPMF3ukp6lOvxSNLw9okBVC";
 
 /**
- * @param {Request} req
- * @returns {Promise<FormData>}
+ * @param {any} request
+ * @returns {Promise<{ fields: formidable.Fields, files: formidable.Files }>}
  */
-async function parseFormData(req) {
-    if (typeof req.formData !== 'function') {
-        console.error('[API] req.formData is not a function. Server cannot parse multipart/form-data without it or a dedicated library.');
-        throw new Error('req.formData is not a function. Server environment cannot parse multipart/form-data.');
-    }
-    
-    try {
-        const formDataInstance = await req.formData();
-        return formDataInstance;
-    } catch (error_from_req_form_data) {
-        console.error('[API] req.formData() execution failed:', error_from_req_form_data);
-        throw new Error(`req.formData() execution failed: ${error_from_req_form_data.message}`);
-    }
+async function parseRequestWithFormidable(request) {
+    console.log('[API] Attempting to parse form data with formidable.');
+    return new Promise((resolve, reject) => {
+        const form = formidable({});
+        form.parse(request, (error, fields, files) => {
+            if (error) {
+                console.error('[API] Formidable parsing error:', error);
+                reject(new Error(`Formidable parsing failed: ${error.message}`));
+                return;
+            }
+            console.log('[API] Formidable parsing successful.');
+            resolve({ fields, files });
+        });
+    });
 }
 
 /**
- * @param {any} req
- * @param {any} res
+ * @param {any} request
+ * @param {any} response
+ * @returns {Promise<any>}
  */
-export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+export default async function handler(request, response) {
+    if (request.method !== 'POST') {
+        return response.status(405).json({ error: 'Method not allowed' });
     }
 
-    try {
-        const parsedFormData = await parseFormData(req);
-        
-        const fileFieldValue = parsedFormData.get('file');
-        const filenameFieldValue = parsedFormData.get('filename');
+    /** @type {{path: string, originalFilename?: string} | null} */
+    let temporaryFileDetails = null;
 
-        console.log(`[API DEBUG] Raw fileFieldValue type: ${typeof fileFieldValue}`);
-        if (fileFieldValue) {
-            console.log(`[API DEBUG] fileFieldValue toString: ${String(fileFieldValue)}`);
-            if (typeof fileFieldValue === 'object') {
-                console.log(`[API DEBUG] fileFieldValue keys: ${Object.keys(fileFieldValue).join(', ')}`);
-                console.log(`[API DEBUG] fileFieldValue.name: ${fileFieldValue.name}, type: ${typeof fileFieldValue.name}`);
-                console.log(`[API DEBUG] fileFieldValue.size: ${fileFieldValue.size}, type: ${typeof fileFieldValue.size}`);
-                console.log(`[API DEBUG] fileFieldValue.type (Content-Type of part): ${fileFieldValue.type}, type: ${typeof fileFieldValue.type}`);
-                console.log(`[API DEBUG] typeof fileFieldValue.arrayBuffer: ${typeof fileFieldValue.arrayBuffer}`);
-                console.log(`[API DEBUG] typeof fileFieldValue.text: ${typeof fileFieldValue.text}`);
-            } else if (typeof fileFieldValue === 'string') {
-                console.log(`[API DEBUG] fileFieldValue (string preview): ${fileFieldValue.substring(0, 100)}`);
+    try {
+        const parsedForm = await parseRequestWithFormidable(request);
+        
+        const fileFromFormidable = parsedForm.files.file;
+        const filenameFromFormidableFields = parsedForm.fields.filename;
+
+        console.log(`[API DEBUG] Formidable - fields.filename raw: ${JSON.stringify(filenameFromFormidableFields)}, type: ${typeof filenameFromFormidableFields}`);
+        if (fileFromFormidable) {
+            const fileObject = Array.isArray(fileFromFormidable) ? fileFromFormidable[0] : fileFromFormidable;
+            if (fileObject) {
+                console.log(`[API DEBUG] Formidable - file object exists. Original filename: ${fileObject.originalFilename}, Path: ${fileObject.filepath}, Size: ${fileObject.size}, Mimetype: ${fileObject.mimetype}`);
+            } else {
+                 console.log(`[API DEBUG] Formidable - file object (single or first from array) is undefined.`);
             }
         } else {
-            console.log(`[API DEBUG] fileFieldValue is null or undefined.`);
+            console.log(`[API DEBUG] Formidable - parsedForm.files.file is undefined or null.`);
         }
-        console.log(`[API DEBUG] Raw filenameFieldValue type: ${typeof filenameFieldValue}, value: ${filenameFieldValue}`);
 
-        let actualFileBodyForUpload;
+        /** @type {fs.ReadStream | string | null} */
+        let actualFileBodyForUpload = null;
+        /** @type {string | undefined} */
         let determinedFilenameForUpload;
 
-        if (filenameFieldValue && typeof filenameFieldValue === 'string' && filenameFieldValue.trim() !== '') {
-            determinedFilenameForUpload = filenameFieldValue.trim();
+        if (filenameFromFormidableFields) {
+            determinedFilenameForUpload = Array.isArray(filenameFromFormidableFields) ? filenameFromFormidableFields[0] : filenameFromFormidableFields;
         }
-
-        if (fileFieldValue && typeof fileFieldValue === 'object' && typeof fileFieldValue.name === 'string' && typeof fileFieldValue.size === 'number') {
-            actualFileBodyForUpload = fileFieldValue;
-            if (!determinedFilenameForUpload) {
-                determinedFilenameForUpload = fileFieldValue.name;
+        
+        if (fileFromFormidable) {
+            const singleFileInstance = Array.isArray(fileFromFormidable) ? fileFromFormidable[0] : fileFromFormidable;
+            if (singleFileInstance && singleFileInstance.filepath) {
+                actualFileBodyForUpload = fs.createReadStream(singleFileInstance.filepath);
+                temporaryFileDetails = { path: singleFileInstance.filepath, originalFilename: singleFileInstance.originalFilename };
+                if (!determinedFilenameForUpload && singleFileInstance.originalFilename) {
+                    determinedFilenameForUpload = singleFileInstance.originalFilename;
+                }
+                console.log(`[API DEBUG] Using file from formidable. Temp path: ${singleFileInstance.filepath}, Original filename: ${singleFileInstance.originalFilename}`);
             }
-        } else if (typeof fileFieldValue === 'string') {
-            actualFileBodyForUpload = fileFieldValue;
         }
 
         if (!actualFileBodyForUpload || !determinedFilenameForUpload || typeof determinedFilenameForUpload !== 'string' || determinedFilenameForUpload.trim() === '') {
-            let error_messages_list = [];
+            let errorMessagesList = [];
             if (!actualFileBodyForUpload) {
-                error_messages_list.push("File data not found or not in expected format (e.g., a File object from form data or a string).");
+                errorMessagesList.push("File data not found or not in expected format after parsing.");
             }
             if (!determinedFilenameForUpload || typeof determinedFilenameForUpload !== 'string' || determinedFilenameForUpload.trim() === '') {
-                error_messages_list.push("Filename not found, not a string, or empty. Ensure a 'filename' form field is sent, or the 'file' field is a proper File object with a name.");
+                errorMessagesList.push("Filename not found, not a string, or empty. Ensure a 'filename' form field is sent, or the 'file' field is a proper File object with a name.");
             }
-            console.warn(`[API] Upload requirements not met. File body type: ${typeof actualFileBodyForUpload}, Filename: ${determinedFilenameForUpload}`);
-            return res.status(400).json({ error: `File data and a valid filename are required. Issues: ${error_messages_list.join(' ')}` });
+            console.warn(`[API] Upload requirements not met. Determined filename: ${determinedFilenameForUpload}`);
+            if (temporaryFileDetails && temporaryFileDetails.path) {
+                fs.unlink(temporaryFileDetails.path, (unlinkError) => {
+                    if (unlinkError) console.error(`[API] Error deleting temp file ${temporaryFileDetails.path} due to validation failure:`, unlinkError);
+                    else console.log(`[API] Temp file ${temporaryFileDetails.path} deleted due to validation failure.`);
+                });
+            }
+            return response.status(400).json({ error: `File data and a valid filename are required. Issues: ${errorMessagesList.join(' ')}` });
         }
         
         const prefix = extractPrefixFromPathname(determinedFilenameForUpload);
         if (!prefix) {
-            return res.status(400).json({ error: 'Invalid filename format. Expected format: prefix_bookid.json' });
+             if (temporaryFileDetails && temporaryFileDetails.path) {
+                fs.unlink(temporaryFileDetails.path, (unlinkError) => {
+                    if (unlinkError) console.error(`[API] Error deleting temp file ${temporaryFileDetails.path} due to invalid filename format:`, unlinkError);
+                    else console.log(`[API] Temp file ${temporaryFileDetails.path} deleted due to invalid filename format.`);
+                });
+            }
+            return response.status(400).json({ error: 'Invalid filename format. Expected format: prefix_bookid.json' });
         }
         
         const premium = isPremiumUser(prefix);
         if (!premium) {
             console.log(`[API] Non-premium user attempted to upload blob with prefix: ${prefix}`);
-            return res.status(403).json({ 
+            return response.status(403).json({ 
                 error: 'Premium subscription required',
                 isPremiumRequired: true
             });
@@ -104,13 +122,18 @@ export default async function handler(req, res) {
             token: VERCEL_BLOB_TOKEN
         });
         
-        return res.status(200).json(result);
+        return response.status(200).json(result);
+
     } catch (error) {
-        console.error('[API] Error uploading blob:', error);
+        console.error('[API] Error in handler:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        if (errorMessage.toLowerCase().includes('req.formdata')) {
-             return res.status(500).json({ error: `Failed to parse form data. Server environment may not support req.formData() or there was an issue during its execution. Original error: ${errorMessage}` });
+        return response.status(500).json({ error: `An unexpected error occurred: ${errorMessage}` });
+    } finally {
+        if (temporaryFileDetails && temporaryFileDetails.path) {
+            fs.unlink(temporaryFileDetails.path, (unlinkError) => {
+                if (unlinkError) console.error(`[API] Error deleting temp file ${temporaryFileDetails.path} in finally block:`, unlinkError);
+                else console.log(`[API] Temp file ${temporaryFileDetails.path} deleted in finally block.`);
+            });
         }
-        return res.status(500).json({ error: `An unexpected error occurred: ${errorMessage}` });
     }
 }
