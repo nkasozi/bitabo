@@ -1,8 +1,8 @@
-import Dexie from 'dexie';
-import type { Table } from 'dexie';
+import Dexie, { type Table, type Transaction } from 'dexie';
 import { browser } from '$app/environment';
 import type { Book } from './types';
 import { DB_NAME, BOOKS_STORE } from './constants';
+import { getCurrentConfig, syncWithVercelBlob } from '$lib/library/vercelBlobSync';
 
 // Helper function to convert ArrayBuffer to Base64
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -103,6 +103,68 @@ class BitaboDatabase extends Dexie {
 // other code shouldn't depend on dexie js directly
 // but ONLY through standard crud methods
 const db = new BitaboDatabase();
+
+async function triggerAutoSync(): Promise<void> {
+  if (!browser) {
+    console.log('[DexieDB Hooks] Not in browser, skipping auto-sync trigger.');
+    return;
+  }
+
+  console.log('[DexieDB Hooks] Change detected, evaluating auto-sync conditions.');
+  const sync_config = getCurrentConfig();
+
+  if (sync_config && sync_config.syncEnabled && sync_config.prefixKey) {
+    console.log('[DexieDB Hooks] Auto-sync conditions met. Triggering Vercel Blob sync in silent mode.');
+    try {
+      // Call syncWithVercelBlob with silent mode set to true
+      const sync_result = await syncWithVercelBlob(true);
+      if (sync_result.success) {
+        console.log('[DexieDB Hooks] Auto-sync with Vercel Blob successful (silent mode).');
+        // Optionally, update a last successful sync timestamp in a local store or UI element if needed
+      } else {
+        console.warn('[DexieDB Hooks] Auto-sync with Vercel Blob reported no success (silent mode). Result:', sync_result);
+      }
+    } catch (error_instance) {
+      const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+      console.error('[DexieDB Hooks] Auto-sync with Vercel Blob failed (silent mode):_VERCEL_BLOB_SYNC_ERROR_', error_message);
+    }
+  } else {
+    console.log('[DexieDB Hooks] Auto-sync skipped: Sync not enabled, prefixKey missing, or invalid config.', sync_config);
+  }
+}
+
+if (browser) {
+  db.books.hook('creating', (primKey: string, obj: Book, transaction: Transaction) => {
+    transaction.on('complete', () => {
+      console.log(`[DexieDB Hooks] Transaction complete for creating book: ${obj.id}. Triggering auto-sync.`);
+      triggerAutoSync();
+    });
+    transaction.on('abort', () => {
+      console.log(`[DexieDB Hooks] Transaction aborted for creating book: ${obj.id}. Auto-sync will not be triggered.`);
+    });
+  });
+
+  db.books.hook('updating', (modifications: Partial<Book>, primKey: string, obj: Book, transaction: Transaction) => {
+    transaction.on('complete', () => {
+      console.log(`[DexieDB Hooks] Transaction complete for updating book: ${primKey}. Triggering auto-sync.`);
+      triggerAutoSync();
+    });
+    transaction.on('abort', () => {
+      console.log(`[DexieDB Hooks] Transaction aborted for updating book: ${primKey}. Auto-sync will not be triggered.`);
+    });
+  });
+
+  db.books.hook('deleting', (primKey: string, obj: Book, transaction: Transaction) => {
+    transaction.on('complete', () => {
+      console.log(`[DexieDB Hooks] Transaction complete for deleting book: ${primKey}. Triggering auto-sync.`);
+      triggerAutoSync();
+    });
+    transaction.on('abort', () => {
+      console.log(`[DexieDB Hooks] Transaction aborted for deleting book: ${primKey}. Auto-sync will not be triggered.`);
+    });
+  });
+  console.log('[DexieDB Hooks] Dexie table hooks for auto-sync have been set up.');
+}
 
 // Helper to prepare book data for storage (removes File, fetches Blob)
 export async function prepareBookForStorage(bookData: BookWithOptionalFile): Promise<Book> {

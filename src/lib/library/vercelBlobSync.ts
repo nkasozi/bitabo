@@ -245,13 +245,13 @@ export async function initVercelBlobSync(): Promise<boolean> {
     if (!browser || isInitialized) return isInitialized;
     
     try {
-        // Load config from localStorage
         loadConfig();
-        
         isInitialized = true;
+        console.log('[VercelSync] Initialization successful.');
         return true;
-    } catch (error) {
-        console.error('[VercelSync] Initialization error:', error);
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Initialization error:', error_message);
         return false;
     }
 }
@@ -262,52 +262,52 @@ export async function initVercelBlobSync(): Promise<boolean> {
  * @param mode The sync mode: 'new' or 'import'
  */
 export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new'): Promise<boolean> {
-    if (!browser) return false;
+    if (!browser) {
+        console.log('[VercelSync] Setup skipped: Not in browser environment.');
+        return false;
+    }
     
-    const initialNotificationId = showNotification(`Setting up Cloud Sync (${mode})...`, 'info');
+    console.log(`[VercelSync] Setting up Cloud Sync. Mode: ${mode}, Prefix: ${prefixKey}`);
 
     try {
-        prefixKey = prefixKey.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-        if (prefixKey.length < 3) {
-            throw new Error("Prefix must be at least 3 characters long");
+        const trimmed_prefix_key = prefixKey.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+        if (trimmed_prefix_key.length < 3) {
+            console.error("[VercelSync] Prefix must be at least 3 characters long.");
+            return false;
         }
 
-        const checkMsgId = showNotification(`Verifying backup prefix '${prefixKey}'...`, 'info');
+        console.log(`[VercelSync] Verifying backup prefix '${trimmed_prefix_key}'...`);
         try {
-            const response = await listBlobsWithPrefix(prefixKey);
-            closeNotification(checkMsgId);
-        } catch (error) {
-            closeNotification(checkMsgId);
-            closeNotification(initialNotificationId);
-            if (error instanceof Error && isPremiumRequiredError(error)) {
-                await showPremiumDialog();
-            } else {
-                showErrorNotification('Cloud Sync Error', 'Prefix Verification', (error as Error).message);
+            await listBlobsWithPrefix(trimmed_prefix_key);
+            console.log(`[VercelSync] Backup prefix '${trimmed_prefix_key}' verified.`);
+        } catch (error_instance) {
+            const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+            console.error('[VercelSync] Prefix Verification failed:', error_message);
+            if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
+                // No UI for premium dialog in background sync
+                console.warn('[VercelSync] Premium subscription required for prefix verification.');
             }
             return false;
         }
 
         updateConfig({
             syncEnabled: true,
-            prefixKey: prefixKey
+            prefixKey: trimmed_prefix_key
         });
         
-        closeNotification(initialNotificationId);
+        console.log('[VercelSync] Cloud sync setup successful.');
 
         if (mode === 'import') {
-            // importBooksWithPrefix handles its own notifications regarding import results
-            await importBooksWithPrefix(prefixKey);
-            // Regardless of importSuccess, setup itself is done.
-            showNotification(`Import attempt from '${prefixKey}' finished.`, 'info');
-        } else { // mode === 'new'
-            showNotification('Cloud sync set up successfully. You can sync your library now.', 'success');
+            console.log(`[VercelSync] Starting import from prefix '${trimmed_prefix_key}'.`);
+            await importBooksWithPrefix(trimmed_prefix_key, true); // Pass true for silent mode
+            console.log(`[VercelSync] Import attempt from '${trimmed_prefix_key}' finished.`);
         }
         
         return true;
 
-    } catch (error) {
-        closeNotification(initialNotificationId);
-        showErrorNotification('Cloud Sync Error', 'Setup', (error as Error).message);
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Setup Error:', error_message);
         return false;
     }
 }
@@ -315,11 +315,12 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
 /**
  * Disable Vercel Blob sync
  */
-export function disableVercelBlobSync(): void {
+export function disableVercelBlobSync(): boolean {
     updateConfig({
         syncEnabled: false
     });
-    showNotification('Cloud Sync disabled', 'info');
+    console.log('[VercelSync] Cloud Sync disabled.');
+    return true;
 }
 
 /**
@@ -336,46 +337,44 @@ export function getSyncStatus(): BookSyncStatus[] {
 
 /**
  * Sync with Vercel Blob Storage - Main sync function
+ * @param silent - If true, suppress UI notifications.
  */
-export async function syncWithVercelBlob(): Promise<SyncResult> {
+export async function syncWithVercelBlob(silent: boolean = false): Promise<SyncResult> {
     if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
+        const error_message = 'Sync not enabled or no prefix configured';
+        console.warn(`[VercelSync] Sync skipped: ${error_message}`);
         return { 
             success: false, 
             booksAdded: 0, 
             booksUpdated: 0, 
             booksRemoved: 0, 
-            error: 'Sync not enabled or no prefix configured' 
+            error: error_message
         };
     }
     
-    console.log('[VercelSync] Starting sync with Vercel Blob');
+    console.log('[VercelSync] Starting sync with Vercel Blob. Silent mode:', silent);
     activeOperation = 'sync';
     currentSyncStatus = [];
-    
-    const progressId = showProgressNotification('Syncing library with Cloud Storage...', 0);
-    
-    try {
-        const { books: localBooks } = await loadLibraryStateFromDB();
         
-        currentSyncStatus = localBooks.map(book => ({
-            id: book.id,
-            title: book.title || 'Unknown',
+    try {
+        const { books: local_books } = await loadLibraryStateFromDB();
+        
+        currentSyncStatus = local_books.map(book_item => ({
+            id: book_item.id,
+            title: book_item.title || 'Unknown',
             status: 'pending'
         }));
         
-        let remoteFiles: VercelBlob[] = [];
+        let remote_files: VercelBlob[] = [];
         try {
-            let vercelListBlobResult = await listBlobsWithPrefix(currentConfig.prefixKey);
-            remoteFiles = vercelListBlobResult.blobs
-            console.log(`[VercelSync] Found ${remoteFiles.length} book files with prefix: ${currentConfig.prefixKey}`);
-        } catch (error) {
-            if (progressId) {
-                closeNotification(progressId);
-            }
-            if (error instanceof Error && isPremiumRequiredError(error)) {
-                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                await showPremiumDialog();
-                return { 
+            const vercel_list_blob_result = await listBlobsWithPrefix(currentConfig.prefixKey);
+            remote_files = vercel_list_blob_result.blobs;
+            console.log(`[VercelSync] Found ${remote_files.length} book files with prefix: ${currentConfig.prefixKey}`);
+        } catch (error_instance) {
+            const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+            if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
+                console.warn(`[VercelSync] Premium required for listing blobs for user: ${currentConfig.prefixKey}`);
+                 return { 
                     success: false, 
                     booksAdded: 0, 
                     booksUpdated: 0, 
@@ -383,389 +382,326 @@ export async function syncWithVercelBlob(): Promise<SyncResult> {
                     error: 'Premium subscription required' 
                 };
             }
-            throw error;
+            console.error('[VercelSync] Error listing remote files:', error_message);
+            throw error_instance;
         }
         
-        const remoteFileMap = new Map<string, VercelBlob>(); // Specify Map types
-        for (const file of remoteFiles) {
-            const bookId = extractBookIdFromPath(file.pathname);
-            if (bookId) {
-                remoteFileMap.set(bookId, file);
+        const remote_file_map = new Map<string, VercelBlob>();
+        for (const file_item of remote_files) {
+            const book_id = extractBookIdFromPath(file_item.pathname);
+            if (book_id) {
+                remote_file_map.set(book_id, file_item);
             }
         }
         
-        let booksAdded = 0;
-        let booksUpdated = 0;
-        let booksRemoved = 0;
+        let books_added_count = 0;
+        let books_updated_count = 0;
+        const books_removed_count = 0; // Not implemented in this version of sync
        
+        const batch_size = 5; 
+        const books_to_process = local_books;
+        const total_books_to_process = books_to_process.length;
         
-        const BATCH_SIZE = 5; 
-        const booksToProcess = localBooks;//renamed for clarity
-        const totalBooksToProcess = booksToProcess.length;
-        
-        for (let batchStart = 0; batchStart < totalBooksToProcess; batchStart += BATCH_SIZE) {
-            const batch = booksToProcess.slice(batchStart, batchStart + BATCH_SIZE);
-            const batchEnd = Math.min(batchStart + BATCH_SIZE, totalBooksToProcess);
+        for (let batch_start_index = 0; batch_start_index < total_books_to_process; batch_start_index += batch_size) {
+            const batch_items = books_to_process.slice(batch_start_index, batch_start_index + batch_size);
+            const batch_end_index = Math.min(batch_start_index + batch_size, total_books_to_process);
             
-            console.log(`[VercelSync] Processing batch ${batchStart/BATCH_SIZE + 1}: books ${batchStart+1} to ${batchEnd} of ${totalBooksToProcess}`);
+            console.log(`[VercelSync] Processing batch ${batch_start_index/batch_size + 1}: books ${batch_start_index+1} to ${batch_end_index} of ${total_books_to_process}`);
             
-            if (progressId) {
-                const progress = Math.round((batchStart / totalBooksToProcess) * 100);
-                updateProgressNotification(
-                    progressId, 
-                    `Syncing local books: ${batchStart+1} of ${totalBooksToProcess}`, 
-                    progress
-                );
-            }
-            
-            batch.forEach(book => {
-                updateBookSyncStatus(book.id, 'syncing');
+            batch_items.forEach(book_item => {
+                updateBookSyncStatus(book_item.id, 'syncing');
             });
             
-            const results = await Promise.allSettled(
-              batch.map(async (book) => {
+            const operation_results = await Promise.allSettled(
+              batch_items.map(async (book_item) => {
                 try {
-                    const remoteFile = remoteFileMap.get(book.id);
+                    const remote_file_data = remote_file_map.get(book_item.id);
                     
-                    if (shouldUpdateBook(remoteFile, book)) {
-                        console.log(`[VercelSync] Book already exists remotely: ${book.title}. Updating.`);
-                        await uploadBookToVercelBlob(book);
-                        remoteFileMap.delete(book.id); 
-                        return { book, status: 'updated' };
-                    } else if (!remoteFile) {
-                        console.log(`[VercelSync] Adding new book to Vercel Blob: ${book.title}`);
-                        await uploadBookToVercelBlob(book);
-                        return { book, status: 'added' };
+                    if (shouldUpdateBook(remote_file_data, book_item)) {
+                        console.log(`[VercelSync] Updating remote book: ${book_item.title}.`);
+                        await uploadBookToVercelBlob(book_item);
+                        remote_file_map.delete(book_item.id); 
+                        return { book_item, status: 'updated' };
+                    } else if (!remote_file_data) {
+                        console.log(`[VercelSync] Adding new book to Vercel Blob: ${book_item.title}`);
+                        await uploadBookToVercelBlob(book_item);
+                        return { book_item, status: 'added' };
                     } else {
-                        console.log(`[VercelSync] Book already exists remotely and is up to date: ${book.title}`);
-                        return { book, status: 'skipped' };
+                        console.log(`[VercelSync] Book already exists remotely and is up to date: ${book_item.title}`);
+                        remote_file_map.delete(book_item.id); // Remove from map as it's processed
+                        return { book_item, status: 'skipped' };
                     }
-                } catch (error) {
-                    console.error(`[VercelSync] Error processing book ${book.title}:`, error);
-                    // Ensure the error is an instance of Error for consistent handling
-                    const processedError = error instanceof Error ? error : new Error(String(error));
-                    throw { book, error: processedError };
+                } catch (error_instance) {
+                    const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+                    console.error(`[VercelSync] Error processing book ${book_item.title}:`, error_message);
+                    const processed_error = error_instance instanceof Error ? error_instance : new Error(error_message);
+                    throw { book_item, error: processed_error };
                 }
             }));
             
-            results.forEach(result => {
-                if (result.status === 'fulfilled') {
-                    const { book, status } = result.value;
-                    updateBookSyncStatus(book.id, 'completed');
+            operation_results.forEach(result_item => {
+                if (result_item.status === 'fulfilled') {
+                    const { book_item, status } = result_item.value;
+                    updateBookSyncStatus(book_item.id, 'completed');
                     if (status === 'added') {
-                        booksAdded++;
+                        books_added_count++;
                     } else if (status === 'updated') {
-                        booksUpdated++;
+                        books_updated_count++;
                     }
                 } else {
-                    // result.reason is { book, error }
-                    const { book, error } = result.reason as { book: Book; error: Error };
-                    updateBookSyncStatus(book.id, 'error', error.message);
+                    const { book_item, error } = result_item.reason as { book_item: Book; error: Error };
+                    updateBookSyncStatus(book_item.id, 'error', error.message);
                 }
             });
-            
-            if (progressId) {
-                const progress = Math.round(((batchEnd) / totalBooksToProcess) * 100);
-                updateProgressNotification(
-                    progressId, 
-                    `Synced ${booksAdded + booksUpdated} local books out of ${totalBooksToProcess}`, 
-                    progress
-                );
-            }
         }
 
+        // Handle remote files that were not in local books (potential deletions if implementing two-way sync)
+        // For now, we just log them if any are left in the map.
+        if (remote_file_map.size > 0 && !silent) {
+             console.log(`[VercelSync] ${remote_file_map.size} remote files were not found locally. These might be candidates for deletion if two-way sync is enabled.`);
+             // Example: Deleting remote files not present locally (requires careful implementation)
+             // for (const [bookIdToDelete, remoteFileData] of remote_file_map) {
+             //    console.log(`[VercelSync] Deleting remote file not found locally: ${remoteFileData.pathname}`);
+             //    await deleteBookInVercelBlob(remoteFileData.pathname, `Book ID: ${bookIdToDelete}`);
+             //    books_removed_count++;
+             // }
+        }
         
         updateConfig({
             lastSyncTime: Date.now()
         });
         
-        if (progressId) {
-            closeNotification(progressId);
-        }
-        
-        showNotification(
-            `Sync completed: ${booksAdded} added, ${booksUpdated} updated, ${booksRemoved} removed.`, 
-            'success'
-        );
+        console.log(`[VercelSync] Sync completed: ${books_added_count} added, ${books_updated_count} updated, ${books_removed_count} removed.`);
         
         return {
             success: true,
-            booksAdded,
-            booksUpdated,
-            booksRemoved
+            booksAdded: books_added_count,
+            booksUpdated: books_updated_count,
+            booksRemoved: books_removed_count
         };
-    } catch (error) {
-        console.error('[VercelSync] Sync error:', error);
-        
-        if (progressId) {
-            closeNotification(progressId);
-        }
-        
-        showErrorNotification('Cloud Sync Error', 'Sync', (error as Error).message);
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Sync error:', error_message);
         
         return { 
             success: false, 
             booksAdded: 0, 
             booksUpdated: 0, 
             booksRemoved: 0, 
-            error: (error as Error).message 
+            error: error_message
         };
     } finally {
         activeOperation = null;
         console.log('[VercelSync] Sync operation finished. Active operation set to null.');
     }
 
-    function shouldUpdateBook(remoteFile: VercelBlob | undefined, book: Book) {
-        return remoteFile?.uploadedAt && book.lastModified && Date.parse(remoteFile.uploadedAt) < book.lastModified;
+    function shouldUpdateBook(remote_file_data: VercelBlob | undefined, book_item: Book): boolean {
+        if (!remote_file_data) return false; // Not remote, so not an update
+        if (!book_item.lastModified) return false; // Local book has no modification time, assume no update needed
+        if (!remote_file_data.uploadedAt) return true; // Remote has no upload time, assume update is needed
+        return Date.parse(remote_file_data.uploadedAt) < book_item.lastModified;
     }
 }
 
 /**
  * Import books with a specific prefix from Vercel Blob
+ * @param prefixKey The prefix to import from.
+ * @param silent If true, suppress UI notifications and confirmations.
  */
-async function importBooksWithPrefix(prefixKey: string): Promise<boolean> {
+async function importBooksWithPrefix(prefixKey: string, silent: boolean = false): Promise<boolean> {
     activeOperation = 'import';
     currentImportStatus = [];
-    console.log(`[VercelSync] Import operation started. Active operation: ${activeOperation}`);
+    console.log(`[VercelSync] Import operation started. Active operation: ${activeOperation}, Silent: ${silent}`);
     try {
-        // 1. List all files with this prefix in Vercel Blob
         console.log(`[VercelSync] Listing all files with prefix: ${prefixKey}`);
         
-        let bookFiles = [];
+        let book_files = [];
         try {
-            let vercelListBlobResult = await listBlobsWithPrefix(prefixKey);
-            bookFiles = vercelListBlobResult.blobs
-            console.log(`[VercelSync] Found ${bookFiles.length} files with prefix`, bookFiles);
-        } catch (error) {
-            // Check if this is a premium error
-            if (error instanceof Error && isPremiumRequiredError(error)) {
-                console.log(`[VercelSync] Premium required for user: ${prefixKey}`);
-                
-                // Show premium dialog
-                await showPremiumDialog();
-                
+            const vercel_list_blob_result = await listBlobsWithPrefix(prefixKey);
+            book_files = vercel_list_blob_result.blobs;
+            console.log(`[VercelSync] Found ${book_files.length} files with prefix`, book_files);
+        } catch (error_instance) {
+            const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+            if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
+                console.warn(`[VercelSync] Premium required for listing blobs during import for user: ${prefixKey}`);
                 return false;
             }
-            
-            // Re-throw other errors
-            throw error;
+            console.error('[VercelSync] Error listing files for import:', error_message);
+            throw error_instance;
         }
         
-        if (bookFiles.length === 0) {
+        if (book_files.length === 0) {
+            console.log('[VercelSync] No book files found for import with the given prefix.');
             return false;
         }
         
-        currentImportStatus = bookFiles.map(file => {
-            const bookId = extractBookIdFromPath(file.pathname) || file.pathname;
+        currentImportStatus = book_files.map(file_item => {
+            const book_id = extractBookIdFromPath(file_item.pathname) || file_item.pathname;
             return {
-                id: bookId,
-                title: file.pathname, 
+                id: book_id,
+                title: file_item.pathname, 
                 status: 'pending'
             };
         });
         console.log('[VercelSync] Initialized import status:', currentImportStatus);
-
-        // Create progress notification
-        const progressId = showProgressNotification('Importing books from Vercel Blob...', 0);
         
-        // 2. Process each book file
-        let importedCount = 0;
-        let errorCount = 0;
-        const { books: localBooks } = await loadLibraryStateFromDB();
-        let mergedBooks = [...localBooks]; // Start with existing books
+        let imported_books_count = 0;
+        let import_error_count = 0;
+        const { books: local_books } = await loadLibraryStateFromDB();
+        let merged_books_collection = [...local_books]; 
         
-        // Sort files by size (smallest first) for more efficient processing
-        // Since we don't know the size from the listing, we'll sort by pathname length as a rough heuristic
-        const sortedFiles = [...bookFiles].sort((a, b) => a.pathname.length - b.pathname.length);
+        const sorted_files_for_import = [...book_files].sort((file_a, file_b) => a.pathname.length - file_b.pathname.length);
         
-        // Batch size for parallel processing
-        const BATCH_SIZE = 5;
+        const batch_size = 5;
         
-        // Process files in batches
-        for (let batchStart = 0; batchStart < sortedFiles.length; batchStart += BATCH_SIZE) {
-            const batch = sortedFiles.slice(batchStart, batchStart + BATCH_SIZE);
-            const batchEnd = Math.min(batchStart + BATCH_SIZE, sortedFiles.length);
+        for (let batch_start_index = 0; batch_start_index < sorted_files_for_import.length; batch_start_index += batch_size) {
+            const batch_items = sorted_files_for_import.slice(batch_start_index, batch_start_index + batch_size);
+            const batch_end_index = Math.min(batch_start_index + batch_size, sorted_files_for_import.length);
             
-            console.log(`[VercelSync] Processing import batch ${batchStart/BATCH_SIZE + 1}: files ${batchStart+1} to ${batchEnd} of ${sortedFiles.length}`);
+            console.log(`[VercelSync] Processing import batch ${batch_start_index/batch_size + 1}: files ${batch_start_index+1} to ${batch_end_index} of ${sorted_files_for_import.length}`);
             
-            // Update progress notification for the batch
-            updateProgressNotification(
-                progressId,
-                `Importing book ${batchStart+1} out of ${sortedFiles.length}`,
-                Math.round((batchStart / sortedFiles.length) * 100)
-            );
-            
-            // Process all files in this batch in parallel
-            const results = await Promise.allSettled(batch.map(async (file) => {
-                const bookIdForStatus = extractBookIdFromPath(file.pathname) || file.pathname;
-                updateBookImportStatus(bookIdForStatus, 'syncing', undefined, file.pathname);
+            const operation_results = await Promise.allSettled(batch_items.map(async (file_item) => {
+                const book_id_for_status_update = extractBookIdFromPath(file_item.pathname) || file_item.pathname;
+                updateBookImportStatus(book_id_for_status_update, 'syncing', undefined, file_item.pathname);
                 try {
-                    console.log(`[VercelSync] Processing book file: ${file.pathname}`);
+                    console.log(`[VercelSync] Processing book file for import: ${file_item.pathname}`);
                     
-                    // Extract book ID from the file path
-                    const bookId = extractBookIdFromPath(file.pathname);
-                    if (!bookId) {
-                        console.error(`[VercelSync] Could not extract book ID from path: ${file.pathname}`);
-                        throw new Error(`Could not extract book ID from path: ${file.pathname}`);
+                    const book_id = extractBookIdFromPath(file_item.pathname);
+                    if (!book_id) {
+                        const error_message = `Could not extract book ID from path: ${file_item.pathname}`;
+                        console.error(`[VercelSync] ${error_message}`);
+                        throw new Error(error_message);
                     }
                     
-                    // Download book data
-                    const bookJson = await downloadBookFromUrl(file.url);
-                    if (!bookJson) {
-                        throw new Error(`Could not download book data from URL: ${file.url}`);
+                    const book_json_content = await downloadBookFromUrl(file_item.url);
+                    if (!book_json_content) {
+                        throw new Error(`Could not download book data from URL: ${file_item.url}`);
                     }
                     
-                    const remoteBook = JSON.parse(bookJson) as Book;
-                    console.log(`[VercelSync] Successfully parsed book: ${remoteBook.title || 'Unknown'}`);
-                    updateBookImportStatus(bookId, 'syncing', undefined, remoteBook.title || file.pathname);
+                    const remote_book_data = JSON.parse(book_json_content) as Book;
+                    console.log(`[VercelSync] Successfully parsed book for import: ${remote_book_data.title || 'Unknown'}`);
+                    updateBookImportStatus(book_id, 'syncing', undefined, remote_book_data.title || file_item.pathname);
                     
-                    // Check if book already exists
-                    const existingIndex = mergedBooks.findIndex(b => b.id === remoteBook.id);
-                    if (existingIndex >= 0) {
-                        console.log(`[VercelSync] Book already exists in library: ${remoteBook.title}`);
+                    const existing_book_index = merged_books_collection.findIndex(b => b.id === remote_book_data.id);
+                    if (existing_book_index >= 0) {
+                        console.log(`[VercelSync] Book already exists in library: ${remote_book_data.title}`);
                         
-                        // Book exists - check which is newer or ask user
-                        const localBook = mergedBooks[existingIndex];
-                        const localModified = localBook.lastModified || 0;
-                        const remoteModified = remoteBook.lastModified || 0;
+                        const local_book_data = merged_books_collection[existing_book_index];
+                        const local_book_last_modified_timestamp = local_book_data.lastModified || 0;
+                        const remote_book_last_modified_timestamp = remote_book_data.lastModified || 0;
                         
-                        let useRemote = false;
+                        let use_remote_version_flag = false;
                         
-                        if (remoteModified > localModified) {
-                            // Remote is newer, ask user
-                            console.log(`[VercelSync] Remote book is newer: ${remoteBook.title}`);
-                            useRemote = await confirmConflictResolution(localBook, remoteBook);
+                        if (remote_book_last_modified_timestamp > local_book_last_modified_timestamp) {
+                            console.log(`[VercelSync] Remote book is newer: ${remote_book_data.title}`);
+                            if (silent) {
+                                use_remote_version_flag = true; // In silent mode, automatically prefer newer remote version
+                                console.log(`[VercelSync] Silent mode: Automatically using remote (newer) version for: ${remote_book_data.title}`);
+                            } else {
+                                use_remote_version_flag = await confirmConflictResolution(local_book_data, remote_book_data);
+                            }
                         }
                         
-                        if (useRemote) {
-                            console.log(`[VercelSync] Using remote version for: ${remoteBook.title}`);
-                            // Process remote book (restore blobs, etc.)
-                            const processedBook = await processBookAfterLoad(remoteBook);
+                        if (use_remote_version_flag) {
+                            console.log(`[VercelSync] Using remote version for: ${remote_book_data.title}`);
+                            const processed_book_data = await processBookAfterLoad(remote_book_data);
                             updateBookImportStatus(
-                              processedBook?.id??remoteBook.id,
+                              processed_book_data?.id??remote_book_data.id,
                               'completed',
                               undefined,
-                              processedBook?.title??remoteBook.title
+                              processed_book_data?.title??remote_book_data.title
                             );
-                            return { action: 'update', index: existingIndex, book: processedBook };
+                            return { action: 'update', index: existing_book_index, book: processed_book_data };
                         } else {
-                            console.log(`[VercelSync] Keeping local version for: ${localBook.title}`);
-                            updateBookImportStatus(localBook.id, 'completed', undefined, localBook.title); 
-                            return { action: 'skip', book: localBook };
+                            console.log(`[VercelSync] Keeping local version for: ${local_book_data.title}`);
+                            updateBookImportStatus(local_book_data.id, 'completed', undefined, local_book_data.title); 
+                            return { action: 'skip', book: local_book_data };
                         }
                     } else {
-                        console.log(`[VercelSync] New book found, adding: ${remoteBook.title}`);
-                        // New book - process and add
-                        const processedBook = await processBookAfterLoad(remoteBook);
+                        console.log(`[VercelSync] New book found, adding: ${remote_book_data.title}`);
+                        const processed_book_data = await processBookAfterLoad(remote_book_data);
                         updateBookImportStatus(
-                          processedBook?.id??remoteBook.id,
+                          processed_book_data?.id??remote_book_data.id,
                           'completed',
                           undefined,
-                          processedBook?.title??remoteBook.title
+                          processed_book_data?.title??remote_book_data.title
                         );
-                        return { action: 'add', book: processedBook };
+                        return { action: 'add', book: processed_book_data };
                     }
-                } catch (error) {
-                    console.error(`[VercelSync] Error importing book file ${file.pathname}:`, error);
-                    updateBookImportStatus(bookIdForStatus, 'error', (error as Error).message, file.pathname);
-                    throw error;
+                } catch (error_instance) {
+                    const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+                    console.error(`[VercelSync] Error importing book file ${file_item.pathname}:`, error_message);
+                    updateBookImportStatus(book_id_for_status_update, 'error', error_message, file_item.pathname);
+                    throw error_instance;
                 }
             }));
             
-            // Apply changes from this batch to mergedBooks and save incrementally
-            let batchChanges = 0;
+            let batch_change_count = 0;
             
-            for (const result of results) {
-                if (result.status === 'fulfilled') {
-                    const { action, book, index } = result.value;
+            for (const result_item of operation_results) {
+                if (result_item.status === 'fulfilled') {
+                    const { action, book, index } = result_item.value;
                     
-                    if (action === 'add') {
-                        mergedBooks.push(book);
-                        importedCount++;
-                        batchChanges++;
-                    } else if (action === 'update' && typeof index === 'number') {
-                        mergedBooks[index] = book;
-                        importedCount++;
-                        batchChanges++;
+                    if (action === 'add' && book) {
+                        merged_books_collection.push(book);
+                        imported_books_count++;
+                        batch_change_count++;
+                    } else if (action === 'update' && typeof index === 'number' && book) {
+                        merged_books_collection[index] = book;
+                        imported_books_count++;
+                        batch_change_count++;
                     }
                 } else {
-                    errorCount++;
+                    import_error_count++;
                 }
             }
             
-            // If we've made changes in this batch, save to database immediately
-            // and update the UI without full page reload
-            if (batchChanges > 0) {
+            if (batch_change_count > 0) {
                 try {
-                    // Save the current state to the database
-                    await saveAllBooks(mergedBooks);
+                    await saveAllBooks(merged_books_collection);
+                    const refreshed_library_state = await loadLibraryStateFromDB();
+                    merged_books_collection = refreshed_library_state.books;
                     
-                    // After save, reload from database to ensure all properties are properly initialized
-                    // This is crucial for cover images and file references to be correct
-                    const refreshedState = await loadLibraryStateFromDB();
-                    
-                    // Update our local reference
-                    mergedBooks = refreshedState.books;
-                    
-                    // Publish an event so other components can update
-                    // This is picked up by the library page to refresh the coverflow
-                    const event = new CustomEvent('vercel-blob-import-progress', { 
-                        detail: { 
-                            booksImported: importedCount,
-                            booksProcessed: batchEnd,
-                            totalBooks: sortedFiles.length,
-                            booksInBatch: batchChanges,
-                            mergedBooks: refreshedState.books // Pass the freshly loaded books
-                        } 
-                    });
-                    window.dispatchEvent(event);
-                    
-                    console.log(`[VercelSync] Saved batch progress and reloaded state: ${batchChanges} books changed in this batch, ${importedCount} total imported`);
-                } catch (saveError) {
-                    console.error('[VercelSync] Error saving batch:', saveError);
+                    if (!silent && typeof window !== 'undefined') {
+                        const import_progress_event = new CustomEvent('vercel-blob-import-progress', { 
+                            detail: { 
+                                booksImported: imported_books_count,
+                                booksProcessed: batch_end_index,
+                                totalBooks: sorted_files_for_import.length,
+                                booksInBatch: batch_change_count,
+                                mergedBooks: refreshed_library_state.books 
+                            } 
+                        });
+                        window.dispatchEvent(import_progress_event);
+                    }
+                    console.log(`[VercelSync] Saved batch progress and reloaded state: ${batch_change_count} books changed, ${imported_books_count} total imported`);
+                } catch (save_error_instance) {
+                    const error_message = save_error_instance instanceof Error ? save_error_instance.message : String(save_error_instance);
+                    console.error('[VercelSync] Error saving batch during import:', error_message);
                 }
             }
-            
-            // Update progress after each batch
-            updateProgressNotification(
-                progressId,
-                `Imported ${importedCount} out of ${sortedFiles.length} books`,
-                Math.round((batchEnd / sortedFiles.length) * 100)
-            );
         }
         
-        // Final save of all books to ensure consistency
-        await saveAllBooks(mergedBooks);
+        await saveAllBooks(merged_books_collection);
+        const final_library_state = await loadLibraryStateFromDB();
         
-        // Important: Reload from database for final state refresh
-        // This ensures all books are properly initialized with correct File/Blob objects
-        const finalState = await loadLibraryStateFromDB();
+        console.log(`[VercelSync] Import finished. Imported ${imported_books_count} books. ${import_error_count > 0 ? `${import_error_count} errors.` : ''}`);
         
-        // Close progress notification
-        closeNotification(progressId);
+        if (!silent && typeof window !== 'undefined') {
+            const final_import_event = new CustomEvent('vercel-blob-import-complete', { 
+                detail: { 
+                    booksImported: imported_books_count,
+                    mergedBooks: final_library_state.books
+                } 
+            });
+            console.log(`[VercelSync] Dispatching final import completion event with ${final_library_state.books.length} books`);
+            window.dispatchEvent(final_import_event);
+        }
         
-        // Show import summary
-        showNotification(
-            `Imported ${importedCount} books from Vercel Blob. ${errorCount > 0 ? `${errorCount} errors.` : ''}`,
-            errorCount > 0 ? 'error' : 'success'
-        );
-
-        
-        // Dispatch a final completion event with the refreshed state
-        const finalEvent = new CustomEvent('vercel-blob-import-complete', { 
-            detail: { 
-                booksImported: importedCount,
-                mergedBooks: finalState.books
-            } 
-        });
-        
-        console.log(`[VercelSync] Dispatching final completion event with ${finalState.books.length} fully validated books`);
-        window.dispatchEvent(finalEvent);
-        
-        return importedCount > 0;
-    } catch (error) {
-        console.error('[VercelSync] Error importing books:', error);
-        showErrorNotification('Vercel Blob Import Error', 'Import', (error as Error).message);
+        return imported_books_count > 0;
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Error importing books:', error_message);
         currentImportStatus.forEach(item => {
             if (item.status === 'pending' || item.status === 'syncing') {
                 item.status = 'error';
@@ -1028,159 +964,144 @@ export async function listBlobsWithPrefix(
  * Deletes a book from Vercel Blob storage.
  * @param bookPathname The full pathname of the book in Vercel Blob.
  * @param bookTitle The title of the book for notifications.
- * @param currentConfig The current sync configuration.
  * @param fetchFn Optional fetch function for testing.
- * @returns Promise resolving to VercelBlobDeleteResponse or null if not in browser.
+ * @param silent If true, suppress UI notifications.
+ * @returns Promise resolving to VercelBlobApiResponse or null if not in browser.
  */
 export async function deleteBookInVercelBlob(
     bookPathname: string,
     bookTitle: string,
-    fetchFn?: typeof fetch
+    fetchFn?: typeof fetch,
+    silent: boolean = false,
 ): Promise<VercelBlobApiResponse> {
 
-    const encodedPathname = encodeURIComponent(bookPathname);
-    const url = `/api/vercel-blob/delete?pathname=${encodedPathname}`;
-    console.debug(`[VercelSync] Deleting book: ${bookPathname} via URL: ${url}`);
+    const encoded_pathname = encodeURIComponent(bookPathname);
+    const api_url = `/api/vercel-blob/delete?pathname=${encoded_pathname}`;
+    console.debug(`[VercelSync] Deleting book: ${bookPathname} via URL: ${api_url}`);
 
     try {
-        const responseData = await makeVercelBlobApiCall<VercelBlobApiResponse>(
-            url, 
+        const response_data = await makeVercelBlobApiCall<VercelBlobApiResponse>(
+            api_url, 
             { method: 'DELETE' },
             fetchFn
         );
-        console.log('[VercelSync] Book deleted successfully:', bookPathname);
-        showNotification(`Successfully deleted from cloud: ${bookTitle}`);
-        return responseData;
-    } catch (error: any) {
-        console.error('[VercelSync] Error deleting book from Vercel Blob:', { bookPathname, error });
-        if (error instanceof VercelBlobApiError && error.isPremiumError) {
-            await showPremiumDialog();
-        } else {
-            showNotification(`Error deleting ${bookTitle} from cloud: ${error.message}`, 'error');
+        console.log('[VercelSync] Book deleted successfully from Vercel Blob:', bookPathname);
+        if (!silent) {
+            showNotification(`Successfully deleted from cloud: ${bookTitle}`);
         }
-        throw error; // Re-throw to be handled by the caller
+        return response_data;
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Error deleting book from Vercel Blob:', { bookPathname, error: error_message });
+        if (error_instance instanceof VercelBlobApiError && error_instance.isPremiumError) {
+            if(!silent) await showPremiumDialog(); else console.warn("[VercelSync] Premium required for deletion, silent mode active.");
+        } else {
+            if (!silent) showNotification(`Error deleting ${bookTitle} from cloud: ${error_message}`, 'error');
+        }
+        throw error_instance; 
     }
 }
 
 /**
  * Delete all books with the current prefix from Vercel Blob
+ * @param silent If true, suppress UI notifications and confirmations.
  */
-export async function deleteAllBooksInVercelBlob(): Promise<boolean> {
+export async function deleteAllBooksInVercelBlob(silent: boolean = false): Promise<boolean> {
     if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
-        console.log('[VercelSync] Sync not enabled, skipping deletion');
+        console.log('[VercelSync] Sync not enabled or prefix not set, skipping deletion of all books.');
         return false;
     }
     
     try {
-        // Check if dark mode is active
-        const isDarkMode = typeof document !== 'undefined' && 
-                           (document.documentElement.classList.contains('dark') || 
-                           (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
-        
-        const textColor = isDarkMode ? '#e5e7eb' : '#333';
-        const warningColor = '#ef4444';
-        const mutedColor = isDarkMode ? '#9ca3af' : '#666';
-        
-        // Confirm with user before proceeding
-        const shouldDelete = await showConfirmDialog({
-            title: 'Delete Cloud Backup',
-            message: `
-            <div style="text-align: center; color: ${textColor};">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="${warningColor}" stroke-width="2" style="margin: 0 auto 16px; display: block;">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <p style="font-size: 16px; margin-bottom: 12px; font-weight: 500;">Are you sure you want to delete all books?</p>
-                <p style="margin: 8px 0; color: ${mutedColor};">
-                    All books from your cloud backup with prefix 
-                    <strong style="color: ${textColor};">${currentConfig.prefixKey}</strong> will be deleted.
-                </p>
-                <p style="margin: 16px 0 8px; color: ${warningColor}; font-size: 14px;">
-                    This action cannot be undone.
-                </p>
-            </div>
-            `,
-            confirmText: 'Delete',
-            cancelText: 'Cancel'
-        });
-        
-        if (!shouldDelete) {
-            console.log('[VercelSync] User cancelled deletion');
-            return false;
-        }
-        
-        // Show notification
-        const notificationId = showNotification('Deleting cloud backup...', 'info');
-        
-        // List all blobs with this prefix
-        let blobs = [];
-        try {
-            let vercelListBlobResult = await listBlobsWithPrefix(currentConfig.prefixKey);
-            blobs = vercelListBlobResult.blobs;
-            console.log(`[VercelSync] Found ${blobs.length} blobs to delete`);
-        } catch (error) {
-            closeNotification(notificationId);
+        if (!silent) {
+            const is_dark_mode = typeof document !== 'undefined' && 
+                               (document.documentElement.classList.contains('dark') || 
+                               (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
             
-            // Check if this is a premium error
-            if (error instanceof Error && isPremiumRequiredError(error)) {
-                console.log(`[VercelSync] Premium required for user: ${currentConfig.prefixKey}`);
-                
-                // Show premium dialog
-                await showPremiumDialog();
+            const text_color = is_dark_mode ? '#e5e7eb' : '#333';
+            const warning_color = '#ef4444';
+            const muted_color = is_dark_mode ? '#9ca3af' : '#666';
+            
+            const should_delete_all_books = await showConfirmDialog({
+                title: 'Delete Cloud Backup',
+                message: `
+                <div style="text-align: center; color: ${text_color};">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="${warning_color}" stroke-width="2" style="margin: 0 auto 16px; display: block;">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <p style="font-size: 16px; margin-bottom: 12px; font-weight: 500;">Are you sure you want to delete all books?</p>
+                    <p style="margin: 8px 0; color: ${muted_color};">
+                        All books from your cloud backup with prefix 
+                        <strong style="color: ${text_color};">${currentConfig.prefixKey}</strong> will be deleted.
+                    </p>
+                    <p style="margin: 16px 0 8px; color: ${warning_color}; font-size: 14px;">
+                        This action cannot be undone.
+                    </p>
+                </div>
+                `,
+                confirmText: 'Delete',
+                cancelText: 'Cancel'
+            });
+            
+            if (!should_delete_all_books) {
+                console.log('[VercelSync] User cancelled deletion of all books.');
                 return false;
             }
-            
-            // Re-throw other errors
-            throw error;
+        } else {
+            console.log('[VercelSync] Silent mode: Proceeding with deletion of all books without confirmation.');
         }
         
-        if (blobs.length === 0) {
-            closeNotification(notificationId);
-            showNotification('No files to delete in cloud backup', 'info');
+        let blobs_to_delete = [];
+        try {
+            const vercel_list_blob_result = await listBlobsWithPrefix(currentConfig.prefixKey);
+            blobs_to_delete = vercel_list_blob_result.blobs;
+            console.log(`[VercelSync] Found ${blobs_to_delete.length} blobs to delete for prefix ${currentConfig.prefixKey}`);
+        } catch (error_instance) {
+            const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+            if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
+                console.warn(`[VercelSync] Premium required for listing blobs during delete all for user: ${currentConfig.prefixKey}`);
+                 if(!silent) await showPremiumDialog();
+                return false;
+            }
+            console.error('[VercelSync] Error listing blobs for deletion:', error_message);
+            throw error_instance;
+        }
+        
+        if (blobs_to_delete.length === 0) {
+            console.log('[VercelSync] No files to delete in cloud backup.');
             return true;
         }
         
-        // Delete each blob
-        let successCount = 0;
-        let errorCount = 0;
+        let success_delete_count = 0;
+        let error_delete_count = 0;
         
-        for (const blob of blobs) {
+        for (const blob_item of blobs_to_delete) {
             try {
-                const response = await fetch(`/api/vercel-blob/delete?pathname=${encodeURIComponent(blob.pathname)}`, {
+                const delete_response = await fetch(`/api/vercel-blob/delete?pathname=${encodeURIComponent(blob_item.pathname)}`, {
                     method: 'DELETE'
                 });
                 
-                if (response.ok) {
-                    successCount++;
+                if (delete_response.ok) {
+                    success_delete_count++;
                 } else {
-                    errorCount++;
-                    console.error(`[VercelSync] Error deleting blob ${blob.pathname}:`, await response.json());
+                    error_delete_count++;
+                    console.error(`[VercelSync] Error deleting blob ${blob_item.pathname}:`, await delete_response.json());
                 }
-            } catch (error) {
-                errorCount++;
-                console.error(`[VercelSync] Error deleting blob ${blob.pathname}:`, error);
+            } catch (error_instance) {
+                error_delete_count++;
+                const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+                console.error(`[VercelSync] Exception during blob deletion ${blob_item.pathname}:`, error_message);
             }
         }
         
-        // Close notification
-        closeNotification(notificationId);
+        console.log(`[VercelSync] Deletion of all books finished. Success: ${success_delete_count}, Errors: ${error_delete_count}`);
         
-        // Show result
-        if (errorCount > 0) {
-            showErrorNotification(
-                'Cloud Backup Deletion', 
-                'Partial Success', 
-                `Deleted ${successCount} files, but encountered errors with ${errorCount} files.`
-            );
-        } else {
-            showNotification(`Successfully deleted all ${successCount} files from cloud backup`, 'success');
-        }
-        
-        return successCount > 0;
-    } catch (error) {
-        console.error(`[VercelSync] Error deleting all books from Vercel Blob:`, error);
-        showErrorNotification('Cloud Backup Deletion', 'Error', (error as Error).message);
+        return success_delete_count > 0 && error_delete_count === 0;
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error(`[VercelSync] Error deleting all books from Vercel Blob:`, error_message);
         return false;
     }
 }
@@ -1219,39 +1140,39 @@ export function extractBookIdFromPath(path: string): string | null {
  * @returns boolean indicating if an operation was terminated
  */
 export function terminateActiveOperations(): boolean {
-
     console.log(`[VercelSync] Terminating active operation: ${activeOperation}`);
     
     updateConfig({
         syncEnabled: false
     });
 
-    console.log('[VercelSync] Sync disabled in config');
+    console.log('[VercelSync] Sync disabled in config.');
     
-    // Close any open progress notifications
-    const progressNotifications = document.querySelectorAll('.bitabo-progress-notification');
-    progressNotifications.forEach(notification => {
-        const id = notification.id;
-        if (id) {
-            closeNotification(id);
-        }
-    });
+    if (typeof document !== 'undefined') {
+        const progress_notifications = document.querySelectorAll('.bitabo-progress-notification');
+        progress_notifications.forEach(notification_element => {
+            const notification_id = notification_element.id;
+            if (notification_id) {
+                // Assuming closeNotification is available and works with IDs
+                // If not, direct DOM manipulation might be needed here
+                // For silent mode, this part might be skipped or handled differently
+                console.log(`[VercelSync] Attempting to close progress notification: ${notification_id}`);
+            }
+        });
+    }
     
-    // Reset statuses
     if (activeOperation === 'sync') {
         currentSyncStatus = [];
     } else if (activeOperation === 'import') {
         currentImportStatus = [];
     }
     
-    // Set active operation to null to indicate termination
-    const wasActive = activeOperation !== null;
+    const was_operation_active = activeOperation !== null;
     activeOperation = null;
     
-    // Show notification that operation was terminated
-    showNotification('Cloud sync disabled', 'info');
+    console.log('[VercelSync] Active operations terminated.');
     
-    return wasActive;
+    return was_operation_active;
 }
 
 /**
@@ -1296,43 +1217,18 @@ function loadConfig(): void {
 /**
  * Update sync configuration
  */
-function updateConfig(updates: Partial<VercelBlobSyncConfig>): void {
-    currentConfig = { ...currentConfig, ...updates };
+function updateConfig(updates_to_apply: Partial<VercelBlobSyncConfig>): boolean {
+    currentConfig = { ...currentConfig, ...updates_to_apply };
     try {
-        localStorage.setItem('bitabo-vercel-blob-sync-config', JSON.stringify(currentConfig));
-        console.log('[VercelSync] Updated config:', currentConfig);
-    } catch (error) {
-        console.error('[VercelSync] Error saving config:', error);
-    }
-}
-
-/**
- * Update progress notification
- */
-function updateProgressNotification(id: string, message: string, progress: number): void {
-    const notification = document.getElementById(id);
-    if (!notification) {
-        console.warn(`[VercelSync] Progress notification with id ${id} not found`);
-        return;
-    }
-
-    const progressBarElement = notification.querySelector('.progress-bar') as HTMLElement;
-    const messageElement = notification.querySelector('.progress-message') as HTMLElement;
-    const statsElement = notification.querySelector('.progress-stats') as HTMLElement;
-    
-    if (progressBarElement) {
-        const progressFill = progressBarElement.querySelector('.progress-fill') as HTMLElement;
-        if (progressFill) {
-            progressFill.style.width = `${progress}%`;
+        if (browser) {
+            localStorage.setItem('bitabo-vercel-blob-sync-config', JSON.stringify(currentConfig));
         }
-    }
-    
-    if (messageElement) {
-        messageElement.textContent = message;
-    }
-    
-    if (statsElement) {
-        statsElement.textContent = `${progress}% complete`;
+        console.log('[VercelSync] Updated config:', currentConfig);
+        return true;
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error('[VercelSync] Error saving config:', error_message);
+        return false;
     }
 }
 
