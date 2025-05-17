@@ -1,5 +1,4 @@
-// Using dynamic imports with absolute URLs to avoid Vite processing
-// We'll define types for the imported modules to maintain type safety
+
 
 // Define the type declarations for the dynamically imported modules
 declare global {
