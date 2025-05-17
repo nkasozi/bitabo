@@ -26,11 +26,11 @@ export function getPremiumMessage(): string {
         </div>
         <h3 style="margin: 0 0 20px; font-size: 22px; font-weight: 600; color: ${accentColor}; line-height: 1.4;">Premium Feature Required</h3>
         <div style="background-color: ${isDarkMode ? '#374151' : '#f8fafc'}; border-radius: 8px; padding: 16px; margin: 0 0 24px;">
-            <p style="margin: 0 0 12px; line-height: 1.6; font-size: 16px;">Cloud backup synchronization is a premium feature of ReadStash (3$ (USD) dollars a month).</p>
-            <p style="margin: 0; line-height: 1.6; font-size: 16px;">To enable this feature, please contact us by clicking:</p>
+            <p style="margin: 0 0 12px; line-height: 1.6; font-size: 16px;">Cloud backup synchronization is a premium feature of ReadStash ($3 (USD) dollars a month).</p>
+            <p style="margin: 0; line-height: 1.6; font-size: 16px;">To enable this feature, you can Pay by clicking:</p>
         </div>
         <div style="margin: 0 auto 16px; max-width: 240px;">
-            <a href="mailto:nkasozi@gmail.com" style="display: block; padding: 12px 20px; background: ${accentColor}; color: white; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 16px; transition: all 0.2s ease;">Here Now</a>
+            <a href="https://ko-fi.com/Mwooyo" style="display: block; padding: 12px 20px; background: ${accentColor}; color: white; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 16px; transition: all 0.2s ease;">Here Now</a>
         </div>
         <p style="margin: 0; font-size: 14px; color: ${mutedColor};">We'll help you set up your premium subscription.</p>
     </div>
