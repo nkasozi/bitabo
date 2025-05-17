@@ -978,15 +978,6 @@ self.addEventListener('fetch', (event) => {
             let responseClone = response.clone();
             caches.open(CACHE_NAME).then(async cache => {
               await cache.put(event.request, responseClone);
-            }).catch(() => {
-              // If network fails, try cache
-              return caches.match(event.request).then(cachedResponse => {
-                if (cachedResponse) {
-                  return cachedResponse;
-                }
-                // If not in cache, try the root page as fallback
-                return caches.match('/');
-              });
             });
           }
           return response;
@@ -1005,15 +996,6 @@ self.addEventListener('fetch', (event) => {
           let responseClone = response.clone();
           caches.open(CACHE_NAME).then(async cache => {
             await cache.put(event.request, responseClone);
-          }).catch(() => {
-            // If network fails, try cache
-            return caches.match(event.request).then(cachedResponse => {
-              if (cachedResponse) {
-                return cachedResponse;
-              }
-              // If not in cache, try the root page as fallback
-              return caches.match('/');
-            });
           });
         }
         return response;

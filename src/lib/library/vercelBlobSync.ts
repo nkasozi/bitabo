@@ -363,28 +363,6 @@ export async function syncWithVercelBlob(
 			status: 'pending'
 		}));
 
-		let remote_files: VercelBlob[] = [];
-		try {
-			const vercel_list_blob_result = await listBlobsWithPrefix(currentConfig.prefixKey);
-			remote_files = vercel_list_blob_result.blobs;
-			console.log(`[VercelSync] Found ${remote_files.length} book files with prefix: ${currentConfig.prefixKey}`);
-		} catch (error_instance) {
-			const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
-			if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
-				console.warn(`[VercelSync] Premium required for listing blobs for user: ${currentConfig.prefixKey}`);
-				return {
-					success: false,
-					booksAdded: 0,
-					booksUpdated: 0,
-					booksRemoved: 0,
-					error: 'Premium subscription required'
-				};
-			}
-			console.error('[VercelSync] Error listing remote files:', error_message);
-			throw error_instance;
-		}
-
-
 		let books_added_count = 0;
 		let books_updated_count = 0;
 		const books_removed_count = 0;
@@ -431,10 +409,12 @@ export async function syncWithVercelBlob(
 		}
 
 		//check if there are any new files on the remote server
-		if (remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime).length > 0) {
-			//import those specific files only
-			await importBooksWithPrefix(currentConfig.prefixKey, silent, remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime));
-		}
+		// if (remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime).length > 0) {
+		// 	let books_to_import = remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime);
+		// 	console.log(`[VercelSync] Found [${books_to_import.length}] books that Need to be re-imported because they have been updated`)
+		// 	//import those specific files only
+		// 	await importBooksWithPrefix(currentConfig.prefixKey, silent, books_to_import);
+		// }
 
 		// Fallback to full sync if no specific book ID or operation is provided
 		console.log('[VercelSync] Ignoring full library sync as no specific book operation was requested or applicable.');
