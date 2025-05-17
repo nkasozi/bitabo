@@ -2,7 +2,7 @@ import Dexie, { type Table, type Transaction } from 'dexie';
 import { browser } from '$app/environment';
 import type { Book } from './types';
 import { DB_NAME, BOOKS_STORE } from './constants';
-import { getCurrentConfig, syncWithVercelBlob } from '$lib/library/vercelBlobSync';
+import { getCurrentConfig, syncWithVercelBlob, updateConfig } from '$lib/library/vercelBlobSync';
 
 // Helper function to convert ArrayBuffer to Base64
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -116,10 +116,11 @@ async function triggerAutoSync(book_id_to_sync?: string, operation_type?: 'save'
   if (sync_config && sync_config.syncEnabled && sync_config.prefixKey) {
     console.log('[DexieDB Hooks] Auto-sync conditions met. Triggering Vercel Blob sync in silent mode.');
     try {
-      const sync_result = await syncWithVercelBlob(true, book_id_to_sync, operation_type);
+      const sync_result = await syncWithVercelBlob(true, book_id_to_sync??"", operation_type);
       if (sync_result.success) {
         console.log(`[DexieDB Hooks] Auto-sync with Vercel Blob successful (silent mode) for book ID: ${book_id_to_sync || 'N/A'}.`);
         // Optionally, update a last successful sync timestamp in a local store or UI element if needed
+				updateConfig({ lastSyncTime: Date.now() });
       } else {
         console.warn('[DexieDB Hooks] Auto-sync with Vercel Blob reported no success (silent mode). Result:', sync_result);
       }

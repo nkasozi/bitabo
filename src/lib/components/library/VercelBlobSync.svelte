@@ -3,7 +3,6 @@
 	import {
 		setupVercelBlobSync,
 		disableVercelBlobSync,
-		syncWithVercelBlob,
 		initVercelBlobSync,
 		getSyncStatus,
 		checkActiveOperation
@@ -284,40 +283,40 @@
 		}
 
 		// Already set up - perform a regular sync
-		syncing = true;
-		syncProgress = 0;
-		console.log('[VercelBlobSync] Starting sync process');
-
-		// Start status check
-		startStatusCheck();
-
-		try {
-			// Manual sync
-			console.log('[VercelBlobSync] Running manual sync with Vercel Blob');
-			const result = await syncWithVercelBlob();
-			console.log('[VercelBlobSync] Sync result:', result);
-			if (result.success) {
-				// Update last sync timestamp
-				lastSyncTime = Date.now();
-				// Save to local config
-				updateLocalConfig();
-				console.log('[VercelBlobSync] Sync completed successfully');
-			} else {
-				console.error('[VercelBlobSync] Sync failed:', result.error);
-			}
-		} catch (err) {
-			console.error('[VercelBlobSync] Sync failed with exception:', err);
-		} finally {
-			console.log('[VercelBlobSync] Ending sync process, setting syncing=false');
-			syncing = false;
-			syncProgress = 0;
-
-			// Clear status check interval
-			if (statusCheckInterval) {
-				clearInterval(statusCheckInterval);
-				statusCheckInterval = null;
-			}
-		}
+		// syncing = true;
+		// syncProgress = 0;
+		// console.log('[VercelBlobSync] Starting sync process');
+		//
+		// // Start status check
+		// startStatusCheck();
+		//
+		// try {
+		// 	// Manual sync
+		// 	console.log('[VercelBlobSync] Running manual sync with Vercel Blob');
+		// 	const result = await syncWithVercelBlob();
+		// 	console.log('[VercelBlobSync] Sync result:', result);
+		// 	if (result.success) {
+		// 		// Update last sync timestamp
+		// 		lastSyncTime = Date.now();
+		// 		// Save to local config
+		// 		updateLocalConfig();
+		// 		console.log('[VercelBlobSync] Sync completed successfully');
+		// 	} else {
+		// 		console.error('[VercelBlobSync] Sync failed:', result.error);
+		// 	}
+		// } catch (err) {
+		// 	console.error('[VercelBlobSync] Sync failed with exception:', err);
+		// } finally {
+		// 	console.log('[VercelBlobSync] Ending sync process, setting syncing=false');
+		// 	syncing = false;
+		// 	syncProgress = 0;
+		//
+		// 	// Clear status check interval
+		// 	if (statusCheckInterval) {
+		// 		clearInterval(statusCheckInterval);
+		// 		statusCheckInterval = null;
+		// 	}
+		// }
 	}
 
 	// Show sync options dialog
