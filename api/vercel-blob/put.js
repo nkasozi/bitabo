@@ -119,7 +119,8 @@ export default async function handler(request, response) {
         
         const result = await put(determinedFilenameForUpload, actualFileBodyForUpload, {
             access: 'public',
-            token: VERCEL_BLOB_TOKEN
+            token: VERCEL_BLOB_TOKEN,
+            allowOverwrite: true
         });
         
         return response.status(200).json(result);
