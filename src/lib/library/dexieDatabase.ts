@@ -2,7 +2,7 @@ import Dexie, { type Table, type Transaction } from 'dexie';
 import { browser } from '$app/environment';
 import type { Book } from './types';
 import { DB_NAME, BOOKS_STORE } from './constants';
-import { getCurrentConfig, syncWithVercelBlob, updateConfig } from '$lib/library/vercelBlobSync';
+import { getCurrentConfig, syncWithVercelBlob, updateConfig, isBookPathnameInRemoteCache } from '$lib/library/vercelBlobSync';
 
 // Helper function to convert ArrayBuffer to Base64
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -136,7 +136,16 @@ async function triggerAutoSync(book_id_to_sync?: string, operation_type?: 'save'
 if (browser) {
   db.books.hook('creating', (primKey: string, obj: Book, transaction: Transaction) => {
     transaction.on('complete', () => {
-      console.log(`[DexieDB Hooks] Transaction complete for creating book: ${obj.id}. Triggering auto-sync.`);
+      console.log(`[DexieDB Hooks] Transaction complete for creating book: ${obj.id}.`);
+      const sync_config = getCurrentConfig();
+      if (sync_config.prefixKey) {
+        const book_pathname = `${sync_config.prefixKey}_${obj.id}.json`;
+        if (isBookPathnameInRemoteCache(book_pathname)) {
+          console.log(`[DexieDB Hooks] Book ${obj.id} (${book_pathname}) found in remote cache. Skipping auto-sync for creation to prevent re-upload of imported book.`);
+          return; 
+        }
+      }
+      console.log(`[DexieDB Hooks] Triggering auto-sync for newly created book: ${obj.id}.`);
       triggerAutoSync(obj.id, 'save');
     });
     transaction.on('abort', () => {
@@ -156,6 +165,15 @@ if (browser) {
 
   db.books.hook('deleting', (primKey: string, obj: Book, transaction: Transaction) => {
     transaction.on('complete', () => {
+			console.log(`[DexieDB Hooks] Transaction complete for deleting book: ${obj.id}.`);
+			const sync_config = getCurrentConfig();
+			if (sync_config.prefixKey) {
+				const book_pathname = `${sync_config.prefixKey}_${obj.id}.json`;
+				if (!isBookPathnameInRemoteCache(book_pathname)) {
+					console.log(`[DexieDB Hooks] Book ${obj.id} (${book_pathname}) found in remote cache. Skipping auto-sync for deleting.`);
+					return;
+				}
+			}
       console.log(`[DexieDB Hooks] Transaction complete for deleting book: ${primKey}. Triggering auto-sync.`);
       triggerAutoSync(primKey, 'delete');
     });

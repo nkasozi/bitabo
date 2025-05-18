@@ -216,6 +216,31 @@ const DEFAULT_CONFIG: VercelBlobSyncConfig = {
 	lastSyncTime: 0
 };
 
+// Unified Cache for Book Metadata
+const LIST_CACHE_DURATION_SECONDS = 60; // Cache list results for 60 seconds
+const SIGNIFICANT_BOOK_PROPERTIES: (keyof Book)[] = ['author', 'title', 'progress', 'fontSize'];
+
+interface BookMetaCacheEntry {
+	blobInfo: VercelBlob; // Metadata from Vercel Blob (URL, size, uploadedAt)
+	bookSnapshot?: { // Snapshot of key book properties from the book's content
+		author?: string;
+		title?: string;
+		progress?: number;
+		fontSize?: number;
+		lastModified?: number;
+	};
+}
+
+const bookMetadataCache = new Map<string, BookMetaCacheEntry>();
+let lastSuccessfulListApiCallTimestamp: number = 0;
+
+export function isBookPathnameInRemoteCache(pathname: string): boolean {
+	const isInCache = bookMetadataCache.has(pathname);
+	console.debug(`[VercelSync isBookPathnameInRemoteCache] Checking cache for pathname: ${pathname}. Found: ${isInCache}`);
+	return isInCache;
+}
+
+
 // No need for VERCEL_BLOB_TOKEN constant on the client side anymore
 // The token is now only used in the server-side API endpoints
 
@@ -544,6 +569,38 @@ async function importBooksWithPrefix(
 					console.log(`[VercelSync] Successfully parsed book for import: ${remote_book_data.title || 'Unknown'}`);
 					updateBookImportStatus(book_id, 'syncing', undefined, remote_book_data.title || file_item.pathname);
 
+					const currentFileItem = file_item; // file_item is a VercelBlob from the list operation
+					const existingCacheEntry = bookMetadataCache.get(currentFileItem.pathname);
+
+					if (existingCacheEntry) {
+						const importedBookSnapshot = {
+							author: remote_book_data.author,
+							title: remote_book_data.title,
+							progress: remote_book_data.progress,
+							fontSize: remote_book_data.fontSize,
+							lastModified: remote_book_data.lastModified,
+						};
+						bookMetadataCache.set(currentFileItem.pathname, {
+							blobInfo: existingCacheEntry.blobInfo, // Keep the blobInfo from the list operation
+							bookSnapshot: importedBookSnapshot
+						});
+					} else {
+						console.warn(`[VercelSync] Cache entry for ${currentFileItem.pathname} not found during import. This might happen if list cache expired or was cleared.`);
+						// Optionally, create a new entry, though blobInfo might be incomplete if not from a fresh list operation
+						const newBlobInfoFromImportItem: VercelBlob = { ...currentFileItem };
+						const importedBookSnapshot = {
+							author: remote_book_data.author,
+							title: remote_book_data.title,
+							progress: remote_book_data.progress,
+							fontSize: remote_book_data.fontSize,
+							lastModified: remote_book_data.lastModified,
+						};
+						bookMetadataCache.set(currentFileItem.pathname, {
+							blobInfo: newBlobInfoFromImportItem,
+							bookSnapshot: importedBookSnapshot
+						});
+					}
+
 					const existing_book_index = merged_books_collection.findIndex(b => b.id === remote_book_data.id);
 					if (existing_book_index >= 0) {
 						console.log(`[VercelSync] Book already exists in library: ${remote_book_data.title}`);
@@ -680,7 +737,7 @@ async function importBooksWithPrefix(
 /**
  * Update the sync status for a book
  */
-function updateBookSyncStatus(
+export function updateBookSyncStatus(
 	bookId: string,
 	status: 'pending' | 'syncing' | 'completed' | 'error',
 	error?: string
@@ -857,9 +914,37 @@ export async function makeVercelBlobApiCall<T extends VercelBlobApiResponse>(
  * Upload a book to Vercel Blob
  */
 async function uploadBookToVercelBlob(book: Book): Promise<VercelPutBlobResult> {
-
-	// Placeholder for prepareBookForUpload logic:
+	if (!currentConfig.prefixKey) {
+		throw new Error('Vercel Blob sync prefix key is not configured.');
+	}
 	const fileName = `${currentConfig.prefixKey}_${book.id}.json`;
+	const cachedEntry = bookMetadataCache.get(fileName);
+
+	if (cachedEntry && cachedEntry.bookSnapshot) {
+		let significantChangesFound = false;
+		for (const property of SIGNIFICANT_BOOK_PROPERTIES) {
+			if (book[property] !== cachedEntry.bookSnapshot[property]) {
+				significantChangesFound = true;
+				console.debug(`[VercelSync] Change detected in property '${property}' for book: ${book.title}`);
+				break;
+			}
+		}
+
+		// If no significant property changes were found, skip the upload.
+		if (!significantChangesFound) {
+			console.log(`[VercelSync] No significant changes detected for book: ${book.title} (ID: ${book.id}) based on monitored properties. Skipping upload.`);
+			// Construct a VercelPutBlobResult from cached VercelBlob data
+			return {
+				url: cachedEntry.blobInfo.url,
+				pathname: cachedEntry.blobInfo.pathname,
+				downloadUrl: cachedEntry.blobInfo.downloadUrl,
+				size: cachedEntry.blobInfo.size,
+				contentDisposition: `attachment; filename="${fileName}"`,
+				// contentType is optional in VercelPutBlobResult
+			};
+		}
+	}
+
 	const blob = new Blob([JSON.stringify(book)], { type: 'application/json' });
 
 	console.log(`[VercelSync] Uploading book: ${fileName}`);
@@ -878,6 +963,23 @@ async function uploadBookToVercelBlob(book: Book): Promise<VercelPutBlobResult> 
 		);
 
 		console.log('[VercelSync] Successfully uploaded book:', responseData.pathname);
+		const newBlobInfo: VercelBlob = {
+			url: responseData.url,
+			downloadUrl: responseData.downloadUrl,
+			pathname: responseData.pathname,
+			size: responseData.size,
+			uploadedAt: new Date().toISOString(),
+		};
+		const newBookSnapshot = {
+			author: book.author,
+			title: book.title,
+			progress: book.progress,
+			fontSize: book.fontSize,
+			lastModified: book.lastModified,
+		};
+		bookMetadataCache.set(responseData.pathname, { blobInfo: newBlobInfo, bookSnapshot: newBookSnapshot });
+		lastSuccessfulListApiCallTimestamp = 0; // Invalidate list cache
+
 		updateConfig({ lastSyncTime: Date.now() });
 		return responseData;
 	} catch (error) {
@@ -899,6 +1001,18 @@ export async function listBlobsWithPrefix(
 	fetchFn?: typeof fetch
 ): Promise<VercelListBlobResult> {
 
+	const isCacheFreshForCurrentPrefix =
+		prefix === currentConfig.prefixKey &&
+		(Date.now() - lastSuccessfulListApiCallTimestamp) < LIST_CACHE_DURATION_SECONDS * 1000;
+
+	if (isCacheFreshForCurrentPrefix) {
+		const blobsFromCache = Array.from(bookMetadataCache.values())
+			.filter(entry => entry.blobInfo.pathname.startsWith(prefix))
+			.map(entry => entry.blobInfo);
+		console.debug(`[VercelSync] Returning list from fresh cache for prefix: ${prefix}. Found ${blobsFromCache.length} items.`);
+		return { blobs: blobsFromCache, hasMore: false };
+	}
+
 	const encodedPrefix = encodeURIComponent(prefix);
 	const url = `/api/vercel-blob/list?prefix=${encodedPrefix}`;
 	console.debug(`[VercelSync] Listing blobs with prefix: ${prefix} from URL: ${url}`);
@@ -909,7 +1023,31 @@ export async function listBlobsWithPrefix(
 			{ method: 'GET' },
 			fetchFn
 		);
-		console.debug('[VercelSync] Successfully listed blobs with prefix:', prefix);
+		console.debug(`{VercelSync] Successfully listed blobs with prefix: ${prefix} from API.`);
+
+		// Update cache and handle deletions for the fetched prefix
+		const currentPathnamesInAPIResponse = new Set(responseData.blobs.map(b => b.pathname));
+		const pathnamesPreviouslyInCacheForPrefix = Array.from(bookMetadataCache.keys()).filter(key => key.startsWith(prefix));
+
+		pathnamesPreviouslyInCacheForPrefix.forEach(pathname => {
+			if (!currentPathnamesInAPIResponse.has(pathname)) {
+				bookMetadataCache.delete(pathname);
+				console.debug(`[VercelSync] Removed stale entry ${pathname} from cache for prefix ${prefix}.`);
+			}
+		});
+
+		responseData.blobs.forEach(blob => {
+			const existingEntry = bookMetadataCache.get(blob.pathname);
+			bookMetadataCache.set(blob.pathname, {
+				blobInfo: blob,
+				bookSnapshot: existingEntry?.bookSnapshot // Preserve existing snapshot if any
+			});
+		});
+
+		if (prefix === currentConfig.prefixKey) {
+			lastSuccessfulListApiCallTimestamp = Date.now();
+		}
+
 		return responseData;
 	} catch (error: any) {
 		console.error('[VercelSync] Error listing blobs with prefix:', { prefix, error });
@@ -949,6 +1087,10 @@ export async function deleteBookInVercelBlob(
 		);
 		console.log('[VercelSync] Book deleted successfully from Vercel Blob:', bookPathname);
 		updateConfig({ lastSyncTime: Date.now() });
+		
+		bookMetadataCache.delete(bookPathname);
+		lastSuccessfulListApiCallTimestamp = 0; // Invalidate list cache
+
 		if (!silent) {
 			showNotification(`Successfully deleted from cloud: ${bookTitle}`);
 		}
@@ -974,6 +1116,7 @@ export async function deleteAllBooksInVercelBlob(silent: boolean = false): Promi
 		console.log('[VercelSync] Sync not enabled or prefix not set, skipping deletion of all books.');
 		return false;
 	}
+	const currentPrefixKey = currentConfig.prefixKey; // Capture for use in this function
 
 	try {
 		if (!silent) {
@@ -1041,19 +1184,29 @@ export async function deleteAllBooksInVercelBlob(silent: boolean = false): Promi
 		let error_delete_count = 0;
 
 		for (const blob_item of blobs_to_delete) {
-			await deleteBookInVercelBlob(extractBookIdFromPath(blob_item.bookPathname) ?? blob_item.bookPathname, '').then(success => {
-				if (success) {
-					success_delete_count++;
-				} else {
-					error_delete_count++;
-					console.error(`[VercelSync] Error deleting blob ${blob_item.pathname}:`);
-				}
+			// The deleteBookInVercelBlob function expects the full pathname.
+			// The blob_item.pathname from listBlobsWithPrefix is the correct full pathname.
+			// The extractBookIdFromPath was incorrect here if blob_item.bookPathname was not a property.
+			// Assuming blob_item.pathname is the correct identifier.
+			await deleteBookInVercelBlob(blob_item.pathname, blob_item.pathname, undefined, true).then(apiResponse => {
+				// deleteBookInVercelBlob now returns VercelBlobApiResponse, not boolean directly
+				// We assume success if no error is thrown by deleteBookInVercelBlob
+				success_delete_count++;
+				// bookMetadataCache.delete is handled by deleteBookInVercelBlob call
 			}).catch(error_instance => {
 				error_delete_count++;
 				const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
 				console.error(`[VercelSync] Exception during blob deletion ${blob_item.pathname}:`, error_message);
 			});
 		}
+
+		if (success_delete_count > 0 && currentPrefixKey) {
+			// Deletions are handled individually by deleteBookInVercelBlob, which also invalidates the list cache.
+			// No need to explicitly clear a list-specific cache entry here as it no longer exists.
+			// The lastSuccessfulListApiCallTimestamp is already set to 0 by individual deletes.
+			console.debug("[VercelSync] List cache was invalidated by individual delete operations.");
+		}
+
 
 		console.log(`[VercelSync] Deletion of all books finished. Success: ${success_delete_count}, Errors: ${error_delete_count}`);
 		updateConfig({ lastSyncTime: Date.now() });
