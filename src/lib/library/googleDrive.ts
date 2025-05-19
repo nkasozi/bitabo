@@ -561,17 +561,16 @@ async function processSingleDownloadedFile(
 			file: downloadedFile // Pass file object to saveBook
 		};
 
-		// Save to database
-		const saved = await saveBook(bookData);
+		// Save to database and get the processed book object
+		const processedBookFromDB = await saveBook(bookData);
 
-		if (!saved) {
-			throw new Error("Failed to save book to database.");
+		if (!processedBookFromDB) {
+			throw new Error("Failed to save book to database or retrieve processed data.");
 		}
 
-		console.log(`[GDrive] Successfully processed and saved: ${bookData.fileName}`);
-		// Return the book *without* the file object, as it's now in the DB
-		const { file, ...bookToReturn } = bookData;
-		return { book: bookToReturn as Book, skipped: false, error: null };
+		console.log(`[GDrive] Successfully processed and saved: ${processedBookFromDB.fileName}`);
+		// processedBookFromDB now contains originalFile and originalCoverImage and has 'file' removed.
+		return { book: processedBookFromDB, skipped: false, error: null };
 
 	} catch (processingError) {
 		console.error(`[GDrive] Error processing file ${downloadedFile.name}:`, processingError);
