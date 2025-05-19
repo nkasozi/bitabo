@@ -125,28 +125,59 @@
 				? '0 4px 12px rgba(0, 0, 0, 0.3)'
 				: '0 4px 12px rgba(0, 0, 0, 0.15)';
 
-			let current_prefix_for_input_value = prefixKey;
-			let is_prefix_input_readonly = false;
+			let current_prefix_for_input_value = prefixKey; // Used for 'import' mode prefill
 			let dialog_title_text = '';
 			let dialog_description_text = '';
 			let submit_button_label = 'Continue';
 			let warning_message_html_content = '';
+			let prefix_input_html_content = '';
+
+			let new_prefix_editable_part_value = 'readstash'; // Default for 'new' mode
+			let new_prefix_uuid_part = ''; // For 'new' mode
 
 			if (mode === 'new') {
-				current_prefix_for_input_value = generate_unique_readstash_prefix();
-				is_prefix_input_readonly = true;
+				new_prefix_uuid_part = crypto.randomUUID();
 				dialog_title_text = 'IMPORTANT: Save Your New Backup Prefix';
-				dialog_description_text = `Your new, unique backup prefix is shown below. <strong>You MUST save this prefix in a safe place.</strong> If you lose it, you will not be able to access this backup again. This prefix allows you to distinguish your backups if you have multiple.`;
-				warning_message_html_content = `<p style="color: green;font-weight: bold;margin-top: 10px;margin-bottom: 10px;padding: 10px;border: 1px solid green;border-radius: 4px;background-color: rgb(68 239 176 / 10%);">Please copy and save this prefix: <strong>${current_prefix_for_input_value}</strong>. It cannot be recovered if lost.</p>`;
+				dialog_description_text = `Your new, unique backup prefix consists of an editable part and a unique ID. <strong>You MUST save this complete prefix in a safe place.</strong> If you lose it, you will not be able to access this backup again. This prefix allows you to distinguish your backups if you have multiple.`;
+				const initial_full_prefix_for_warning = `${new_prefix_editable_part_value}_${new_prefix_uuid_part}`;
+				warning_message_html_content = `<p style="color: green;font-weight: bold;margin-top: 10px;margin-bottom: 10px;padding: 10px;border: 1px solid green;border-radius: 4px;background-color: rgb(68 239 176 / 10%);">Please copy and save this complete prefix: <strong id="dynamic-prefix-warning">${initial_full_prefix_for_warning}</strong>. It cannot be recovered if lost.</p>`;
 				submit_button_label = 'I have saved this prefix, Continue';
+
+				prefix_input_html_content = `
+                    <label for="editable-prefix-part" style="display: block; margin-bottom: 8px; font-weight: 500; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Prefix:</label>
+                    <div id="composite-prefix-input-container" style="display: flex; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background-color: ${isDarkMode ? '#374151' : 'white'}; align-items: center; overflow: hidden;">
+                        <input id="editable-prefix-part" type="text" style="flex: 1; /* Approx 25% */ min-width: 60px; padding: 8px; border: none; background-color: transparent; color: ${isDarkMode ? '#e5e7eb' : '#333'}; outline: none;"
+                            placeholder="custom_prefix" value="${new_prefix_editable_part_value}" />
+                        <span id="uuid-prefix-part" style="flex: 3; /* Approx 75% */ padding: 8px 0px 8px 0px; background-color: ${isDarkMode ? '#4b5563' : '#f3f4f6'}; color: ${isDarkMode ? '#9ca3af' : '#555'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">_${new_prefix_uuid_part}</span>
+                        <button id="copy-prefix-button" title="Copy full prefix" style="padding: 8px; border: none; background: transparent; cursor: pointer; color: ${isDarkMode ? '#9ca3af' : '#555'}; display: flex; align-items: center; justify-content: center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="prefix-error" style="color: #ef4444; font-size: 12px; margin-top: 4px; display: none;"></div>
+                `;
 			} else if (mode === 'import') {
 				dialog_title_text = 'Import Books from Backup';
 				dialog_description_text = 'Enter the prefix of the backup you want to import.';
+				prefix_input_html_content = `
+                    <label for="prefix-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Prefix:</label>
+                    <input id="prefix-input" type="text" style="width: 100%; padding: 8px; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background-color: ${isDarkMode ? '#374151' : 'white'}; color: ${isDarkMode ? '#e5e7eb' : '#333'};"
+                        placeholder="e.g. readstash_..." value="${current_prefix_for_input_value}" />
+                    <div id="prefix-error" style="color: #ef4444; font-size: 12px; margin-top: 4px; display: none;"></div>
+                `;
 			} else {
-				// Default case, though 'new' and 'import' are primary, this can be a fallback.
+				// Default case (fallback, though not primary)
 				dialog_title_text = 'Set Backup Prefix';
 				dialog_description_text =
 					'Set a unique prefix for your backups. Use letters, numbers, and underscores only.';
+				prefix_input_html_content = `
+                    <label for="prefix-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Prefix:</label>
+                    <input id="prefix-input" type="text" style="width: 100%; padding: 8px; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background-color: ${isDarkMode ? '#374151' : 'white'}; color: ${isDarkMode ? '#e5e7eb' : '#333'};"
+                        placeholder="e.g. readstash_..." value="${current_prefix_for_input_value}" />
+                    <div id="prefix-error" style="color: #ef4444; font-size: 12px; margin-top: 4px; display: none;"></div>
+                `;
 			}
 
 			dialog.innerHTML = `
@@ -154,10 +185,7 @@
                 <p style="margin: 15px 0; line-height: 1.5; color: ${isDarkMode ? '#9ca3af' : '#555'};">${dialog_description_text}</p>
                 ${warning_message_html_content}
                 <div style="margin-bottom: 20px;">
-                    <label for="prefix-input" style="display: block; margin-bottom: 8px; font-weight: 500; color: ${isDarkMode ? '#e5e7eb' : '#333'};">Prefix:</label>
-                    <input id="prefix-input" type="text" style="width: 100%; padding: 8px; border-radius: 4px; border: ${isDarkMode ? '1px solid #4b5563' : '1px solid #dadce0'}; background-color: ${isDarkMode ? (is_prefix_input_readonly ? '#4b5563' : '#374151') : is_prefix_input_readonly ? '#f3f4f6' : 'white'}; color: ${isDarkMode ? '#e5e7eb' : '#333'};"
-                        placeholder="e.g. readstash_..." value="${current_prefix_for_input_value}" ${is_prefix_input_readonly ? 'readonly' : ''} />
-                    <div id="prefix-error" style="color: #ef4444; font-size: 12px; margin-top: 4px; display: none;"></div>
+                    ${prefix_input_html_content}
                 </div>
                 <div style="display: flex; justify-content: flex-end; gap: 12px;">
                     <button id="prefix-cancel" style="padding: 8px 16px; border-radius: 4px; border: none; background: ${isDarkMode ? '#374151' : '#f5f5f5'}; color: ${isDarkMode ? '#e5e7eb' : '#333'}; cursor: pointer;">Cancel</button>
@@ -168,40 +196,118 @@
 			document.body.appendChild(dialog);
 			dialog.showModal();
 
-			const input = dialog.querySelector('#prefix-input') as HTMLInputElement;
 			const error = dialog.querySelector('#prefix-error') as HTMLElement;
 			const submitBtn = dialog.querySelector('#prefix-submit') as HTMLButtonElement;
 			const cancelBtn = dialog.querySelector('#prefix-cancel') as HTMLButtonElement;
 
-			if (mode !== 'new') {
-				setTimeout(() => input.focus(), 50);
+			if (mode === 'new') {
+				const editablePartInput = dialog.querySelector('#editable-prefix-part') as HTMLInputElement;
+				const uuidPartDisplay = dialog.querySelector('#uuid-prefix-part') as HTMLSpanElement;
+				const copyBtnElement = dialog.querySelector('#copy-prefix-button') as HTMLButtonElement;
+				const dynamicPrefixWarning = dialog.querySelector('#dynamic-prefix-warning') as HTMLElement;
+
+				setTimeout(() => editablePartInput.focus(), 50);
+
+				const updateDynamicWarningText = () => {
+					if (dynamicPrefixWarning) {
+						dynamicPrefixWarning.textContent = `${editablePartInput.value}${uuidPartDisplay.textContent}`;
+					}
+				};
+
+				editablePartInput.addEventListener('input', () => {
+					if (error) error.style.display = 'none';
+					updateDynamicWarningText();
+				});
+
+				copyBtnElement.addEventListener('click', () => {
+					const fullPrefixToCopy = `${editablePartInput.value}${uuidPartDisplay.textContent}`;
+					navigator.clipboard
+						.writeText(fullPrefixToCopy)
+						.then(() => {
+							const originalButtonContent = copyBtnElement.innerHTML;
+							copyBtnElement.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/>
+                            </svg>`;
+							setTimeout(() => {
+								copyBtnElement.innerHTML = originalButtonContent;
+							}, 1500);
+						})
+						.catch((err_copy) => {
+							console.error('[VercelBlobSync] Failed to copy prefix:', err_copy);
+							// You could show a small error message next to the button if desired
+						});
+				});
+			} else {
+				// 'import' or default
+				const input = dialog.querySelector('#prefix-input') as HTMLInputElement;
+				if (input) {
+					setTimeout(() => input.focus(), 50);
+					input.addEventListener('input', () => {
+						if (error) error.style.display = 'none';
+					});
+				}
 			}
 
 			submitBtn.addEventListener('click', () => {
-				const value = input.value.trim();
-				if (mode !== 'new') {
-					if (!value) {
-						error.textContent = 'Prefix is required';
-						error.style.display = 'block';
-						return;
-					}
+				let value_to_resolve: string | null = null;
 
-					if (!/^[a-zA-Z0-9_-]{3,}$/.test(value)) {
-						error.textContent =
-							'Prefix must contain at least 3 letters, numbers, underscores, or hyphens only';
-						error.style.display = 'block';
+				if (mode === 'new') {
+					const editablePartInput = dialog.querySelector(
+						'#editable-prefix-part'
+					) as HTMLInputElement;
+					const uuidPartDisplay = dialog.querySelector('#uuid-prefix-part') as HTMLSpanElement;
+					const editable_value = editablePartInput.value.trim();
+
+					if (!editable_value) {
+						if (error) {
+							error.textContent = 'Custom part of the prefix is required';
+							error.style.display = 'block';
+						}
 						return;
 					}
+					if (!/^[a-zA-Z0-9_-]{1,}$/.test(editable_value)) {
+						if (error) {
+							error.textContent =
+								'Custom part must contain at least 1 letter, number, underscore, or hyphen.';
+							error.style.display = 'block';
+						}
+						return;
+					}
+					value_to_resolve = `${editable_value}${uuidPartDisplay.textContent}`;
+				} else {
+					// 'import' or default
+					const input = dialog.querySelector('#prefix-input') as HTMLInputElement;
+					const import_value = input.value.trim();
+					if (!import_value) {
+						if (error) {
+							error.textContent = 'Prefix is required';
+							error.style.display = 'block';
+						}
+						return;
+					}
+					if (!/^[a-zA-Z0-9_-]{3,}$/.test(import_value)) {
+						if (error) {
+							error.textContent =
+								'Prefix must contain at least 3 letters, numbers, underscores, or hyphens only';
+							error.style.display = 'block';
+						}
+						return;
+					}
+					value_to_resolve = import_value;
 				}
 
-				prefixKey = value; // Update component state
-				dialog.close();
-				resolve(value);
+				if (value_to_resolve) {
+					prefixKey = value_to_resolve; // Update component state
+					updateLocalConfig(); // Save prefixKey immediately if it's set
+					dialog.close();
+					resolve(value_to_resolve);
+				}
 			});
 
 			cancelBtn.addEventListener('click', () => {
 				dialog.close();
-				resolve(null);
+				resolve(null); // Explicitly resolve with null on cancel
 			});
 
 			dialog.addEventListener('close', () => {
@@ -210,14 +316,9 @@
 				}
 				// Resolve with null if not already resolved by submit/cancel.
 				// Promise resolves only once, so subsequent calls are ignored.
+				// This ensures the promise always resolves.
 				resolve(null);
 			});
-
-			if (mode !== 'new') {
-				input.addEventListener('input', () => {
-					error.style.display = 'none';
-				});
-			}
 		});
 	}
 
