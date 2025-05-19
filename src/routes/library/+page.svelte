@@ -42,10 +42,11 @@
 	// DOM Element References
 	let bookshelf: HTMLElement | null = null;
 	let emptyBookshelf: HTMLElement | null = null;
-	// let fileInputElement: HTMLInputElement | null = null; // Removed global variable
+	// let fileInputElement: HTMLInputElement | null; // Removed global variable
 	let searchInputElement: HTMLInputElement | null = null;
 
 	// Library State
+	let isLoadingLibrary = true; // Added for initial loading state
 	let isLibraryLoaded = false;
 	let libraryBooks: Book[] = [];
 	let selectedBookIndex = 0;
@@ -101,12 +102,13 @@
 
 	// --- Lifecycle Functions ---
 	onMount(async () => {
-		console.log('[Mount Start] +page.svelte onMount executing...'); // <-- ADDED LOG
+		console.log('[Mount Start] +page.svelte onMount executing...');
 		if (!browser) {
-			console.log('[Mount] Exiting: Not in browser environment.'); // <-- ADDED LOG
+			console.log('[Mount] Exiting: Not in browser environment.');
+			isLoadingLibrary = false;
 			return;
 		}
-		console.log('[Mount] Browser environment confirmed.'); // <-- ADDED LOG
+		console.log('[Mount] Browser environment confirmed.');
 
 		// Check mobile status
 		const checkIsMobile = () => {
@@ -124,12 +126,11 @@
 			loaded: false
 		}; // Default state with type
 		try {
-			console.log('[Mount] Calling loadLibraryStateFromDB...'); // <-- ADDED LOG
+			console.log('[Mount] Calling loadLibraryStateFromDB...');
 			initialState = await loadLibraryStateFromDB();
-			console.log('[Mount] loadLibraryStateFromDB returned:', initialState); // <-- ADDED LOG
+			console.log('[Mount] loadLibraryStateFromDB returned:', initialState);
 		} catch (error) {
-			console.error('[Mount] CRITICAL ERROR calling loadLibraryStateFromDB:', error); // <-- ADDED CATCH
-			// Keep initialState as default empty/not loaded
+			console.error('[Mount] CRITICAL ERROR calling loadLibraryStateFromDB:', error);
 		}
 
 		libraryBooks = initialState.books;
@@ -137,14 +138,20 @@
 		selectedBookIndex = isLibraryLoaded ? 0 : 0;
 		console.log(
 			`[onMount] Initial load state applied. isLibraryLoaded: ${isLibraryLoaded}, book count: ${libraryBooks.length}`
-		); // <-- MODIFIED LOG
+		);
 
-		// Initialize Coverflow (either real or empty) - Await the setup
+		isLoadingLibrary = false;
+		await tick();
+
 		if (isLibraryLoaded) {
-			console.log('[onMount] Library loaded, setting up main coverflow.');
+			console.log(
+				'[onMount] Library loaded, setting up main coverflow. isLoadingLibrary is now false.'
+			);
 			await setupCoverflow();
 		} else {
-			console.log('[onMount] Library empty or load failed, setting up empty coverflow.'); // <-- MODIFIED LOG
+			console.log(
+				'[onMount] Library empty or load failed, setting up empty coverflow. isLoadingLibrary is now false.'
+			);
 			await setupEmptyCoverflow();
 		}
 
@@ -887,7 +894,7 @@
 
 <div class="library-container">
 	<div class="mb-4 flex flex-col justify-center">
-		{#if isLibraryLoaded}
+		{#if isLibraryLoaded && !isLoadingLibrary}
 			<!-- Content Title Header -->
 			<h1 class="text-center text-2xl font-bold" style="margin-bottom: 1rem;">
 				Your Personal Library
@@ -953,7 +960,7 @@
 		{/if}
 
 		<!-- Action Buttons -->
-		{#if isLibraryLoaded}
+		{#if isLibraryLoaded && !isLoadingLibrary}
 			<div class="mb-4 flex justify-center">
 				<button class="btn btn-primary mx-2" on:click={toggleUploadModal}>
 					Add Books to Your Library
@@ -1117,7 +1124,12 @@
 
 	<!-- Main Content: Coverflow or Empty State -->
 	<div>
-		{#if isLibraryLoaded}
+		{#if isLoadingLibrary}
+			<div class="loading-container">
+				<div class="spinner"></div>
+				<p>Loading your library...</p>
+			</div>
+		{:else if isLibraryLoaded}
 			<!-- Coverflow for Books -->
 			<div bind:this={bookshelf} class="coverflow-container fade-in">
 				<!-- Books added dynamically by Coverflow class -->
@@ -1886,6 +1898,7 @@
 		backface-visibility: hidden;
 
 		/* Simplify transform to reduce iOS shakiness */
+		
 		-webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
 		transform: rotate(45deg) translate3d(40px, -100px, 0);
 		/* Keep transform origin consistent */
@@ -2685,4 +2698,29 @@
 		font-size: 1.5rem;
 		line-height: 1;
 	}
+
+  /* Loading Spinner Styles */
+  :global(.loading-container) {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 50vh; /* Adjust as needed */
+      color: var(--color-text);
+  }
+
+  :global(.spinner) {
+      border: 4px solid purple;
+      border-left-color: var(--color-theme-1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      animation: spin 1s linear infinite; 
+      margin-bottom: 1rem;
+  }
+
+  @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+  }
 </style>
