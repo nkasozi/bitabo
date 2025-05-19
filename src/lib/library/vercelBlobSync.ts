@@ -302,6 +302,7 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
 			console.error('[VercelSync] Prefix Verification failed:', error_message);
 			if (error_instance instanceof Error && isPremiumRequiredError(error_instance)) {
 				// No UI for premium dialog in background sync
+				await showPremiumDialog();
 				console.warn('[VercelSync] Premium subscription required for prefix verification.');
 			}
 			return false;
