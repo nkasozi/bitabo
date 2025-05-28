@@ -14,12 +14,12 @@
 	import { checkUrlAndInitializeReaderStore } from '$lib/reader/initializeReader';
 
 	// --- State Variables ---
+	let isLoadingBook: boolean = true; // Added for loading state
 	let currentBookData: Book | null | undefined = null; // Renamed from currentBookInfo
 
 	// --- Instance Variables ---
 	let reader: Reader | null = null; // Reference to the reader instance
 	let cleanupFunctions: (() => void)[] = []; // Store cleanup functions from helpers
-
 
 	// --- Lifecycle ---
 	onMount(async () => {
@@ -27,12 +27,13 @@
 		currentBookData = null; // Reset book data
 		reader = null;
 		cleanupFunctions = []; // Reset cleanup functions on mount
+		isLoadingBook = true; // Ensure loading state is true at the start of mount
 
 		if (!browser) {
 			console.warn('[DEBUG] Not in browser environment. Reader cannot be initialized.');
 			return; // Exit early if not in browser
 		}
-		
+
 		// Check if we need to initialize the reader store from URL
 		// This helps when navigating directly to the reader page
 		const urlBookId = await checkUrlAndInitializeReaderStore();
@@ -136,17 +137,21 @@
 
 			// 7. Load Book into Reader (Pass preliminary font size)
 			console.log('[DEBUG] Calling loadBookIntoReader...');
-			
+
 			// Make sure the reader store has been initialized from URL if needed
 			// If we see an empty bookId in the store, and we're already mounted,
 			// we can trigger a check for URL parameters (but handle it properly without await)
-			if($readerStore.bookId.length === 0) {
-				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initializing from URL`);
+			if ($readerStore.bookId.length === 0) {
+				console.log(
+					`[DEBUG] ReaderHeader: BookId found empty in Reader store, initializing from URL`
+				);
 				// Handle this properly without using await in the callback
-				let bookIdFound = await  checkUrlAndInitializeReaderStore();
-				console.log(`[DEBUG] ReaderHeader: BookId found empty in Reader store, initialized from URL, ID found: ${bookIdFound}`);
+				let bookIdFound = await checkUrlAndInitializeReaderStore();
+				console.log(
+					`[DEBUG] ReaderHeader: BookId found empty in Reader store, initialized from URL, ID found: ${bookIdFound}`
+				);
 			}
-			
+
 			const loadResult = await loadBookIntoReader(
 				reader,
 				readerStore,
@@ -200,6 +205,7 @@
 			reader = null;
 		} finally {
 			console.log('[DEBUG] Reader component mount process finished.');
+			isLoadingBook = false; // Set loading to false when process is finished
 		}
 	});
 
@@ -259,13 +265,17 @@
 	// Expose navigation function to the template for the error button
 </script>
 
-<!-- Book content container -->
-<div id="ebook-container" class="reader-container">
+<!-- Book content container - always in DOM after mount, visibility controlled -->
+<div
+	id="ebook-container"
+	class="reader-container"
+	style:visibility={isLoadingBook ? 'hidden' : 'visible'}
+>
 	<!-- Reader content will be injected here by Foliate/createReader -->
 </div>
 
-<!-- Navigation bar with progress slider and font size controls -->
-<div id="nav-bar" class="toolbar nav-bar">
+<!-- Navigation bar - always in DOM after mount, visibility controlled -->
+<div id="nav-bar" class="toolbar nav-bar" style:visibility={isLoadingBook ? 'hidden' : 'visible'}>
 	<button id="left-button" aria-label="Go left">
 		<svg class="icon" width="24" height="24" aria-hidden="true" focusable="false">
 			<path d="M 15 6 L 9 12 L 15 18" stroke="currentColor" stroke-width="2" fill="none" />
@@ -308,6 +318,14 @@
 	</button>
 </div>
 
+{#if isLoadingBook}
+	<div class="reader-loading-container">
+		<!-- This is the overlay -->
+		<div class="reader-spinner"></div>
+		<p>Loading your book...</p>
+	</div>
+{/if}
+
 <style>
 	/* Visually hidden class for labels */
 	.visually-hidden {
@@ -349,6 +367,52 @@
 	/* Dark mode spinner color */
 	:global(.dark-mode) .loading-overlay svg path {
 		fill: #eee;
+	}
+
+	/* Reader Loading Spinner Styles */
+	.reader-loading-container {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		height: 100vh; /* Full viewport height */
+		width: 100%;
+		position: fixed; /* Or absolute, depending on layout */
+		top: 0;
+		left: 0;
+		background-color: var(--color-bg-0, #ffffff); /* Match page background */
+		z-index: 10002; /* Ensure it's on top, higher than other reader overlays */
+	}
+
+	.reader-loading-container p {
+		margin-top: 20px;
+		font-size: 1.2em;
+		color: var(--color-text, #333333);
+	}
+	:global(.dark-mode) .reader-loading-container p {
+		color: var(--color-text, #eeeeee);
+	}
+
+	.reader-spinner {
+		border: 4px solid rgba(var(--color-text-rgb, 51, 51, 51), 0.1); /* Lighter border */
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		border-left-color: var(--color-theme-1, #3182ce); /* Accent color for spinner */
+		animation: reader-spin 1s ease infinite;
+	}
+	:global(.dark-mode) .reader-spinner {
+		border: 4px solid rgba(var(--color-text-rgb, 238, 238, 238), 0.2); /* Lighter border for dark mode */
+		border-left-color: var(--color-theme-1, #63b3ed); /* Accent color for spinner in dark mode */
+	}
+
+	@keyframes reader-spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
 	}
 
 	/* Error container styling (keep existing) */
