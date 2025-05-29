@@ -596,7 +596,20 @@ async function importBooksWithPrefix(
 		for (let import_index = 0; import_index < sorted_files_for_import.length; import_index++) {
 			const file_item = sorted_files_for_import[import_index];
 			const book_id_for_status_update = extractBookIdFromPath(file_item.pathname) || file_item.pathname;
-			const book_title_for_notification = file_item.pathname.split('/').pop()?.replace(/_[^_]+\.json$/, '') || 'Unknown Book';
+			let book_title_for_notification = file_item.pathname.split('/').pop()?.replace(/_[^_]+\\.json$/, '') || 'Unknown Book';
+			let pre_fetched_remote_book_data: Book | null = null;
+
+			try {
+				const book_json_content_string = await downloadBookFromUrl(file_item.url);
+				if (book_json_content_string) {
+					pre_fetched_remote_book_data = JSON.parse(book_json_content_string) as Book;
+					if (pre_fetched_remote_book_data && pre_fetched_remote_book_data.title) {
+						book_title_for_notification = pre_fetched_remote_book_data.title;
+					}
+				}
+			} catch (e) {
+				console.warn(`[VercelSync] Could not pre-fetch title for ${file_item.pathname}:`, e);
+			}
 
 			if (!silent && progress_notification_id) {
 				updateProgressNotification(
@@ -606,15 +619,19 @@ async function importBooksWithPrefix(
 					progress_notification_id
 				);
 			}
-			updateBookImportStatus(book_id_for_status_update, 'syncing', undefined, file_item.pathname);
+			updateBookImportStatus(book_id_for_status_update, 'syncing', undefined, book_title_for_notification);
 
 			let book_that_was_processed_this_iteration: Book | null | undefined = null;
 
 			try {
-				const import_result = await processSingleBookImport(file_item, merged_books_collection, silent);
+				const import_result = await processSingleBookImport(file_item, merged_books_collection, silent, pre_fetched_remote_book_data);
 
 				if (import_result.error) {
 					throw new Error(import_result.error);
+				}
+
+				if (import_result.book && import_result.book.title && import_result.book.title !== book_title_for_notification) {
+					book_title_for_notification = import_result.book.title;
 				}
 
 				if (import_result.action === 'add' && import_result.book) {
@@ -665,7 +682,7 @@ async function importBooksWithPrefix(
 				import_error_count++;
 				const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
 				console.error(`[VercelSync] Error processing book file ${file_item.pathname} during import:`, error_message);
-				updateBookImportStatus(book_id_for_status_update, 'error', error_message, file_item.pathname);
+				updateBookImportStatus(book_id_for_status_update, 'error', error_message, book_title_for_notification);
 
 				if (!silent && progress_notification_id) {
 					updateProgressNotification(
@@ -752,7 +769,8 @@ interface ProcessedBookImportResult {
 async function processSingleBookImport(
     file_item: VercelBlob,
     current_local_books_collection: Book[],
-    silent_mode: boolean
+    silent_mode: boolean,
+    pre_fetched_remote_book_data?: Book | null
 ): Promise<ProcessedBookImportResult> {
     const book_id_from_pathname = extractBookIdFromPath(file_item.pathname);
     if (!book_id_from_pathname) {
@@ -762,15 +780,20 @@ async function processSingleBookImport(
     }
 
     console.log(`[VercelSync] Processing single book for import: ${file_item.pathname}`);
+    let remote_book_data: Book;
 
     try {
-        const book_json_content_string = await downloadBookFromUrl(file_item.url);
-        if (!book_json_content_string) {
-            throw new Error(`Could not download book data from URL: ${file_item.url}`);
+        if (pre_fetched_remote_book_data) {
+            remote_book_data = pre_fetched_remote_book_data;
+            console.log(`[VercelSync] Using pre-fetched book data for: ${remote_book_data.title || file_item.pathname}`);
+        } else {
+            const book_json_content_string = await downloadBookFromUrl(file_item.url);
+            if (!book_json_content_string) {
+                throw new Error(`Could not download book data from URL: ${file_item.url}`);
+            }
+            remote_book_data = JSON.parse(book_json_content_string) as Book;
         }
-
-        const remote_book_data = JSON.parse(book_json_content_string) as Book;
-        console.log(`[VercelSync] Successfully parsed book for import: ${remote_book_data.title || 'Unknown'}`);
+        console.log(`[VercelSync] Successfully obtained book data for import: ${remote_book_data.title || 'Unknown Title'}`);
 
         const existing_cache_entry = bookMetadataCache.get(file_item.pathname);
         const imported_book_snapshot: BookSnapshotForCache = {
