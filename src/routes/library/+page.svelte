@@ -163,46 +163,63 @@
 
 		// Setup event listeners for real-time Vercel Blob import updates
 		window.addEventListener('vercel-blob-import-progress', async (event: Event) => {
-			// Type assertion to access custom event details
 			const customEvent = event as CustomEvent;
-			const { mergedBooks, booksImported, booksInBatch } = customEvent.detail;
+			const {
+				booksImportedCount,
+				booksProcessedCount,
+				totalBooksCount,
+				recentlyProcessedBook,
+				currentLibraryBooks,
+				error: importError
+			} = customEvent.detail;
 
 			console.log(
-				`[Library] Real-time import update: ${booksInBatch} books in this batch, ${booksImported} total`
+				`[Library] Vercel Blob Import Progress: Processed ${booksProcessedCount}/${totalBooksCount}, Imported so far: ${booksImportedCount}. Recently processed: ${recentlyProcessedBook?.title}`
 			);
 
-			// Update local state
-			libraryBooks = mergedBooks;
-
-			// If library was empty and is now populated, set flag
-			if (!isLibraryLoaded && mergedBooks.length > 0) {
-				isLibraryLoaded = true;
-				console.log('[Library] Library now populated from empty state');
+			if (importError) {
+				console.error(
+					`[Library] Error during import of ${recentlyProcessedBook?.title || 'a book'}:`,
+					importError
+				);
+				showNotification(
+					`Error importing ${recentlyProcessedBook?.title || 'book'}: ${importError}`,
+					'error'
+				);
 			}
 
-			// Initialize or refresh coverflow
-			if (coverflow) {
-				console.log('[Library] Refreshing coverflow with newly imported books');
-				await setupCoverflow(); // Refresh coverflow with new books
-			} else if (isLibraryLoaded) {
-				console.log('[Library] Initializing coverflow for first time');
-				await setupCoverflow(); // Initialize for first time
+			if (currentLibraryBooks) {
+				await updateLibraryComponentState(
+					currentLibraryBooks,
+					undefined, // No specific index change from this event
+					currentLibraryBooks.length > 0,
+					true // forceCoverflowUpdateForImportEvents = true
+				);
 			}
 		});
 
 		// Handle completion event
-		window.addEventListener('vercel-blob-import-complete', (event: Event) => {
-			// Type assertion to access custom event details
+		window.addEventListener('vercel-blob-import-complete', async (event: Event) => {
 			const customEvent = event as CustomEvent;
-			const { booksImported } = customEvent.detail;
+			const { booksImported, mergedBooks } = customEvent.detail;
 
-			console.log(`[Library] Import complete. Total books imported: ${booksImported}`);
+			console.log(
+				`[Library] Vercel Blob Import Complete. Total books imported in this session: ${booksImported}`
+			);
 
-			// Final refresh if needed
-			if (coverflow && booksImported > 0) {
-				setupCoverflow().catch((err) =>
-					console.error('[Library] Error refreshing coverflow after import:', err)
+			if (mergedBooks) {
+				await updateLibraryComponentState(
+					mergedBooks,
+					undefined,
+					mergedBooks.length > 0,
+					true // forceCoverflowUpdateForImportEvents = true
 				);
+			}
+
+			if (booksImported > 0) {
+				showNotification(`Cloud import complete. ${booksImported} books processed.`, 'success');
+			} else {
+				showNotification('Cloud import finished. No new books were added.', 'info');
 			}
 		});
 
@@ -497,43 +514,60 @@
 	async function updateLibraryComponentState(
 		newBooks: Book[],
 		newIndex?: number,
-		loaded?: boolean
+		loaded?: boolean,
+		forceCoverflowUpdateForImportEvents: boolean = false // New optional parameter
 	) {
-		// Make async
+		const initialBookCountForThisCall = libraryBooks.length;
+		const initialIsLibraryLoadedForThisCall = isLibraryLoaded;
+
 		const newState = calculateNewLibraryState(
-			libraryBooks, // current books
-			selectedBookIndex, // current index
-			isLibraryLoaded, // current loaded
-			isSearching, // current searching
-			debouncedSearchQuery, // current query
-			newBooks, // new books array
-			newIndex, // new index
-			loaded // new loaded status
+			libraryBooks, // Pass current component state
+			selectedBookIndex,
+			isLibraryLoaded,
+			isSearching,
+			debouncedSearchQuery,
+			newBooks, // The new books from the event or action
+			newIndex,
+			loaded
 		);
 		console.log('[updateLibraryComponentState] New state calculated:', newState);
 
 		// Apply the calculated state to the component
 		libraryBooks = newState.newLibraryBooks;
 		selectedBookIndex = newState.newSelectedBookIndex;
-		isLibraryLoaded = newState.newIsLibraryLoaded;
+		isLibraryLoaded = newState.newIsLibraryLoaded; // This is the new state after calculation
 		searchResults = newState.newSearchResults ?? [];
 		isSearching = newState.newIsSearching ?? false;
 		console.log(
 			`[updateLibraryComponentState] Component state updated. isLibraryLoaded: ${isLibraryLoaded}, libraryBooks count: ${libraryBooks.length}`
 		);
 
+		let shouldSetupCoverflow = newState.needsCoverflowUpdate;
+
+		if (forceCoverflowUpdateForImportEvents) {
+			const bookCountActuallyChanged = initialBookCountForThisCall !== libraryBooks.length;
+			const libraryActuallyJustLoaded = !initialIsLibraryLoadedForThisCall && isLibraryLoaded;
+
+			if (libraryActuallyJustLoaded || bookCountActuallyChanged) {
+				shouldSetupCoverflow = true;
+				console.log(
+					'[updateLibraryComponentState] Forcing coverflow update for import event due to actual change in book count or loaded state.'
+				);
+			}
+		}
+
 		// Update coverflow if needed - MUST happen AFTER state is applied
 		if (!isLibraryLoaded) {
 			console.log('[updateLibraryComponentState] Library not loaded, setting up empty coverflow.');
 			await setupEmptyCoverflow(); // await the setup
-		} else if (newState.needsCoverflowUpdate) {
+		} else if (shouldSetupCoverflow) {
 			console.log(
-				'[updateLibraryComponentState] Library loaded and needs update, setting up main coverflow.'
+				'[updateLibraryComponentState] Library loaded and needs update (or forced for import), setting up main coverflow.'
 			);
 			await setupCoverflow(); // await the setup
 		} else {
 			console.log(
-				'[updateLibraryComponentState] Coverflow update not deemed necessary by calculateNewLibraryState.'
+				'[updateLibraryComponentState] Coverflow update not deemed necessary by calculateNewLibraryState and not forced.'
 			);
 			// If coverflow exists but index changed without needing a full rebuild, just select
 			if (
@@ -849,10 +883,17 @@
 			// Start new interval
 			intervalId = window.setInterval(() => {
 				if (!coverflow) return;
+				const currentIndex = coverflow.currentIndex;
+				const booksInCoverflow = isSearching ? searchResults : libraryBooks;
 				if (direction === 'left') {
-					coverflow.prev();
+					if (currentIndex > 0) {
+						coverflow.select(currentIndex - 1);
+					}
 				} else {
-					coverflow.next();
+					// direction === 'right'
+					if (currentIndex < booksInCoverflow.length - 1) {
+						coverflow.select(currentIndex + 1);
+					}
 				}
 			}, coverflowSpeed);
 		};
@@ -1898,7 +1939,7 @@
 		backface-visibility: hidden;
 
 		/* Simplify transform to reduce iOS shakiness */
-		
+
 		-webkit-transform: rotate(45deg) translate3d(40px, -100px, 0);
 		transform: rotate(45deg) translate3d(40px, -100px, 0);
 		/* Keep transform origin consistent */
@@ -2699,28 +2740,32 @@
 		line-height: 1;
 	}
 
-  /* Loading Spinner Styles */
-  :global(.loading-container) {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 50vh; /* Adjust as needed */
-      color: var(--color-text);
-  }
+	/* Loading Spinner Styles */
+	:global(.loading-container) {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 50vh; /* Adjust as needed */
+		color: var(--color-text);
+	}
 
-  :global(.spinner) {
-      border: 4px solid purple;
-      border-left-color: var(--color-theme-1);
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      animation: spin 1s linear infinite; 
-      margin-bottom: 1rem;
-  }
+	:global(.spinner) {
+		border: 4px solid purple;
+		border-left-color: var(--color-theme-1);
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+		margin-bottom: 1rem;
+	}
 
-  @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-  }
+	@keyframes spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
+	}
 </style>

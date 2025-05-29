@@ -2,7 +2,11 @@ import { browser } from '$app/environment';
 import type { Book } from './types';
 import {
 	showConfirmDialog,
-	showNotification
+	showNotification,
+	showProgressNotification,
+	updateProgressNotification,
+	closeNotification,
+	showErrorNotification
 } from './ui';
 import { loadLibraryStateFromDB, processBookAfterLoad, saveAllBooks } from './dexieDatabase';
 import { getPremiumMessage } from './premiumUserUtils';
@@ -218,17 +222,20 @@ const DEFAULT_CONFIG: VercelBlobSyncConfig = {
 
 // Unified Cache for Book Metadata
 const LIST_CACHE_DURATION_SECONDS = 60; // Cache list results for 60 seconds
-const SIGNIFICANT_BOOK_PROPERTIES: (keyof Book)[] = ['author', 'title', 'progress', 'fontSize'];
+
+interface BookSnapshotForCache {
+	author?: string;
+	title?: string;
+	progress?: number;
+	fontSize?: number;
+	lastModified?: number;
+}
+
+const SIGNIFICANT_BOOK_PROPERTIES: (keyof BookSnapshotForCache)[] = ['author', 'title', 'progress', 'fontSize', 'lastModified'];
 
 interface BookMetaCacheEntry {
-	blobInfo: VercelBlob; // Metadata from Vercel Blob (URL, size, uploadedAt)
-	bookSnapshot?: { // Snapshot of key book properties from the book's content
-		author?: string;
-		title?: string;
-		progress?: number;
-		fontSize?: number;
-		lastModified?: number;
-	};
+	blobInfo: VercelBlob;
+	bookSnapshot?: BookSnapshotForCache;
 }
 
 const bookMetadataCache = new Map<string, BookMetaCacheEntry>();
@@ -361,7 +368,7 @@ export function getSyncStatus(): BookSyncStatus[] {
  */
 export async function syncWithVercelBlob(
 	silent: boolean = false,
-	specific_book_id: string,
+	specific_book_id?: string,
 	operation_type?: 'save' | 'delete'
 ): Promise<SyncResult> {
 	if (!browser || !currentConfig.syncEnabled || !currentConfig.prefixKey) {
@@ -393,7 +400,6 @@ export async function syncWithVercelBlob(
 		let books_updated_count = 0;
 		const books_removed_count = 0;
 
-
 		if (specific_book_id && operation_type === 'save') {
 			console.log(`[VercelSync] Initiating save operation for specific book ID: ${specific_book_id}`);
 			const book_to_sync = local_books.find(book => book.id === specific_book_id);
@@ -406,8 +412,8 @@ export async function syncWithVercelBlob(
 					console.log(`[VercelSync] Successfully synced specific book: ${book_to_sync.title}`);
 					return {
 						success: true,
-						booksAdded: 1, // Assuming it's a new or updated book
-						booksUpdated: 0, // Or 1 if you can differentiate between add/update
+						booksAdded: 1,
+						booksUpdated: 0,
 						booksRemoved: 0
 					};
 				} catch (error_instance) {
@@ -432,18 +438,57 @@ export async function syncWithVercelBlob(
 					error: `Book ID ${specific_book_id} not found locally.`
 				};
 			}
+		} else if (!specific_book_id) {
+			console.log('[VercelSync] Initiating full library sync.');
+			const remote_files_result = await listBlobsWithPrefix(currentConfig.prefixKey);
+			const remote_files_map = new Map(remote_files_result.blobs.map(f => [extractBookIdFromPath(f.pathname), f]));
+
+			const books_to_upload: Book[] = [];
+			for (const local_book of local_books) {
+				const remote_file = remote_files_map.get(local_book.id);
+				if (!remote_file || shouldUpdateBook(remote_file, local_book)) {
+					books_to_upload.push(local_book);
+				}
+			}
+
+			if (books_to_upload.length > 0) {
+				const progress_id = showProgressNotification(`Starting Vercel sync...`, books_to_upload.length);
+				let failed_uploads = 0;
+
+				for (let i = 0; i < books_to_upload.length; i++) {
+					const book_to_upload = books_to_upload[i];
+					const book_title = book_to_upload.title || 'Unknown Title';
+					updateProgressNotification(`Uploading ${i + 1}/${books_to_upload.length}: ${book_title}`, i, books_to_upload.length, progress_id);
+					updateBookSyncStatus(book_to_upload.id, 'syncing');
+					try {
+						await uploadBookToVercelBlob(book_to_upload);
+						updateBookSyncStatus(book_to_upload.id, 'completed');
+						if (!remote_files_map.has(book_to_upload.id)) {
+							books_added_count++;
+						} else {
+							books_updated_count++;
+						}
+						updateProgressNotification(`Processed ${i + 1}/${books_to_upload.length}: ${book_title}`, i + 1, books_to_upload.length, progress_id);
+					} catch (error_instance) {
+						failed_uploads++;
+						const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+						updateBookSyncStatus(book_to_upload.id, 'error', error_message);
+						updateProgressNotification(`Failed ${i + 1}/${books_to_upload.length}: ${book_title}`, i + 1, books_to_upload.length, progress_id);
+						console.error(`[VercelSync] Error uploading book ${book_title}:`, error_message);
+					}
+				}
+				closeNotification(progress_id);
+				if (failed_uploads > 0) {
+					showErrorNotification('Vercel Sync Complete with Errors', '', `Successfully synced ${books_added_count + books_updated_count - failed_uploads} books. Failed to sync ${failed_uploads} books.`);
+				} else {
+					showNotification(`Vercel Sync Complete. Synced ${books_added_count + books_updated_count} books.`, 'success');
+				}
+			} else {
+				showNotification('Vercel Sync: No books needed to be uploaded.', 'info');
+			}
+		} else {
+			console.log('[VercelSync] Ignoring sync as specific book operation was not \'save\' or no specific_book_id for full sync.');
 		}
-
-		//check if there are any new files on the remote server
-		// if (remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime).length > 0) {
-		// 	let books_to_import = remote_files.filter(file => file.uploadedAt > currentConfig.lastSyncTime);
-		// 	console.log(`[VercelSync] Found [${books_to_import.length}] books that Need to be re-imported because they have been updated`)
-		// 	//import those specific files only
-		// 	await importBooksWithPrefix(currentConfig.prefixKey, silent, books_to_import);
-		// }
-
-		// Fallback to full sync if no specific book ID or operation is provided
-		console.log('[VercelSync] Ignoring full library sync as no specific book operation was requested or applicable.');
 
 		updateConfig({
 			lastSyncTime: Date.now()
@@ -495,15 +540,16 @@ async function importBooksWithPrefix(
 	activeOperation = 'import';
 	currentImportStatus = [];
 	console.log(`[VercelSync] Import operation started. Active operation: ${activeOperation}, Silent: ${silent}`);
+	let progress_notification_id: string | null = null;
 	try {
 		console.log(`[VercelSync] Listing all files with prefix: ${prefixKey}`);
 
 		let book_files: VercelBlob[] = [];
-		const fetchListBlobsFromRemote = async () => {
+		const fetchListBlobsFromRemote = async (): Promise<VercelBlob[]> => {
 			try {
 				const vercel_list_blob_result = await listBlobsWithPrefix(prefixKey);
-				let vercel_blob_files = vercel_list_blob_result.blobs;
-				console.log(`[VercelSync] Found ${book_files.length} files with prefix`, book_files);
+				const vercel_blob_files = vercel_list_blob_result.blobs;
+				console.log(`[VercelSync] Found ${vercel_blob_files.length} files with prefix`);
 				return vercel_blob_files;
 			} catch (error_instance) {
 				const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
@@ -516,10 +562,13 @@ async function importBooksWithPrefix(
 			}
 		};
 
-		book_files = specificBlobsToImport?.length > 0 ? specificBlobsToImport ?? await fetchListBlobsFromRemote() : await fetchListBlobsFromRemote();
+		book_files = (specificBlobsToImport && specificBlobsToImport.length > 0) ? specificBlobsToImport : await fetchListBlobsFromRemote();
 
 		if (book_files.length === 0) {
 			console.log('[VercelSync] No book files found for import with the given prefix.');
+			if (!silent) {
+				showNotification('No books found in the cloud to import.', 'info');
+			}
 			return false;
 		}
 
@@ -538,187 +587,143 @@ async function importBooksWithPrefix(
 		const { books: local_books } = await loadLibraryStateFromDB();
 		let merged_books_collection = [...local_books];
 
-		const sorted_files_for_import = [...book_files].sort((file_a, file_b) => file_a.pathname.length - file_b.pathname.length);
+		const sorted_files_for_import = [...book_files].sort((file_a, file_b) => file_a.pathname.localeCompare(file_b.pathname));
 
-		const batch_size = 5;
+		if (!silent) {
+			progress_notification_id = showProgressNotification('Starting cloud import...', sorted_files_for_import.length);
+		}
 
-		for (let batch_start_index = 0; batch_start_index < sorted_files_for_import.length; batch_start_index += batch_size) {
-			const batch_items = sorted_files_for_import.slice(batch_start_index, batch_start_index + batch_size);
-			const batch_end_index = Math.min(batch_start_index + batch_size, sorted_files_for_import.length);
+		for (let import_index = 0; import_index < sorted_files_for_import.length; import_index++) {
+			const file_item = sorted_files_for_import[import_index];
+			const book_id_for_status_update = extractBookIdFromPath(file_item.pathname) || file_item.pathname;
+			const book_title_for_notification = file_item.pathname.split('/').pop()?.replace(/_[^_]+\.json$/, '') || 'Unknown Book';
 
-			console.log(`[VercelSync] Processing import batch ${batch_start_index / batch_size + 1}: files ${batch_start_index + 1} to ${batch_end_index} of ${sorted_files_for_import.length}`);
-
-			const operation_results = await Promise.allSettled(batch_items.map(async (file_item) => {
-				const book_id_for_status_update = extractBookIdFromPath(file_item.pathname) || file_item.pathname;
-				updateBookImportStatus(book_id_for_status_update, 'syncing', undefined, file_item.pathname);
-				try {
-					console.log(`[VercelSync] Processing book file for import: ${file_item.pathname}`);
-
-					const book_id = extractBookIdFromPath(file_item.pathname);
-					if (!book_id) {
-						const error_message = `Could not extract book ID from path: ${file_item.pathname}`;
-						console.error(`[VercelSync] ${error_message}`);
-						throw new Error(error_message);
-					}
-
-					const book_json_content = await downloadBookFromUrl(file_item.url);
-					if (!book_json_content) {
-						throw new Error(`Could not download book data from URL: ${file_item.url}`);
-					}
-
-					const remote_book_data = JSON.parse(book_json_content) as Book;
-					console.log(`[VercelSync] Successfully parsed book for import: ${remote_book_data.title || 'Unknown'}`);
-					updateBookImportStatus(book_id, 'syncing', undefined, remote_book_data.title || file_item.pathname);
-
-					const currentFileItem = file_item; // file_item is a VercelBlob from the list operation
-					const existingCacheEntry = bookMetadataCache.get(currentFileItem.pathname);
-
-					if (existingCacheEntry) {
-						const importedBookSnapshot = {
-							author: remote_book_data.author,
-							title: remote_book_data.title,
-							progress: remote_book_data.progress,
-							fontSize: remote_book_data.fontSize,
-							lastModified: remote_book_data.lastModified,
-						};
-						bookMetadataCache.set(currentFileItem.pathname, {
-							blobInfo: existingCacheEntry.blobInfo, // Keep the blobInfo from the list operation
-							bookSnapshot: importedBookSnapshot
-						});
-					} else {
-						console.warn(`[VercelSync] Cache entry for ${currentFileItem.pathname} not found during import. This might happen if list cache expired or was cleared.`);
-						// Optionally, create a new entry, though blobInfo might be incomplete if not from a fresh list operation
-						const newBlobInfoFromImportItem: VercelBlob = { ...currentFileItem };
-						const importedBookSnapshot = {
-							author: remote_book_data.author,
-							title: remote_book_data.title,
-							progress: remote_book_data.progress,
-							fontSize: remote_book_data.fontSize,
-							lastModified: remote_book_data.lastModified,
-						};
-						bookMetadataCache.set(currentFileItem.pathname, {
-							blobInfo: newBlobInfoFromImportItem,
-							bookSnapshot: importedBookSnapshot
-						});
-					}
-
-					const existing_book_index = merged_books_collection.findIndex(b => b.id === remote_book_data.id);
-					if (existing_book_index >= 0) {
-						console.log(`[VercelSync] Book already exists in library: ${remote_book_data.title}`);
-
-						const local_book_data = merged_books_collection[existing_book_index];
-						const local_book_last_modified_timestamp = local_book_data.lastModified || 0;
-						const remote_book_last_modified_timestamp = remote_book_data.lastModified || 0;
-
-						let use_remote_version_flag = false;
-
-						if (remote_book_last_modified_timestamp > local_book_last_modified_timestamp) {
-							console.log(`[VercelSync] Remote book is newer: ${remote_book_data.title}`);
-							if (silent) {
-								use_remote_version_flag = true; // In silent mode, automatically prefer newer remote version
-								console.log(`[VercelSync] Silent mode: Automatically using remote (newer) version for: ${remote_book_data.title}`);
-							} else {
-								use_remote_version_flag = await confirmConflictResolution(local_book_data, remote_book_data);
-							}
-						}
-
-						if (use_remote_version_flag) {
-							console.log(`[VercelSync] Using remote version for: ${remote_book_data.title}`);
-							const processed_book_data = await processBookAfterLoad(remote_book_data);
-							updateBookImportStatus(
-								processed_book_data?.id ?? remote_book_data.id,
-								'completed',
-								undefined,
-								processed_book_data?.title ?? remote_book_data.title
-							);
-							return { action: 'update', index: existing_book_index, book: processed_book_data };
-						} else {
-							console.log(`[VercelSync] Keeping local version for: ${local_book_data.title}`);
-							updateBookImportStatus(local_book_data.id, 'completed', undefined, local_book_data.title);
-							return { action: 'skip', book: local_book_data };
-						}
-					} else {
-						console.log(`[VercelSync] New book found, adding: ${remote_book_data.title}`);
-						const processed_book_data = await processBookAfterLoad(remote_book_data);
-						updateBookImportStatus(
-							processed_book_data?.id ?? remote_book_data.id,
-							'completed',
-							undefined,
-							processed_book_data?.title ?? remote_book_data.title
-						);
-						return { action: 'add', book: processed_book_data };
-					}
-				} catch (error_instance) {
-					const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
-					console.error(`[VercelSync] Error importing book file ${file_item.pathname}:`, error_message);
-					updateBookImportStatus(book_id_for_status_update, 'error', error_message, file_item.pathname);
-					throw error_instance;
-				}
-			}));
-
-			let batch_change_count = 0;
-
-			for (const result_item of operation_results) {
-				if (result_item.status === 'fulfilled') {
-					const { action, book, index } = result_item.value;
-
-					if (action === 'add' && book) {
-						merged_books_collection.push(book);
-						imported_books_count++;
-						batch_change_count++;
-					} else if (action === 'update' && typeof index === 'number' && book) {
-						merged_books_collection[index] = book;
-						imported_books_count++;
-						batch_change_count++;
-					}
-				} else {
-					import_error_count++;
-				}
+			if (!silent && progress_notification_id) {
+				updateProgressNotification(
+					`Importing ${import_index + 1}/${sorted_files_for_import.length}: ${book_title_for_notification}`,
+					import_index,
+					sorted_files_for_import.length,
+					progress_notification_id
+				);
 			}
+			updateBookImportStatus(book_id_for_status_update, 'syncing', undefined, file_item.pathname);
 
-			if (batch_change_count > 0) {
-				try {
+			let book_that_was_processed_this_iteration: Book | null | undefined = null;
+
+			try {
+				const import_result = await processSingleBookImport(file_item, merged_books_collection, silent);
+
+				if (import_result.error) {
+					throw new Error(import_result.error);
+				}
+
+				if (import_result.action === 'add' && import_result.book) {
+					merged_books_collection.push(import_result.book);
+					imported_books_count++;
+					book_that_was_processed_this_iteration = import_result.book;
+					updateBookImportStatus(import_result.book.id, 'completed', undefined, import_result.book.title);
+				} else if (import_result.action === 'update' && typeof import_result.index === 'number' && import_result.book) {
+					merged_books_collection[import_result.index] = import_result.book;
+					imported_books_count++;
+					book_that_was_processed_this_iteration = import_result.book;
+					updateBookImportStatus(import_result.book.id, 'completed', undefined, import_result.book.title);
+				} else if (import_result.action === 'skip' && import_result.book) {
+					book_that_was_processed_this_iteration = import_result.book;
+					updateBookImportStatus(import_result.book.id, 'completed', undefined, import_result.book.title);
+				}
+
+				if (import_result.action === 'add' || import_result.action === 'update') {
 					await saveAllBooks(merged_books_collection);
-					const refreshed_library_state = await loadLibraryStateFromDB();
-					merged_books_collection = refreshed_library_state.books;
+					const refreshed_library_state_after_single_save = await loadLibraryStateFromDB();
+					merged_books_collection = refreshed_library_state_after_single_save.books;
+				}
 
-					if (!silent && typeof window !== 'undefined') {
-						const import_progress_event = new CustomEvent('vercel-blob-import-progress', {
-							detail: {
-								booksImported: imported_books_count,
-								booksProcessed: batch_end_index,
-								totalBooks: sorted_files_for_import.length,
-								booksInBatch: batch_change_count,
-								mergedBooks: refreshed_library_state.books
-							}
-						});
-						window.dispatchEvent(import_progress_event);
-					}
-					console.log(`[VercelSync] Saved batch progress and reloaded state: ${batch_change_count} books changed, ${imported_books_count} total imported`);
-				} catch (save_error_instance) {
-					const error_message = save_error_instance instanceof Error ? save_error_instance.message : String(save_error_instance);
-					console.error('[VercelSync] Error saving batch during import:', error_message);
+				if (!silent && typeof window !== 'undefined' && book_that_was_processed_this_iteration) {
+					const import_progress_event = new CustomEvent('vercel-blob-import-progress', {
+						detail: {
+							booksImportedCount: imported_books_count,
+							booksProcessedCount: import_index + 1,
+							totalBooksCount: sorted_files_for_import.length,
+							recentlyProcessedBook: book_that_was_processed_this_iteration,
+							currentLibraryBooks: [...merged_books_collection]
+						}
+					});
+					window.dispatchEvent(import_progress_event);
+					console.debug('[VercelSync] Dispatched vercel-blob-import-progress event for book:', book_that_was_processed_this_iteration?.title);
+				}
+
+				if (!silent && progress_notification_id) {
+					updateProgressNotification(
+						`Processed ${import_index + 1}/${sorted_files_for_import.length}: ${book_title_for_notification}`,
+						import_index + 1,
+						sorted_files_for_import.length,
+						progress_notification_id
+					);
+				}
+
+			} catch (error_instance) {
+				import_error_count++;
+				const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+				console.error(`[VercelSync] Error processing book file ${file_item.pathname} during import:`, error_message);
+				updateBookImportStatus(book_id_for_status_update, 'error', error_message, file_item.pathname);
+
+				if (!silent && progress_notification_id) {
+					updateProgressNotification(
+						`Failed ${import_index + 1}/${sorted_files_for_import.length}: ${book_title_for_notification}`,
+						import_index + 1,
+						sorted_files_for_import.length,
+						progress_notification_id
+					);
+				}
+				if (!silent && typeof window !== 'undefined') {
+					const import_progress_event = new CustomEvent('vercel-blob-import-progress', {
+						detail: {
+							booksImportedCount: imported_books_count,
+							booksProcessedCount: import_index + 1,
+							totalBooksCount: sorted_files_for_import.length,
+							recentlyProcessedBook: null,
+							currentLibraryBooks: [...merged_books_collection],
+							error: error_message
+						}
+					});
+					window.dispatchEvent(import_progress_event);
+					console.debug('[VercelSync] Dispatched vercel-blob-import-progress event with error for book:', file_item.pathname);
 				}
 			}
 		}
 
-		await saveAllBooks(merged_books_collection);
-		const final_library_state = await loadLibraryStateFromDB();
+		console.log(`[VercelSync] Import loop finished. Imported ${imported_books_count} books. Errors: ${import_error_count}.`);
 
-		console.log(`[VercelSync] Import finished. Imported ${imported_books_count} books. ${import_error_count > 0 ? `${import_error_count} errors.` : ''}`);
+		if (!silent && progress_notification_id) {
+			closeNotification(progress_notification_id);
+		}
 
-		if (!silent && typeof window !== 'undefined') {
+		if (!silent) {
+			if (import_error_count > 0) {
+				showErrorNotification(
+					'Cloud Import Complete with Errors',
+					'',
+					`Successfully imported ${imported_books_count} books. Failed to import ${import_error_count} books.`
+				);
+			} else if (imported_books_count > 0) {
+				showNotification(`Cloud Import Complete. Imported ${imported_books_count} books.`, 'success');
+			} else if (sorted_files_for_import.length > 0 && imported_books_count === 0 && import_error_count === 0) {
+				showNotification('Cloud Import: No new books or updates found to import.', 'info');
+			}
+		}
+
+		if (typeof window !== 'undefined') {
 			const final_import_event = new CustomEvent('vercel-blob-import-complete', {
 				detail: {
 					booksImported: imported_books_count,
-					mergedBooks: final_library_state.books
+					mergedBooks: [...merged_books_collection]
 				}
 			});
-			console.log(`[VercelSync] Dispatching final import completion event with ${final_library_state.books.length} books`);
+			console.log(`[VercelSync] Dispatching final import completion event with ${merged_books_collection.length} books`);
 			window.dispatchEvent(final_import_event);
 		}
 
-		return imported_books_count > 0;
+		return imported_books_count > 0 || (sorted_files_for_import.length > 0 && import_error_count === 0) ;
 	} catch (error_instance) {
 		const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
 		console.error('[VercelSync] Error importing books:', error_message);
@@ -728,12 +733,106 @@ async function importBooksWithPrefix(
 				item.error = 'Import process failed';
 			}
 		});
+		if (!silent && progress_notification_id) closeNotification(progress_notification_id);
+		if (!silent) showErrorNotification('Cloud Import Failed', '', error_message);
 		return false;
 	} finally {
 		activeOperation = null;
 		console.log('[VercelSync] Import operation finished. Active operation set to null.');
 	}
 }
+
+interface ProcessedBookImportResult {
+    action: 'add' | 'update' | 'skip';
+    book?: Book | null;
+    index?: number;
+    error?: string;
+}
+
+async function processSingleBookImport(
+    file_item: VercelBlob,
+    current_local_books_collection: Book[],
+    silent_mode: boolean
+): Promise<ProcessedBookImportResult> {
+    const book_id_from_pathname = extractBookIdFromPath(file_item.pathname);
+    if (!book_id_from_pathname) {
+        const error_detail = `Could not extract book ID from path: ${file_item.pathname}`;
+        console.error(`[VercelSync] ${error_detail}`);
+        return { action: 'skip', error: error_detail };
+    }
+
+    console.log(`[VercelSync] Processing single book for import: ${file_item.pathname}`);
+
+    try {
+        const book_json_content_string = await downloadBookFromUrl(file_item.url);
+        if (!book_json_content_string) {
+            throw new Error(`Could not download book data from URL: ${file_item.url}`);
+        }
+
+        const remote_book_data = JSON.parse(book_json_content_string) as Book;
+        console.log(`[VercelSync] Successfully parsed book for import: ${remote_book_data.title || 'Unknown'}`);
+
+        const existing_cache_entry = bookMetadataCache.get(file_item.pathname);
+        const imported_book_snapshot: BookSnapshotForCache = {
+            author: remote_book_data.author,
+            title: remote_book_data.title,
+            progress: remote_book_data.progress,
+            fontSize: remote_book_data.fontSize,
+            lastModified: remote_book_data.lastModified,
+        };
+
+        if (existing_cache_entry) {
+            bookMetadataCache.set(file_item.pathname, {
+                blobInfo: existing_cache_entry.blobInfo,
+                bookSnapshot: imported_book_snapshot
+            });
+        } else {
+            console.warn(`[VercelSync] Cache entry for ${file_item.pathname} not found during single import. Creating new entry.`);
+            const new_blob_info_from_import_item: VercelBlob = { ...file_item };
+            bookMetadataCache.set(file_item.pathname, {
+                blobInfo: new_blob_info_from_import_item,
+                bookSnapshot: imported_book_snapshot
+            });
+        }
+
+        const existing_book_in_local_collection_index = current_local_books_collection.findIndex(b => b.id === remote_book_data.id);
+        const processed_book_for_database = await processBookAfterLoad(remote_book_data);
+
+        if (existing_book_in_local_collection_index >= 0) {
+            console.log(`[VercelSync] Book already exists in local collection: ${remote_book_data.title}`);
+            const local_book_to_compare = current_local_books_collection[existing_book_in_local_collection_index];
+            const local_book_last_modified_timestamp = local_book_to_compare.lastModified || 0;
+            const remote_book_last_modified_timestamp = remote_book_data.lastModified || 0;
+
+            let use_remote_version_for_update = false;
+            if (remote_book_last_modified_timestamp > local_book_last_modified_timestamp) {
+                console.log(`[VercelSync] Remote book is newer: ${remote_book_data.title}`);
+                if (silent_mode) {
+                    use_remote_version_for_update = true;
+                    console.log(`[VercelSync] Silent mode: Automatically using remote (newer) version for: ${remote_book_data.title}`);
+                } else {
+                    use_remote_version_for_update = await confirmConflictResolution(local_book_to_compare, remote_book_data);
+                }
+            }
+
+            if (use_remote_version_for_update) {
+                console.log(`[VercelSync] Using remote version for update: ${remote_book_data.title}`);
+                return { action: 'update', index: existing_book_in_local_collection_index, book: processed_book_for_database };
+            } else {
+                console.log(`[VercelSync] Keeping local version for: ${local_book_to_compare.title}`);
+                return { action: 'skip', book: local_book_to_compare };
+            }
+        } else {
+            console.log(`[VercelSync] New book found, adding: ${remote_book_data.title}`);
+            return { action: 'add', book: processed_book_for_database };
+        }
+    } catch (error_instance) {
+        const error_message = error_instance instanceof Error ? error_instance.message : String(error_instance);
+        console.error(`[VercelSync] Error processing single book import ${file_item.pathname}:`, error_message);
+        return { action: 'skip', error: error_message, book: null };
+    }
+}
+
 
 /**
  * Update the sync status for a book
@@ -924,9 +1023,11 @@ async function uploadBookToVercelBlob(book: Book): Promise<VercelPutBlobResult> 
 	if (cachedEntry && cachedEntry.bookSnapshot) {
 		let significantChangesFound = false;
 		for (const property of SIGNIFICANT_BOOK_PROPERTIES) {
-			if (book[property] !== cachedEntry.bookSnapshot[property]) {
+			const book_value = book[property as keyof Book];
+			const snapshot_value = cachedEntry.bookSnapshot[property]; // This line might still have an issue if bookSnapshot is undefined.
+			if (book_value !== snapshot_value) {
 				significantChangesFound = true;
-				console.debug(`[VercelSync] Change detected in property '${property}' for book: ${book.title}`);
+				console.debug(`[VercelSync] Change detected in property \'${property}\' for book: ${book.title}`);
 				break;
 			}
 		}
