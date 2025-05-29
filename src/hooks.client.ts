@@ -15,7 +15,7 @@ Sentry.init({
   replaysOnErrorSampleRate: 1.0,
 
   // If you don't want to use Session Replay, just remove the line below:
-  integrations: [captureConsoleIntegration(['log', 'info', 'warn', 'error', 'debug', 'assert']),replayIntegration()],
+  integrations: [captureConsoleIntegration({ levels: ['error'] }), replayIntegration()],
 });
 
 // If you have a custom error handler, pass it to `handleErrorWithSentry`
