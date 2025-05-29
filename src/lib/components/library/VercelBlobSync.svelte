@@ -503,23 +503,15 @@
 			title={syncEnabled ? 'Sync with Vercel Cloud Storage' : 'Setup Vercel Cloud Sync'}
 			aria-label={syncEnabled ? 'Sync with Vercel Cloud Storage' : 'Setup Vercel Cloud Sync'}
 		>
-			{#if syncing}
-				<svg class="spinner" viewBox="0 0 24 24">
-					<circle cx="12" cy="12" r="10" />
-				</svg>
-			{:else}
-				<svg
-					class="cloud-icon"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path
-						d="M19 18a3.5 3.5 0 0 0 0-7h-.5A5.5 5.5 0 0 0 7 6a5 5 0 0 0-5 5 5 5 0 0 0 5 5h12Z"
-					/>
-				</svg>
-			{/if}
+			<svg
+				class="cloud-icon"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+			>
+				<path d="M19 18a3.5 3.5 0 0 0 0-7h-.5A5.5 5.5 0 0 0 7 6a5 5 0 0 0-5 5 5 5 0 0 0 5 5h12Z" />
+			</svg>
 			<span>{syncEnabled ? 'Sync Now' : 'Sync with Cloud'}</span>
 		</button>
 
@@ -545,19 +537,9 @@
 		{/if}
 	</div>
 
-	{#if syncing && syncProgress >= 0}
-		<!-- Show progress if syncing and progress is 0 or more -->
-		<div class="sync-progress">
-			<div class="progress-bar">
-				<div class="progress-fill" style="width: {syncProgress}%"></div>
-			</div>
-			<div class="progress-text">{syncProgress}% complete</div>
-		</div>
-	{/if}
-
-	{#if syncEnabled && !syncing}
+	{#if syncEnabled}
 		<div class="sync-status">
-			Last backup: {formatLastSync(lastSyncTime)}
+			Last Sync: {formatLastSync(lastSyncTime)}
 		</div>
 	{/if}
 </div>
