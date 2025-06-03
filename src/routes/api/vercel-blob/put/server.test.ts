@@ -7,7 +7,6 @@ import { put } from '@vercel/blob';
 class MockFile extends Blob {
     name: string;
     lastModified: number;
-    
     constructor(bits: BlobPart[], name: string, options: BlobPropertyBag & { lastModified?: number } = {}) {
         super(bits, options);
         this.name = name;
@@ -50,7 +49,7 @@ describe('PUT API Endpoint', () => {
 
         // Act
         const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const data: { error: string } = await response.json();
 
         // Assert
         expect(response.status).toBe(400);
@@ -68,7 +67,7 @@ describe('PUT API Endpoint', () => {
 
         // Act
         const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const data: { error: string } = await response.json();
 
         // Assert
         expect(response.status).toBe(400);
@@ -90,7 +89,7 @@ describe('PUT API Endpoint', () => {
 
         // Act
         const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const data: { error: string } = await response.json();
 
         // Assert
         expect(response.status).toBe(400);
@@ -116,7 +115,7 @@ describe('PUT API Endpoint', () => {
 
         // Act
         const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const data: { error: string, isPremiumRequired: boolean } = await response.json();
 
         // Assert
         expect(response.status).toBe(403);
@@ -186,7 +185,7 @@ describe('PUT API Endpoint', () => {
 
         // Act
         const response = await POST({ request: mockRequest } as any);
-        const data = await response.json();
+        const data: { error: string } = await response.json();
 
         // Assert
         expect(response.status).toBe(500);

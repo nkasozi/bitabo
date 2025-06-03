@@ -326,6 +326,21 @@ export async function setupVercelBlobSync(prefixKey: string, mode: string = 'new
 			console.log(`[VercelSync] Starting import from prefix '${trimmed_prefix_key}'.`);
 			await importBooksWithPrefix(trimmed_prefix_key, false, remote_files);
 			console.log(`[VercelSync] Import attempt from '${trimmed_prefix_key}' finished.`);
+		}else {
+			// For 'new' mode or any other mode that isn't 'import', start an initial backup/export.
+			console.log(`[VercelSync] Cloud sync setup for prefix '${trimmed_prefix_key}'. Starting initial library backup.`);
+			// Calling with silent=false (default) to ensure progress notifications are shown.
+			const initial_sync_result = await syncWithVercelBlob(false);
+			if (initial_sync_result.success) {
+				console.log(`[VercelSync] Initial library backup for prefix '${trimmed_prefix_key}' completed successfully.`);
+			} else {
+				console.error(`[VercelSync] Initial library backup for prefix '${trimmed_prefix_key}' failed: ${initial_sync_result.error}`);
+				if (initial_sync_result.error) {
+					showErrorNotification('Initial Backup Failed', 'Could not complete the initial library backup.', initial_sync_result.error);
+				} else {
+					showErrorNotification('Initial Backup Failed', 'Could not complete the initial library backup.', 'An unknown error occurred during the initial backup.');
+				}
+			}
 		}
 
 		return true;
