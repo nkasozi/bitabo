@@ -7,7 +7,7 @@ const buildAvailable = existsSync(join(process.cwd(), 'build'));
 export default defineConfig({
 	webServer: {
 		command: buildAvailable ? 'npm run preview' : 'npm run build && npm run preview',
-		url: 'ttp://localhost:5174',
+		url: 'http://localhost:5174',
 		reuseExistingServer: true,
 		timeout: 120000
 	},
