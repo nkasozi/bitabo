@@ -9,13 +9,15 @@ import { expect, test } from '@playwright/test';
  * 3. The PWA is installable based on criteria
  */
 
+let startUrl = 'http://localhost:5174/'
+
 // Use shorter timeouts for these simpler tests
 test.describe('Service Worker and PWA Configuration', () => {
   // Set a shorter timeout for each test
   test.setTimeout(10000);
   
   test('should have service worker API available', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Check if service worker API is available
     const hasServiceWorkerAPI = await page.evaluate(() => {
@@ -26,7 +28,7 @@ test.describe('Service Worker and PWA Configuration', () => {
   });
 
   test('should have a valid manifest.json', async ({ page, request }) => {
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // First check if the manifest link exists
     const hasManifest = await page.evaluate(() => {
@@ -87,7 +89,7 @@ test.describe('Service Worker and PWA Configuration', () => {
       networkRequestCount++;
     });
     
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Check that some network requests were made
     expect(networkRequestCount).toBeGreaterThan(0);
@@ -101,7 +103,7 @@ test.describe('Service Worker and PWA Configuration', () => {
   });
   
   test('PWA installation criteria should be checked', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Check for PWA installation criteria
     const installabilityStatus = await page.evaluate(async () => {

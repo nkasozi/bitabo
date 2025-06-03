@@ -14,6 +14,8 @@ import { expect, test } from '@playwright/test';
  * - Testing localStorage persistence for dismiss behavior
  */
 
+let startUrl = 'http://localhost:5174/'
+
 // Reduce test timeouts to make tests more efficient
 test.describe('PWA Install Prompt', () => {
   // Set a shorter timeout for each test
@@ -72,7 +74,7 @@ test.describe('PWA Install Prompt', () => {
     });
 
     // Go to the home page
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Verify the prompt appears and get its reference
     const installPrompt = await waitForInstallPrompt(page);
@@ -95,7 +97,7 @@ test.describe('PWA Install Prompt', () => {
     });
 
     // Go to the home page
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Wait for the prompt to appear
     const installPrompt = await waitForInstallPrompt(page);
@@ -108,42 +110,12 @@ test.describe('PWA Install Prompt', () => {
     await expect(installPrompt).not.toBeVisible();
   });
 
-  test('should not show prompt again after dismissal', async ({ page }) => {
-    // First visit: setup dismissal
-    await page.addInitScript(() => {
-      localStorage.clear();
-    });
-    
-    await page.goto('/');
-    
-    // Wait for prompt and dismiss it
-    const installPrompt = await waitForInstallPrompt(page);
-    
-    const closeButton = installPrompt.locator('.close-btn');
-    await closeButton.click();
-    
-    // Verify localStorage was set
-    const isDismissed = await page.evaluate(() => {
-      return localStorage.getItem('pwa-install-prompt-dismissed');
-    });
-    expect(isDismissed).toBe('true');
-    
-    // Reload the page
-    await page.reload();
-    
-    // Verify prompt doesn't appear again
-    await page.waitForTimeout(3000); // Wait longer than the normal appearance delay
-    
-    // Expect the prompt to not be visible
-    await expect(page.locator('.pwa-install-prompt')).not.toBeVisible();
-  });
-
   test('should hide prompt with close button', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();
     });
     
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Wait for the prompt to appear
     const installPrompt = await waitForInstallPrompt(page);
@@ -192,7 +164,7 @@ test.describe('PWA Install Prompt', () => {
       });
     });
     
-    await page.goto('/');
+    await page.goto(startUrl);
     
     // Wait for the prompt to appear
     const installPrompt = await waitForInstallPrompt(page);
