@@ -20,7 +20,6 @@ export class Coverflow implements CoverflowInstance {
 	touchStartY: number = 0;
 	touchStartTime: number = 0;
 	isSwiping: boolean = false;
-	isHorizontalSwipe: boolean = false;
 	swipeDirectionLocked: boolean = false;
 	readonly DIRECTION_THRESHOLD: number = 10; // Pixels to determine swipe direction
 	animationFrameId: number | null = null;
@@ -58,11 +57,11 @@ export class Coverflow implements CoverflowInstance {
 		if (!browser) return this.bookData.length; // Keep browser check for SSR safety
 		const width = window.innerWidth;
 		if (width <= 480) {
-			return 3; // Mobile: center + 1 on each side
+			return 5; // Mobile: center + 2 on each side
 		} else if (width <= 768) {
-			return 5; // Tablet: center + 2 on each side
+			return 7; // Tablet: center + 3 on each side
 		} else {
-			return this.bookData.length; // Desktop: show all books
+			return 9; // Desktop: show up to 9 books
 		}
 	}
 
@@ -104,10 +103,10 @@ export class Coverflow implements CoverflowInstance {
 		if (browser) {
 			window.removeEventListener('resize', this.handleResize);
 			 // Ensure touch listeners are removed with matching passive options
-			this.container.removeEventListener('touchstart', this.handleTouchStart, { passive: true });
-			this.container.removeEventListener('touchmove', this.handleTouchMove, { passive: false });
-			this.container.removeEventListener('touchend', this.handleTouchEnd, { passive: true });
-			this.container.removeEventListener('touchcancel', this.handleTouchCancel, { passive: true }); 
+			this.container.removeEventListener('touchstart', this.handleTouchStart, { capture: true }); // Matched passive: true with capture: true
+			this.container.removeEventListener('touchmove', this.handleTouchMove, { capture: false }); // Matched passive: false with capture: false
+			this.container.removeEventListener('touchend', this.handleTouchEnd, { capture: true }); // Matched passive: true with capture: true
+			this.container.removeEventListener('touchcancel', this.handleTouchCancel, { capture: true }); // Matched passive: true with capture: true
 		}
 		// Remove click/focus listeners from book elements
 		this.books.forEach(book => {
@@ -259,7 +258,6 @@ export class Coverflow implements CoverflowInstance {
 	touchEndTime: number = 0;
 	swipeVelocity: number = 0;
 	swipeDistance: number = 0;
-	touchStartY: number = 0; // Track vertical position
 	touchCurrentY: number = 0; // Current Y position during move
 	swipeDirectionThreshold: number = 10; // Threshold to determine swipe direction (in px)
 	isHorizontalSwipe: boolean = false; // Flag to track if swipe is primarily horizontal
@@ -485,9 +483,9 @@ export class Coverflow implements CoverflowInstance {
 			const offset = index - activeIndex;
 
 			// Original logic for transform and style
-			const xTranslate = offset * 200; // Original used 200
+			const xTranslate = offset * 160; // Adjusted from 200 for less space
 			const zTranslate = (offset === 0) ? 100 : 0; // Increased from 60 to 100 to bring selected book forward
-			const rotateY = offset * 15; // Original used 15
+			const rotateY = offset * 12; // Adjusted from 15 for a slightly less steep angle
 			
 			// Increase the scale difference between active and inactive books
 			const scale = (offset === 0) ? 1.2 : 0.8; // Increased active from 1.05 to 1.2, decreased inactive from 0.9 to 0.8
