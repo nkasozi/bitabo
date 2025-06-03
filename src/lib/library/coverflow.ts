@@ -6,10 +6,11 @@ import { browser } from '$app/environment';
  */
 export class Coverflow implements CoverflowInstance {
 	container: HTMLElement;
-	bookData: Book[]; // Changed type to Book[]
+	bookData: Book[];
 	books: HTMLElement[];
 	currentIndex: number;
 	visibleBooks: number;
+	desktopGlobalScaleFactor: number = 1.0;
 	params: {
 		xOffset: number; // Note: Original JS used different params in positionBooks, keeping these for now but positionBooks logic overrides
 		zDepth: number;
@@ -30,14 +31,12 @@ export class Coverflow implements CoverflowInstance {
 		if (!containerEl) throw new Error("Coverflow container element not provided.");
 		if (!bookData) throw new Error("Coverflow book data not provided.");
 		this.container = containerEl;
-		this.bookData = bookData; // Removed || []
+		this.bookData = bookData;
 		this.books = [];
-		// Match original currentIndex initialization
 		this.currentIndex = Math.min(1, this.bookData.length - 1);
 		this.visibleBooks = this.getVisibleBooksCount();
-		// Removed this.onSelectCallback assignment
+		this.desktopGlobalScaleFactor = this.calculateDesktopGlobalScaleFactor();
 
-		// Configuration parameters (kept from current, but positionBooks uses different logic)
 		this.params = {
 			xOffset: 165,
 			zDepth: 55,
@@ -47,6 +46,15 @@ export class Coverflow implements CoverflowInstance {
 				inactive: 0.9
 			}
 		};
+	}
+
+	calculateDesktopGlobalScaleFactor(): number {
+		if (!browser) return 1.0;
+		const width = window.innerWidth;
+		if (width > 768) {
+			return 1.15;
+		}
+		return 1.0;
 	}
 
 	/**
@@ -70,11 +78,12 @@ export class Coverflow implements CoverflowInstance {
 	 */
 	handleResize = () => {
 		const newVisibleCount = this.getVisibleBooksCount();
+		this.desktopGlobalScaleFactor = this.calculateDesktopGlobalScaleFactor();
 		if (newVisibleCount !== this.visibleBooks) {
 			this.visibleBooks = newVisibleCount;
 			this.updateVisibleBooks();
-			// Removed positionBooks call from original logic
 		}
+		this.positionBooks(this.currentIndex);
 	};
 
 	/**
@@ -474,65 +483,71 @@ export class Coverflow implements CoverflowInstance {
 	 * Position books based on the currently selected index (Matches original JS version)
 	 * @param {number} activeIndex - The index of the book to be centered
 	 */
-	positionBooks(activeIndex: number) {
-		if (!this.books || this.books.length === 0) return;
+	positionBooks(activeIndex: number): boolean {
+		console.log(`[Coverflow] positionBooks called for activeIndex: ${activeIndex}`);
+		if (!this.books || this.books.length === 0) {
+			console.warn('[Coverflow] positionBooks: No books to position.');
+			return false;
+		}
+
+		let allBooksPositionedSuccessfully: boolean = true;
 
 		this.books.forEach((book, index) => {
-			if (book.style.display === 'none') return; // Don't transform hidden books
+			if (book.style.display === 'none') return true;
 
 			const offset = index - activeIndex;
+			let xTranslate = offset * 160;
 
-			// Original logic for transform and style
-			const xTranslate = offset * 160; // Adjusted from 200 for less space
-			const zTranslate = (offset === 0) ? 100 : 0; // Increased from 60 to 100 to bring selected book forward
-			const rotateY = offset * 12; // Adjusted from 15 for a slightly less steep angle
-			
-			// Increase the scale difference between active and inactive books
-			const scale = (offset === 0) ? 1.2 : 0.8; // Increased active from 1.05 to 1.2, decreased inactive from 0.9 to 0.8
+			if (offset >= 1) {
+				xTranslate += 30;
+			}
 
-			const zIndex = this.bookData.length - Math.abs(offset); // Higher z-index for closer books
+			const zTranslate = (offset === 0) ? 100 : 0;
 
-			// Apply transform using translate3d for hardware acceleration
-			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${scale})`;
+			const rotateY = -Math.abs(offset) * 12;
+			const relativeScale = (offset === 0) ? 1.2 : 0.8;
+			const finalScale = relativeScale * this.desktopGlobalScaleFactor;
+			const zIndex = this.bookData.length - Math.abs(offset);
+
+			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${finalScale})`;
 			book.style.zIndex = zIndex.toString();
-			book.style.position = 'absolute'; // Set by original
-			book.style.transition = 'transform 0.5s ease, z-index 0.5s ease'; // Smooth transition
-			// @ts-ignore // Allow vendor prefix
-			book.style.webkitTransformStyle = 'preserve-3d'; // Set by original
+			book.style.position = 'absolute';
+			book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
+			// @ts-ignore
+			book.style.webkitTransformStyle = 'preserve-3d';
 
-			// Add/remove active class
+			book.classList.remove('active-book');
+			let componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 20, spine: 30, backCover: 10, pages: 15 });
+
 			if (index === activeIndex) {
 				book.classList.add('active-book');
-				// Set component z-indexes for active book (using original values)
-				this.setComponentZIndexes(book, { frontCover: 30, spine: 20, backCover: 10, pages: 15 });
-			} else {
-				book.classList.remove('active-book');
-				// Set component z-indexes for inactive books (using original logic)
-				const direction = offset < 0 ? -1 : 1;
-				if (direction < 0) { // Left side
-					this.setComponentZIndexes(book, { frontCover: 20, spine: 30, backCover: 10, pages: 15 });
-				} else { // Right side
-					this.setComponentZIndexes(book, { frontCover: 30, spine: 10, backCover: 5, pages: 15 });
-				}
+				componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 30, spine: 20, backCover: 10, pages: 15 });
+			}
+
+			if (!componentsSetSuccessfully) {
+				allBooksPositionedSuccessfully = false;
 			}
 		});
+		console.log(`[Coverflow] positionBooks completed. Success: ${allBooksPositionedSuccessfully}`);
+		return allBooksPositionedSuccessfully;
 	}
 
-	/**
-	 * Set z-index values for individual book components (Added from original)
-	 * @param {HTMLElement} book - The book element
-	 * @param {Object} zIndexes - Object with z-index values for components
-	 */
-	setComponentZIndexes(book: HTMLElement, zIndexes: { frontCover: number; spine: number; backCover: number; pages: number }) {
+	setComponentZIndexes(book: HTMLElement, zIndexes: { frontCover: number; spine: number; backCover: number; pages: number }): boolean {
 		const frontCover = book.querySelector('.hardcover_front') as HTMLElement | null;
 		const backCover = book.querySelector('.hardcover_back') as HTMLElement | null;
 		const spine = book.querySelector('.book_spine') as HTMLElement | null;
 		const pages = book.querySelector('.page') as HTMLElement | null;
 
-		if (frontCover) frontCover.style.zIndex = String(zIndexes.frontCover);
-		if (backCover) backCover.style.zIndex = String(zIndexes.backCover);
-		if (spine) spine.style.zIndex = String(zIndexes.spine);
-		if (pages) pages.style.zIndex = String(zIndexes.pages);
+		if (!frontCover || !backCover || !spine || !pages) {
+			console.warn('[Coverflow] setComponentZIndexes: One or more book components not found for z-indexing.', book);
+			return false;
+		}
+
+		frontCover.style.zIndex = String(zIndexes.frontCover);
+		backCover.style.zIndex = String(zIndexes.backCover);
+		spine.style.zIndex = String(zIndexes.spine);
+		pages.style.zIndex = String(zIndexes.pages);
+		return true;
 	}
 
 
