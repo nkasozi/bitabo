@@ -37,7 +37,7 @@ jobs:
       - name: Create dummy book file
         run: echo "This is a dummy epub file for testing." > dummy-book.epub
       - name: Run E2E tests
-        run: npm run test:e2e -- --reporter=list
+        run: npx playwright test --reporter=list --headless
         env:
           PLAYWRIGHT_TEST_BASE_URL: http://localhost:5173
       - name: Upload test results
