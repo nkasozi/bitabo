@@ -297,19 +297,20 @@ export class Coverflow implements CoverflowInstance {
 		this.swipeDistance = touchCurrentX - this.touchStartX;
 		const verticalDistance = touchCurrentY - this.touchStartY;
 
+		// Always prevent default on touchmove to ensure swipe works reliably
+		// The event will only reach here if we're tracking a swipe
+		e.preventDefault();
+
 		// Determine if swipe is primarily horizontal or vertical
 		// Only set this flag once when movement exceeds threshold
 		if (!this.isHorizontalSwipe && (Math.abs(this.swipeDistance) > this.swipeDirectionThreshold || 
-		    Math.abs(verticalDistance) > this.swipeDirectionThreshold)) {
+			Math.abs(verticalDistance) > this.swipeDirectionThreshold)) {
 			// If horizontal distance is greater than vertical distance, it's a horizontal swipe
 			this.isHorizontalSwipe = Math.abs(this.swipeDistance) > Math.abs(verticalDistance);
 		}
 
-		// Only prevent default for horizontal swipes to allow vertical scrolling
+		// Apply visual feedback during swipe
 		if (this.isHorizontalSwipe) {
-			e.preventDefault();
-			
-			// Apply visual feedback during horizontal swipe
 			const movePercent = Math.min(Math.abs(this.swipeDistance) / 150, 0.5);
 			const direction = this.swipeDistance < 0 ? 1 : -1;
 
@@ -318,18 +319,13 @@ export class Coverflow implements CoverflowInstance {
 				// Apply temporary transform only to visible books near the center for feedback
 				const offset = i - this.currentIndex;
 				if (Math.abs(offset) <= 2) { // Apply feedback to center and immediate neighbors
-					// Get current transform to preserve it
-					const currentTransform = book.style.transform;
-					// Visual feedback for horizontal swipes only
+					// For improved feedback, we could apply a slight translation to show movement direction
 					if (i === this.currentIndex) {
-						// This will overwrite the positionBooks transform temporarily
-						// book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
-						// A better approach might be needed if combining transforms is crucial.
+						book.style.transform += ` translateX(${direction * movePercent * 20}px)`;
 					}
 				}
 			});
 		}
-		// For vertical swipes, we do nothing and let the browser handle the scrolling
 	};
 
 	handleTouchEnd = (e: TouchEvent) => {
@@ -689,7 +685,7 @@ export function initEmptyCoverflow(
 		// Create coverflow instance for dummy books - Requires adapting Book type or using 'as any'
 		// The Coverflow class now expects Book[]. We need to either:
 		// 1. Make Coverflow generic: Coverflow<T>
-		// 2. Use `as any` or `as Book[]` casting (less safe)
+		// 2. Use `as any` or `as Book` casting (less safe)
 		// 3. Create a simpler display logic just for the empty state (like original JS might have intended)
 
 		// Option 3: Replicate the simple positioning from the original JS snippet directly
