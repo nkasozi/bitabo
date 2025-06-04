@@ -2583,62 +2583,60 @@
 
 	@media (max-width: 480px) {
 		.crossplatform-buttons {
-			flex-direction: column-reverse;
+			flex-direction: column;
+			width: 100%;
 		}
 
+		/* Additional mobile-specific adjustments */
+		.nav-arrow-button {
+			width: 60px;
+			height: 60px;
+		}
+	}
+
+	/* Navigation arrow button styling */
+	.nav-arrow-button {
+		width: 50px;
+		height: 50px;
+		border-radius: 50%;
+		background-color: rgba(85, 24, 119, 0.8);
+		border: 2px solid rgba(255, 255, 255, 0.2);
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+		transition: all 0.2s ease;
+	}
+
+	.nav-arrow-button:active {
+		transform: scale(0.9);
+		background-color: rgba(170, 34, 245, 0.9);
+		box-shadow: 0 0 12px rgba(170, 34, 245, 0.5);
+	}
+
+	.nav-arrow-button:hover {
+		background-color: rgba(170, 34, 245, 0.8);
+		transform: scale(1.05);
+	}
+
+	.nav-arrow-button .keyboard-arrow {
+		font-size: 1.5rem;
+		font-weight: bold;
+	}
+
+	/* Media query to disable book reflections on mobile devices */
+	@media (max-width: 768px) {
+		:global(.hardcover_front li:last-child),
+		:global(.hardcover_back li:first-child),
+		:global(.hardcover_back li:last-child),
 		:global(.page > li) {
 			-webkit-box-reflect: none;
 		}
 
-		:global(.hardcover_front li:last-child) {
-			-webkit-box-reflect: none;
-		}
-		:global(.hardcover_back li:last-child) {
-			-webkit-box-reflect: none;
-		}
-		:global(.book_spine li:last-child) {
-			-webkit-box-reflect: none;
-		}
 		:global(.coverDesign) {
 			-webkit-box-reflect: none;
-		}
-		:global(.cover-image) {
-			-webkit-box-reflect: none;
-		}
-	}
-
-	/* Keyboard arrow styles */
-	.keyboard-arrow {
-		font-size: 1.5rem;
-		line-height: 1;
-	}
-
-	/* Loading Spinner Styles */
-	:global(.loading-container) {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		height: 50vh; /* Adjust as needed */
-		color: var(--color-text);
-	}
-
-	:global(.spinner) {
-		border: 4px solid purple;
-		border-left-color: var(--color-theme-1);
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		animation: spin 1s linear infinite;
-		margin-bottom: 1rem;
-	}
-
-	@keyframes spin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
 		}
 	}
 </style>
