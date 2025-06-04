@@ -1164,7 +1164,7 @@
 	/>
 
 	<!-- Main Content: Coverflow or Empty State -->
-	<div>
+	<div class="main-content">
 		{#if isLoadingLibrary}
 			<div class="loading-container">
 				<div class="spinner"></div>
@@ -1394,6 +1394,15 @@
 		margin: 2rem;
 	}
 
+	.main-content {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+
 	/* Coverflow Container */
 	.coverflow-container {
 		width: 100%;
@@ -1483,7 +1492,8 @@
 	/* Keyboard instructions */
 	.keyboard-instructions {
 		text-align: center;
-		margin-top: 20px;
+		margin-top: 10px;
+		margin-bottom: 10px;
 		color: var(--color-text);
 		opacity: 0.8;
 		font-size: 0.9em;
@@ -1647,8 +1657,21 @@
 		backface-visibility: hidden;
 		transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
 		width: 26px;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
+		-webkit-box-reflect: below 5px;
+	}
+
+	/* Styling for .book-info */
+	.book-info {
+		background-color: rgba(0, 0, 0, 0.6); /* Dark semi-transparent background */
+		backdrop-filter: blur(10px) saturate(180%);
+		-webkit-backdrop-filter: blur(10px) saturate(180%); /* For Safari */
+		border-radius: 10px; /* Optional: for rounded corners */
+		padding: 20px; /* Optional: for some spacing */
+		color: white; /* Ensure text is light */
+		max-width: 400px;
+		margin-top: 20px; /* Optional: space from coverflow */
+		box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); /* Optional: subtle shadow */
+		border: 1px solid rgba(255, 255, 255, 0.2); /* Optional: subtle border for glassy effect */
 	}
 
 	:global(.book_spine li:first-child) {
