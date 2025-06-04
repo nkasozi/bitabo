@@ -1630,8 +1630,6 @@
 		will-change: transform;
 		transform: rotateY(180deg) translateZ(2px);
 		border-radius: 5px;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
 	:global(.hardcover_back li:first-child) {
@@ -1639,8 +1637,6 @@
 		-moz-transform: translateZ(2px);
 		transform: translateZ(-2px) translateX(-2px);
 		border-radius: 5px;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
 	:global(.hardcover_back li:last-child) {
@@ -1649,8 +1645,6 @@
 		background: #666;
 		transform: translateZ(-2px) translateX(-2px);
 		border-radius: 5px;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
 	/* Book Spine Styling */
@@ -1721,8 +1715,6 @@
 		-webkit-transition-timing-function: ease;
 		-moz-transition-timing-function: ease;
 		transition-timing-function: ease;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
 	/* Cover Design */
@@ -1739,8 +1731,6 @@
 		-webkit-transition-timing-function: ease;
 		-moz-transition-timing-function: ease;
 		transition-timing-function: ease;
-		-webkit-box-reflect: below 5px
-			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%); /* Removed for performance */
 	}
 
 	:global(.coverDesign h1) {
@@ -2587,7 +2577,6 @@
 			width: 100%;
 		}
 
-		/* Additional mobile-specific adjustments */
 		.nav-arrow-button {
 			width: 60px;
 			height: 60px;
@@ -2626,17 +2615,35 @@
 		font-weight: bold;
 	}
 
-	/* Media query to disable book reflections on mobile devices */
-	@media (max-width: 768px) {
-		:global(.hardcover_front li:last-child),
-		:global(.hardcover_back li:first-child),
-		:global(.hardcover_back li:last-child),
+	/* Add reflections back for desktop screens */
+	@media (min-width: 769px) {
+		:global(.hardcover_front li:last-child) {
+			-webkit-box-reflect: below 5px
+				linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
+		}
+
+		:global(.hardcover_back li:first-child) {
+			-webkit-box-reflect: below 5px
+				linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
+		}
+
+		:global(.hardcover_back li:last-child) {
+			-webkit-box-reflect: below 5px
+				linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
+		}
+
 		:global(.page > li) {
-			-webkit-box-reflect: none;
+			-webkit-box-reflect: below 5px
+				linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 		}
 
 		:global(.coverDesign) {
-			-webkit-box-reflect: none;
+			-webkit-box-reflect: below 5px
+				linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
+		}
+
+		:global(.coverflow-container) {
+			overflow: hidden;
 		}
 	}
 </style>
