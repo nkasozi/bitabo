@@ -1202,8 +1202,8 @@
 							</button>
 						</div>
 					{:else}
-						Use left and right arrow keys <span class="keyboard-arrow">←</span>
-						<span class="keyboard-arrow">→</span> to navigate through your books
+						Use the left and right arrow keys <br /> <span class="keyboard-arrow">←</span>
+						<span class="keyboard-arrow">→</span> <br /> to navigate through your books
 					{/if}
 				</div>
 				<div>
@@ -1639,6 +1639,8 @@
 		-moz-transform: translateZ(2px);
 		transform: translateZ(-2px) translateX(-2px);
 		border-radius: 5px;
+		-webkit-box-reflect: below 5px
+			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
 	:global(.hardcover_back li:last-child) {
@@ -1657,7 +1659,6 @@
 		backface-visibility: hidden;
 		transform: rotateY(60deg) translateX(-5px) translateZ(-12px);
 		width: 26px;
-		-webkit-box-reflect: below 5px;
 	}
 
 	/* Styling for .book-info */

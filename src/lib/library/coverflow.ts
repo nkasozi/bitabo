@@ -504,7 +504,7 @@ export class Coverflow implements CoverflowInstance {
 
 			const zTranslate = (offset === 0) ? 100 : 0;
 
-			let bookRotationY: number = -Math.abs(offset) * 12;
+			let bookRotationY: number = -Math.abs(offset) * 10;
 			if (offset === 0) {
 			    bookRotationY = 0;
 			}
