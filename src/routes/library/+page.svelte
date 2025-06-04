@@ -1358,15 +1358,6 @@
 
 <style>
 	@import url('https://fonts.googleapis.com/css2?family=Finger+Paint&family=Sedgwick+Ave&display=swap'); /* Reset and Base Styles for 3D Books */
-	*,
-	*:after,
-	*:before {
-		-webkit-box-sizing: border-box;
-		-moz-box-sizing: border-box;
-		box-sizing: border-box;
-		margin: 0;
-		padding: 0;
-	}
 
 	/* 2. Add a class to style the text */
 	.spray-painted-text {
@@ -1475,7 +1466,7 @@
 
 	/* Book Spine */
 
-	:global(.book_spine li:last-child) {
+	:global(.book_spine li:first-child) {
 		background: #333;
 	}
 
@@ -1498,25 +1489,6 @@
 	:global(.dark-mode) .keyboard-arrow {
 		color: var(--color-theme-1);
 		text-shadow: 0 0 5px rgba(97, 218, 251, 0.5);
-	}
-
-	/* Thickness of cover */
-	:global(.hardcover_front li:first-child:after),
-	:global(.hardcover_front li:first-child:before),
-	:global(.hardcover_front li:last-child:after),
-	:global(.hardcover_front li:last-child:before),
-	:global(.hardcover_back li:first-child:after),
-	:global(.hardcover_back li:first-child:before),
-	:global(.hardcover_back li:last-child:after),
-	:global(.hardcover_back li:last-child:before),
-	:global(.book_spine li:first-child:after),
-	:global(.book_spine li:first-child:before),
-	:global(.book_spine li:last-child:after),
-	:global(.book_spine li:last-child:before) {
-		position: absolute;
-		top: 0;
-		left: 0;
-		background: #999;
 	}
 
 	/* Page Styling */
@@ -1628,9 +1600,9 @@
 	}
 
 	:global(.hardcover_front) {
-		-webkit-transition: all 0.8s ease;
-		-moz-transition: all 0.8s ease;
-		transition: all 0.8s ease;
+		/* -webkit-transition: all 0.8s ease; */ /* Removed for performance */
+		/* -moz-transition: all 0.8s ease; */ /* Removed for performance */
+		/* transition: all 0.8s ease; */ /* Removed for performance */
 		border-top: grey solid thin;
 	}
 
@@ -1659,95 +1631,6 @@
 			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%);
 	}
 
-	/* Thickness details */
-	:global(.hardcover_front li:first-child:after),
-	:global(.hardcover_front li:first-child:before),
-	:global(.hardcover_front li:last-child:after),
-	:global(.hardcover_front li:last-child:before),
-	:global(.hardcover_back li:first-child:after),
-	:global(.hardcover_back li:first-child:before),
-	:global(.hardcover_back li:last-child:after),
-	:global(.hardcover_back li:last-child:before),
-	:global(.book_spine li:first-child:after),
-	:global(.book_spine li:first-child:before),
-	:global(.book_spine li:last-child:after),
-	:global(.book_spine li:last-child:before) {
-		position: absolute;
-		top: 0;
-		left: 0;
-	}
-
-	/* Front Cover Thickness */
-	:global(.hardcover_front li:first-child:after),
-	:global(.hardcover_front li:first-child:before) {
-		width: 4px;
-		height: 100%;
-	}
-
-	:global(.hardcover_front li:first-child:after) {
-		-webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		-moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-	}
-
-	:global(.hardcover_front li:first-child:before) {
-		-webkit-transform: rotateY(90deg) translateZ(158px) translateX(2px);
-		-moz-transform: rotateY(90deg) translateZ(158px) translateX(2px);
-		transform: rotateY(90deg) translateZ(158px) translateX(2px);
-	}
-
-	:global(.hardcover_front li:last-child:after) {
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px)
-			translateY(-78px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px)
-			translateY(-78px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(-2px) translateY(-78px);
-	}
-
-	:global(.hardcover_front li:last-child:before) {
-		box-shadow: 0px 0px 40px 15px rgba(0, 0, 0, 0.6);
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px)
-			translateY(-78px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px)
-			translateY(-78px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(-2px) translateY(-78px);
-	}
-
-	/* Back Cover Thickness */
-	:global(.hardcover_back li:first-child:after) {
-		-webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		-moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-	}
-
-	:global(.hardcover_back li:first-child:before) {
-		-webkit-transform: rotateY(90deg) translateZ(158px) translateX(2px);
-		-moz-transform: rotateY(90deg) translateZ(158px) translateX(2px);
-		transform: rotateY(90deg) translateZ(158px) translateX(2px);
-	}
-
-	:global(.hardcover_back li:last-child:after),
-	:global(.hardcover_back li:last-child:before) {
-		width: 4px;
-		height: 160px;
-	}
-
-	:global(.hardcover_back li:last-child:after) {
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px)
-			translateY(-78px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px) translateY(-78px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(80px) translateX(2px) translateY(-78px);
-	}
-
-	:global(.hardcover_back li:last-child:before) {
-		box-shadow: 10px -1px 100px 30px rgba(0, 0, 0, 0.5);
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px)
-			translateY(-78px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px)
-			translateY(-78px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(-140px) translateX(2px) translateY(-78px);
-	}
-
 	/* Book Spine Styling */
 	:global(.book_spine) {
 		will-change: transform;
@@ -1770,47 +1653,6 @@
 		transform: translateZ(-2px);
 	}
 
-	/* Book Spine Thickness */
-	:global(.book_spine li:first-child:after),
-	:global(.book_spine li:first-child:before) {
-		width: 4px;
-		height: 100%;
-	}
-
-	:global(.book_spine li:first-child:after) {
-		-webkit-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		-moz-transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-		transform: rotateY(90deg) translateZ(-2px) translateX(2px);
-	}
-
-	:global(.book_spine li:first-child:before) {
-		-webkit-transform: rotateY(-90deg) translateZ(-12px);
-		-moz-transform: rotateY(-90deg) translateZ(-12px);
-		transform: rotateY(-90deg) translateZ(-12px);
-	}
-
-	:global(.book_spine li:last-child:after),
-	:global(.book_spine li:last-child:before) {
-		width: 4px;
-		height: 16px;
-	}
-
-	:global(.book_spine li:last-child:after) {
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px)
-			translateY(-6px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px) translateY(-6px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(8px) translateX(2px) translateY(-6px);
-	}
-
-	:global(.book_spine li:last-child:before) {
-		box-shadow: 5px -1px 100px 40px rgba(0, 0, 0, 0.2);
-		-webkit-transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px)
-			translateY(-6px);
-		-moz-transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px)
-			translateY(-6px);
-		transform: rotateX(90deg) rotateZ(90deg) translateZ(-210px) translateX(2px) translateY(-6px);
-	}
-
 	/* Page Positioning */
 	:global(.page),
 	:global(.page > li) {
@@ -1820,6 +1662,9 @@
 		-webkit-transform-style: preserve-3d;
 		-moz-transform-style: preserve-3d;
 		transform-style: preserve-3d;
+		-webkit-transition-timing-function: ease;
+		-moz-transition-timing-function: ease;
+		transition-timing-function: ease;
 	}
 
 	:global(.page) {
@@ -1857,21 +1702,11 @@
 		-webkit-backface-visibility: hidden;
 		-moz-backface-visibility: hidden;
 		backface-visibility: hidden;
-	}
-
-	:global(.coverDesign::after) {
-		background-image: -webkit-linear-gradient(
-			-135deg,
-			rgba(255, 255, 255, 0.45) 0%,
-			transparent 100%
-		);
-		background-image: -moz-linear-gradient(-135deg, rgba(255, 255, 255, 0.45) 0%, transparent 100%);
-		background-image: linear-gradient(-135deg, rgba(255, 255, 255, 0.45) 0%, transparent 100%);
-		position: absolute;
-		top: 0;
-		left: 0;
-		bottom: 0;
-		right: 0;
+		-webkit-transition-timing-function: ease;
+		-moz-transition-timing-function: ease;
+		transition-timing-function: ease;
+		-webkit-box-reflect: below 5px
+			linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 40%); /* Removed for performance */
 	}
 
 	:global(.coverDesign h1) {
@@ -1992,12 +1827,15 @@
 	/* Active book styling - optimized for iOS */
 	:global(.active-book) {
 		/* Use translate3d for hardware acceleration */
-		-webkit-transform: translate3d(0, 0, 0) scale(1.05) !important;
-		transform: translate3d(0, 0, 0) scale(1.05) !important;
+		-webkit-transform: translate3d(-50px, 15px, 450px) rotateY(75deg) scale(1) !important;
+		transform: translate3d(-50px, 15px, 450px) rotateY(75deg) scale(1) !important;
 		/* Improved iOS hardware acceleration */
 		-webkit-backface-visibility: hidden;
 		-moz-backface-visibility: hidden;
 		backface-visibility: hidden;
+		-webkit-transition-timing-function: ease;
+		-moz-transition-timing-function: ease;
+		transition-timing-function: ease;
 		/* Tell browser this element will be animated */
 		will-change: transform;
 		position: relative;
@@ -2592,17 +2430,6 @@
 		appearance: none;
 	}
 
-	.select-wrapper::after {
-		content: '▼';
-		position: absolute;
-		right: 12px;
-		top: 50%;
-		transform: translateY(-50%);
-		pointer-events: none;
-		font-size: 0.8rem;
-		opacity: 0.6;
-	}
-
 	/* Similarity threshold slider */
 	.similarity-slider {
 		margin-bottom: 20px;
@@ -2725,12 +2552,24 @@
 			flex-direction: column-reverse;
 		}
 
-		:global(.hardcover_front li:first-child),
-		:global(.hardcover_front li:last-child),
-		:global(.hardcover_back li:last-child),
-		:global(.book_spine),
 		:global(.page > li) {
-			-webkit-box-reflect: initial;
+			-webkit-box-reflect: none;
+		}
+
+		:global(.hardcover_front li:last-child) {
+			-webkit-box-reflect: none;
+		}
+		:global(.hardcover_back li:last-child) {
+			-webkit-box-reflect: none;
+		}
+		:global(.book_spine li:last-child) {
+			-webkit-box-reflect: none;
+		}
+		:global(.coverDesign) {
+			-webkit-box-reflect: none;
+		}
+		:global(.cover-image) {
+			-webkit-box-reflect: none;
 		}
 	}
 

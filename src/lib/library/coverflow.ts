@@ -504,24 +504,28 @@ export class Coverflow implements CoverflowInstance {
 
 			const zTranslate = (offset === 0) ? 100 : 0;
 
-			const rotateY = -Math.abs(offset) * 12;
-			const relativeScale = (offset === 0) ? 1.2 : 0.8;
+			let bookRotationY: number = -Math.abs(offset) * 12;
+			if (offset === 0) {
+			    bookRotationY = 0;
+			}
+
+			const relativeScale = (offset === 0) ? 1.35 : 0.8;
 			const finalScale = relativeScale * this.desktopGlobalScaleFactor;
 			const zIndex = this.bookData.length - Math.abs(offset);
 
-			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${rotateY}deg) scale(${finalScale})`;
-			book.style.zIndex = zIndex.toString();
-			book.style.position = 'absolute';
-			book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
-			// @ts-ignore
-			book.style.webkitTransformStyle = 'preserve-3d';
+			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${bookRotationY}deg) scale(${finalScale})`;
+			//book.style.zIndex = zIndex.toString();
+			//book.style.position = 'absolute';
+			//book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
 
 			book.classList.remove('active-book');
+			// @ts-ignore
+			//book.style.webkitTransformStyle = 'preserve-3d'; // Default for inactive books
 			let componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 20, spine: 30, backCover: 10, pages: 15 });
 
 			if (index === activeIndex) {
 				book.classList.add('active-book');
-				componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 30, spine: 20, backCover: 10, pages: 15 });
+				componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 30, pages: 5, spine: 1, backCover: 1 });
 			}
 
 			if (!componentsSetSuccessfully) {
@@ -732,12 +736,12 @@ export function initEmptyCoverflow(
 			const zTranslate = (index === selectedDummyIndex) ? 30 : 0; // Bring center forward slightly
 			const scale = (index === selectedDummyIndex) ? 1.0 : 0.95; // Slight scale difference
 
-			bookElement.style.position = 'absolute';
+			//bookElement.style.position = 'absolute';
 			bookElement.style.transform = `translate3d(${offset}px, 0, ${zTranslate}px) rotateY(${rotation}deg) scale(${scale})`;
-			bookElement.style.zIndex = (dummyBooks.length - Math.abs(index - selectedDummyIndex)).toString(); // Z-index based on distance from center
+			//bookElement.style.zIndex = (dummyBooks.length - Math.abs(index - selectedDummyIndex)).toString(); // Z-index based on distance from center
 			// @ts-ignore
-			bookElement.style.webkitTransformStyle = 'preserve-3d';
-			bookElement.style.transition = 'transform 0.5s ease'; // Add transition
+			//bookElement.style.webkitTransformStyle = 'preserve-3d';
+			//bookElement.style.transition = 'transform 0.5s ease'; // Add transition
 
 			alignContainer.appendChild(bookElement);
 			bookElements.push(bookElement);
@@ -778,7 +782,7 @@ export function initEmptyCoverflow(
 					const zTranslate = (index === selectedDummyIndex) ? 30 : 0;
 					const scale = (index === selectedDummyIndex) ? 1.0 : 0.95;
 					bookEl.style.transform = `translate3d(${offset}px, 0, ${zTranslate}px) rotateY(${rotation}deg) scale(${scale})`;
-					bookEl.style.zIndex = (dummyBooks.length - Math.abs(index - selectedDummyIndex)).toString();
+					//bookEl.style.zIndex = (dummyBooks.length - Math.abs(index - selectedDummyIndex)).toString();
 				});
 				// Optionally call onSelect if the index changed via swipe
 				// if (onSelect) onSelect(currentEmptyIndex);
