@@ -496,7 +496,7 @@ export class Coverflow implements CoverflowInstance {
 			if (book.style.display === 'none') return true;
 
 			const offset = index - activeIndex;
-			let xTranslate = offset * 160;
+			let xTranslate = offset * 200;
 
 			if (offset >= 1) {
 				xTranslate += 30;
@@ -514,13 +514,8 @@ export class Coverflow implements CoverflowInstance {
 			const zIndex = this.bookData.length - Math.abs(offset);
 
 			book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${bookRotationY}deg) scale(${finalScale})`;
-			//book.style.zIndex = zIndex.toString();
-			//book.style.position = 'absolute';
-			//book.style.transition = 'transform 0.5s ease, z-index 0.5s ease';
 
 			book.classList.remove('active-book');
-			// @ts-ignore
-			//book.style.webkitTransformStyle = 'preserve-3d'; // Default for inactive books
 			let componentsSetSuccessfully = this.setComponentZIndexes(book, { frontCover: 20, spine: 30, backCover: 10, pages: 15 });
 
 			if (index === activeIndex) {
@@ -736,13 +731,7 @@ export function initEmptyCoverflow(
 			const zTranslate = (index === selectedDummyIndex) ? 30 : 0; // Bring center forward slightly
 			const scale = (index === selectedDummyIndex) ? 1.0 : 0.95; // Slight scale difference
 
-			//bookElement.style.position = 'absolute';
 			bookElement.style.transform = `translate3d(${offset}px, 0, ${zTranslate}px) rotateY(${rotation}deg) scale(${scale})`;
-			//bookElement.style.zIndex = (dummyBooks.length - Math.abs(index - selectedDummyIndex)).toString(); // Z-index based on distance from center
-			// @ts-ignore
-			//bookElement.style.webkitTransformStyle = 'preserve-3d';
-			//bookElement.style.transition = 'transform 0.5s ease'; // Add transition
-
 			alignContainer.appendChild(bookElement);
 			bookElements.push(bookElement);
 

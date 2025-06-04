@@ -1175,150 +1175,160 @@
 			<div bind:this={bookshelf} class="coverflow-container fade-in">
 				<!-- Books added dynamically by Coverflow class -->
 			</div>
-			<div class="keyboard-instructions">
-				{#if isMobile}
-					Swipe left and right to navigate through your books
-					<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
-						<button
-							class="nav-arrow-button"
-							on:click={() => coverflow?.select(coverflow.currentIndex - 1)}
-							on:touchstart={(e) => handleNavMouseDown('left', e)}
-							on:mousedown={(e) => handleNavMouseDown('left', e)}
-							aria-label="Previous Book"
-						>
-							<span class="keyboard-arrow">←</span>
-						</button>
-						<button
-							class="nav-arrow-button"
-							on:click={() => coverflow?.select(coverflow.currentIndex + 1)}
-							on:touchstart={(e) => handleNavMouseDown('right', e)}
-							on:mousedown={(e) => handleNavMouseDown('right', e)}
-							aria-label="Next Book"
-						>
-							<span class="keyboard-arrow">→</span>
-						</button>
-					</div>
-				{:else}
-					Use left and right arrow keys <span class="keyboard-arrow">←</span>
-					<span class="keyboard-arrow">→</span> to navigate through your books
-				{/if}
-			</div>
 
 			<!-- Selected Book Info -->
 			<div class="book-info fade-in">
-				{#if libraryBooks[selectedBookIndex]}
-					<!-- Title Display/Edit -->
-					{#if isEditingTitle}
-						<div class="edit-container">
-							<input
-								type="text"
-								class="edit-input"
-								bind:value={editedTitle}
-								on:keydown={(e) => handleEditKeydown(e, 'title')}
-								on:blur={saveEditedTitle}
-							/>
-							<div class="edit-buttons">
-								<button class="btn-icon" on:click={saveEditedTitle} title="Save"
-									><svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg
-									></button
-								>
-								<button class="btn-icon" on:click={cancelEditing} title="Cancel"
-									><svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"
-										></line></svg
-									></button
-								>
-							</div>
+				<div class="keyboard-instructions">
+					{#if isMobile}
+						Swipe left and right to navigate through your books
+						<div style="display: flex; justify-content: center; gap: 2rem; margin-top: 0.5rem;">
+							<button
+								class="nav-arrow-button"
+								on:click={() => coverflow?.select(coverflow.currentIndex - 1)}
+								on:touchstart={(e) => handleNavMouseDown('left', e)}
+								on:mousedown={(e) => handleNavMouseDown('left', e)}
+								aria-label="Previous Book"
+							>
+								<span class="keyboard-arrow">←</span>
+							</button>
+							<button
+								class="nav-arrow-button"
+								on:click={() => coverflow?.select(coverflow.currentIndex + 1)}
+								on:touchstart={(e) => handleNavMouseDown('right', e)}
+								on:mousedown={(e) => handleNavMouseDown('right', e)}
+								aria-label="Next Book"
+							>
+								<span class="keyboard-arrow">→</span>
+							</button>
 						</div>
 					{:else}
-						<h2
-							class="book-title"
-							on:click={startEditingTitle}
-							title="Click to edit title (or press E)"
-						>
-							{libraryBooks[selectedBookIndex].title || 'Unknown Title'}
-							<span class="edit-icon">✎</span>
-						</h2>
+						Use left and right arrow keys <span class="keyboard-arrow">←</span>
+						<span class="keyboard-arrow">→</span> to navigate through your books
 					{/if}
-
-					<!-- Author Display/Edit -->
-					{#if isEditingAuthor}
-						<div class="edit-container">
-							<input
-								type="text"
-								class="edit-input"
-								bind:value={editedAuthor}
-								on:keydown={(e) => handleEditKeydown(e, 'author')}
-								on:blur={saveEditedAuthor}
-							/>
-							<div class="edit-buttons">
-								<button class="btn-icon" on:click={saveEditedAuthor} title="Save"
-									><svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg
-									></button
-								>
-								<button class="btn-icon" on:click={cancelEditing} title="Cancel"
-									><svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="16"
-										height="16"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"
-										></line></svg
-									></button
-								>
+				</div>
+				<div>
+					{#if libraryBooks[selectedBookIndex]}
+						<!-- Title Display/Edit -->
+						{#if isEditingTitle}
+							<div class="edit-container">
+								<input
+									type="text"
+									class="edit-input"
+									bind:value={editedTitle}
+									on:keydown={(e) => handleEditKeydown(e, 'title')}
+									on:blur={saveEditedTitle}
+								/>
+								<div class="edit-buttons">
+									<button class="btn-icon" on:click={saveEditedTitle} title="Save"
+										><svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg
+										></button
+									>
+									<button class="btn-icon" on:click={cancelEditing} title="Cancel"
+										><svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><line x1="18" y1="6" x2="6" y2="18"></line><line
+												x1="6"
+												y1="6"
+												x2="18"
+												y2="18"
+											></line></svg
+										></button
+									>
+								</div>
 							</div>
+						{:else}
+							<h2
+								class="book-title"
+								on:click={startEditingTitle}
+								title="Click to edit title (or press E)"
+							>
+								{libraryBooks[selectedBookIndex].title || 'Unknown Title'}
+								<span class="edit-icon">✎</span>
+							</h2>
+						{/if}
+
+						<!-- Author Display/Edit -->
+						{#if isEditingAuthor}
+							<div class="edit-container">
+								<input
+									type="text"
+									class="edit-input"
+									bind:value={editedAuthor}
+									on:keydown={(e) => handleEditKeydown(e, 'author')}
+									on:blur={saveEditedAuthor}
+								/>
+								<div class="edit-buttons">
+									<button class="btn-icon" on:click={saveEditedAuthor} title="Save"
+										><svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg
+										></button
+									>
+									<button class="btn-icon" on:click={cancelEditing} title="Cancel"
+										><svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><line x1="18" y1="6" x2="6" y2="18"></line><line
+												x1="6"
+												y1="6"
+												x2="18"
+												y2="18"
+											></line></svg
+										></button
+									>
+								</div>
+							</div>
+						{:else}
+							<p
+								class="book-author"
+								on:click={startEditingAuthor}
+								title="Click to edit author (or press A)"
+							>
+								{libraryBooks[selectedBookIndex].author || 'Unknown Author'}
+								<span class="edit-icon">✎</span>
+							</p>
+						{/if}
+
+						<!-- Action Buttons for Selected Book -->
+						<div class="mt-4 flex justify-center gap-4">
+							<button class="btn btn-primary" on:click={openSelectedBook}>Read Book</button>
+							<button class="btn btn-danger" on:click={removeSelectedBook}>Remove Book</button>
 						</div>
 					{:else}
-						<p
-							class="book-author"
-							on:click={startEditingAuthor}
-							title="Click to edit author (or press A)"
-						>
-							{libraryBooks[selectedBookIndex].author || 'Unknown Author'}
-							<span class="edit-icon">✎</span>
-						</p>
+						<p>Loading book details...</p>
 					{/if}
-
-					<!-- Action Buttons for Selected Book -->
-					<div class="mt-4 flex justify-center gap-4">
-						<button class="btn btn-primary" on:click={openSelectedBook}>Read Book</button>
-						<button class="btn btn-danger" on:click={removeSelectedBook}>Remove Book</button>
-					</div>
-				{:else}
-					<p>Loading book details...</p>
-				{/if}
+				</div>
 			</div>
 		{:else}
 			<!-- Header -->
@@ -1390,8 +1400,8 @@
 		height: 350px;
 		position: relative;
 		perspective: 1500px;
-		overflow: hidden;
 		display: flex;
+		z-index: -1000;
 		justify-content: center;
 		align-items: center;
 	}
@@ -1827,8 +1837,8 @@
 	/* Active book styling - optimized for iOS */
 	:global(.active-book) {
 		/* Use translate3d for hardware acceleration */
-		-webkit-transform: translate3d(-50px, 15px, 450px) rotateY(75deg) scale(1) !important;
-		transform: translate3d(-50px, 15px, 450px) rotateY(75deg) scale(1) !important;
+		-webkit-transform: translate3d(-30px, 30px, 70px) rotateY(55deg) scaleX(1.8) scaleY(1.3) !important;
+		transform: translate3d(-30px, 30px, 70px) rotateY(55deg) scaleX(1.8) scaleY(1.3) !important;
 		/* Improved iOS hardware acceleration */
 		-webkit-backface-visibility: hidden;
 		-moz-backface-visibility: hidden;
