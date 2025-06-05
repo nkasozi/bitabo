@@ -2615,6 +2615,14 @@
 		font-weight: bold;
 	}
 
+  /* Optimizations for mobile screens */
+  @media (max-width: 768px) {
+
+      :global(.coverflow-container) {
+          overflow: hidden;
+      }
+  }
+
 	/* Add reflections back for desktop screens */
 	@media (min-width: 769px) {
 		:global(.hardcover_front li:last-child) {
@@ -2643,8 +2651,7 @@
 		}
 
 		:global(.coverflow-container) {
-			width: 100vw;
-			overflow-x: hidden;
+			overflow: visible;
 		}
 	}
 </style>
