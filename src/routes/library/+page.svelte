@@ -334,12 +334,40 @@
 		);
 		console.log(`[setupCoverflow] Calculated initialCoverflowIndex: ${initialCoverflowIndex}`);
 
+		// DEBUG: Force logging the DOM element we're attaching to
+		console.log('[COVERFLOW DEBUG] Bookshelf element structure before initialization:', {
+			element: bookshelf,
+			innerHTML: bookshelf.innerHTML,
+			boundingRect: bookshelf.getBoundingClientRect(),
+			cssClasses: bookshelf.className
+		});
+
 		coverflow = initCoverflow(
 			bookshelf,
 			booksToDisplay,
 			initialCoverflowIndex,
 			handleCoverflowSelect // Callback function
 		);
+
+		// DEBUG: Try to verify the coverflow was initialized with an align container
+		const alignContainer = bookshelf?.querySelector('.align');
+		console.log(
+			'[COVERFLOW DEBUG] After initCoverflow - align container exists:',
+			!!alignContainer
+		);
+		if (alignContainer) {
+			console.log('[COVERFLOW DEBUG] Align container structure:', {
+				element: alignContainer,
+				childCount: alignContainer.childNodes.length,
+				boundingRect: alignContainer.getBoundingClientRect()
+			});
+
+			// Add a direct click event to test event handling
+			alignContainer.addEventListener('click', () => {
+				console.log('[COVERFLOW DEBUG] Direct click on align container detected!');
+			});
+		}
+
 		console.log('[setupCoverflow] initCoverflow called. Result:', coverflow);
 	}
 
@@ -1410,7 +1438,7 @@
 		position: relative;
 		perspective: 1500px;
 		display: flex;
-		z-index: -1000;
+		z-index: 1; /* Changed from -1000 to 1 to ensure events reach the container */
 		justify-content: center;
 		align-items: center;
 	}
@@ -1664,6 +1692,7 @@
 		padding: 20px; /* Optional: for some spacing */
 		color: white; /* Ensure text is light */
 		max-width: 400px;
+		z-index: 10;
 		margin-top: 20px; /* Optional: space from coverflow */
 		box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); /* Optional: subtle shadow */
 		border: 1px solid rgba(255, 255, 255, 0.2); /* Optional: subtle border for glassy effect */
@@ -2615,13 +2644,12 @@
 		font-weight: bold;
 	}
 
-  /* Optimizations for mobile screens */
-  @media (max-width: 768px) {
-
-      :global(.coverflow-container) {
-          overflow: hidden;
-      }
-  }
+	/* Optimizations for mobile screens */
+	@media (max-width: 768px) {
+		:global(.coverflow-container) {
+			overflow: hidden;
+		}
+	}
 
 	/* Add reflections back for desktop screens */
 	@media (min-width: 769px) {

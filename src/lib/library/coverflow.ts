@@ -17,13 +17,28 @@ export class Coverflow implements CoverflowInstance {
 		rotation: number;
 		scale: { active: number; inactive: number; };
 	};
+
+	// Touch event properties
 	touchStartX: number = 0;
 	touchStartY: number = 0;
 	touchStartTime: number = 0;
+	touchEndX: number = 0;
+	touchEndTime: number = 0;
 	isSwiping: boolean = false;
 	swipeDirectionLocked: boolean = false;
+	isHorizontalSwipe: boolean = false;
+	directionDetermined: boolean = false;
+	swipeDistance: number = 0;
+	swipeVelocity: number = 0;
 	readonly DIRECTION_THRESHOLD: number = 10; // Pixels to determine swipe direction
+
 	animationFrameId: number | null = null;
+
+	boundTouchStart: (e: TouchEvent) => void = () => {};
+	boundTouchMove: (e: TouchEvent) => void = () => {};
+	boundTouchEnd: (e: TouchEvent) => void = () => {};
+	boundTouchCancel: (e: TouchEvent) => void = () => {};
+
 	// Removed onSelectCallback
 
 	// Updated constructor signature and logic
@@ -91,7 +106,9 @@ export class Coverflow implements CoverflowInstance {
 	 */
 	initialize(): number { // Changed return type to number
 		if (!this.container) return this.currentIndex; // Return current index if no container
-		// Removed logging
+
+		console.log(`[Coverflow DEBUG] Initializing coverflow with ${this.bookData.length} books and container:`, this.container);
+
 		this.createAllBooks();
 		this.setupEventListeners();
 		this.updateVisibleBooks(); // Set initial visibility
@@ -101,6 +118,7 @@ export class Coverflow implements CoverflowInstance {
 		if (browser) {
 			window.addEventListener('resize', this.handleResize);
 		}
+
 		return this.currentIndex; // Return the current index
 	}
 
@@ -108,34 +126,41 @@ export class Coverflow implements CoverflowInstance {
 	 * Clean up event listeners
 	 */
 	destroy() {
-		console.log('[Coverflow] Destroying instance');
-		if (browser) {
-			window.removeEventListener('resize', this.handleResize);
-			 // Ensure touch listeners are removed with matching passive options
-			this.container.removeEventListener('touchstart', this.handleTouchStart, { capture: true }); // Matched passive: true with capture: true
-			this.container.removeEventListener('touchmove', this.handleTouchMove, { capture: false }); // Matched passive: false with capture: false
-			this.container.removeEventListener('touchend', this.handleTouchEnd, { capture: true }); // Matched passive: true with capture: true
-			this.container.removeEventListener('touchcancel', this.handleTouchCancel, { capture: true }); // Matched passive: true with capture: true
-		}
-		// Remove click/focus listeners from book elements
+		if (!browser) return false;
+
+		window.removeEventListener('resize', this.handleResize);
+
+		this.removeTouchEventListeners();
+
 		this.books.forEach(book => {
-			book.removeEventListener('click', this.handleBookClickOrFocus); // Use combined handler name
-			book.removeEventListener('focus', this.handleBookClickOrFocus); // Use combined handler name
+			book.removeEventListener('click', this.handleBookClickOrFocus);
+			book.removeEventListener('focus', this.handleBookClickOrFocus);
 		});
-		// Clear container content
+
 		if (this.container) {
 			this.container.innerHTML = '';
 		}
 		this.books = [];
 		this.bookData = [];
 
-		// Cancel any pending animation frame
 		if (this.animationFrameId) {
 			cancelAnimationFrame(this.animationFrameId);
 			this.animationFrameId = null;
 		}
+
+		return true;
 	}
 
+	removeTouchEventListeners() {
+		if (!browser || !this.container) return false;
+
+		this.container.removeEventListener('touchstart', this.boundTouchStart);
+		this.container.removeEventListener('touchmove', this.boundTouchMove);
+		this.container.removeEventListener('touchend', this.boundTouchEnd);
+		this.container.removeEventListener('touchcancel', this.boundTouchCancel);
+
+		return true;
+	}
 
 	/**
 	 * Create all book elements and append to container
@@ -262,221 +287,235 @@ export class Coverflow implements CoverflowInstance {
 		}
 	};
 
-	// --- Touch Event Handlers with Directional Detection ---
-	touchEndX: number = 0;
-	touchEndTime: number = 0;
-	swipeVelocity: number = 0;
-	swipeDistance: number = 0;
-	touchCurrentY: number = 0; // Current Y position during move
-	swipeDirectionThreshold: number = 10; // Threshold to determine swipe direction (in px)
-	isHorizontalSwipe: boolean = false; // Flag to track if swipe is primarily horizontal
+	/**
+	 * Touch event handlers
+	 */
+	handleTouchStart(event: TouchEvent) {
+		console.log('[Coverflow] handleTouchStart called', {
+			touchCount: event.touches.length,
+			timestamp: new Date().toISOString(),
+			eventTarget: event.target instanceof HTMLElement ? event.target.tagName : 'unknown'
+		});
 
-	handleTouchStart = (e: TouchEvent) => {
-		if (this.animationFrameId) {
-			cancelAnimationFrame(this.animationFrameId);
-			this.animationFrameId = null;
-		}
-		// Track both X and Y coordinates
-		this.touchStartX = e.changedTouches[0].screenX;
-		this.touchStartY = e.changedTouches[0].screenY;
+		if (event.touches.length !== 1) return;
+
+		this.touchStartX = event.touches[0].clientX;
+		this.touchStartY = event.touches[0].clientY;
 		this.touchStartTime = Date.now();
 		this.isSwiping = true;
-		this.isHorizontalSwipe = false; // Reset direction flag
-		this.swipeVelocity = 0;
+		this.swipeDirectionLocked = false;
 		this.swipeDistance = 0;
-	};
+	}
 
-	handleTouchMove = (e: TouchEvent) => {
-		if (!this.isSwiping) return;
-
-		const touchCurrentX = e.changedTouches[0].screenX;
-		const touchCurrentY = e.changedTouches[0].screenY;
-		this.touchCurrentY = touchCurrentY; // Store current Y position
+	handleTouchMove(event: TouchEvent) {
+		if (!this.isSwiping || event.touches.length !== 1) {
+			return;
+		}
 		
-		// Calculate horizontal and vertical distances
-		this.swipeDistance = touchCurrentX - this.touchStartX;
-		const verticalDistance = touchCurrentY - this.touchStartY;
+		const touchX = event.touches[0].clientX;
+		const touchY = event.touches[0].clientY;
+		const deltaX = touchX - this.touchStartX;
+		const deltaY = touchY - this.touchStartY;
 
-		// Determine if swipe is primarily horizontal or vertical
-		// Only set this flag once when movement exceeds threshold
-		if (!this.isHorizontalSwipe && (Math.abs(this.swipeDistance) > this.swipeDirectionThreshold || 
-		    Math.abs(verticalDistance) > this.swipeDirectionThreshold)) {
-			// If horizontal distance is greater than vertical distance, it's a horizontal swipe
-			this.isHorizontalSwipe = Math.abs(this.swipeDistance) > Math.abs(verticalDistance);
+		this.swipeDistance = deltaX;
+
+		if (!this.swipeDirectionLocked) {
+			this.isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY);
+			this.swipeDirectionLocked = true;
+
+			console.log('[Coverflow] Direction determined', {
+				isHorizontal: this.isHorizontalSwipe,
+				deltaX,
+				deltaY
+			});
 		}
 
-		// Only prevent default for horizontal swipes to allow vertical scrolling
 		if (this.isHorizontalSwipe) {
-			e.preventDefault();
+			event.preventDefault();
 			
-			// Apply visual feedback during horizontal swipe
 			const movePercent = Math.min(Math.abs(this.swipeDistance) / 150, 0.5);
 			const direction = this.swipeDistance < 0 ? 1 : -1;
 
-			this.books.forEach((book, i) => {
-				if (book.style.display === 'none') return;
-				// Apply temporary transform only to visible books near the center for feedback
-				const offset = i - this.currentIndex;
-				if (Math.abs(offset) <= 2) { // Apply feedback to center and immediate neighbors
-					// Get current transform to preserve it
-					const currentTransform = book.style.transform;
-					// Visual feedback for horizontal swipes only
-					if (i === this.currentIndex) {
-						// This will overwrite the positionBooks transform temporarily
-						// book.style.transform = `translateX(${direction * movePercent * 20}px) rotateY(${direction * movePercent * 5}deg)`;
-						// A better approach might be needed if combining transforms is crucial.
-					}
-				}
-			});
+			this.applyVisualSwipeFeedback(movePercent, direction);
 		}
-		// For vertical swipes, we do nothing and let the browser handle the scrolling
-	};
+	}
 
-	handleTouchEnd = (e: TouchEvent) => {
-		if (!this.isSwiping) return;
-		this.isSwiping = false;
+	applyVisualSwipeFeedback(movePercent: number, direction: number): boolean {
+		if (!this.books || this.books.length === 0) return false;
 
-		// Only process horizontal swipes for coverflow navigation
-		if (this.isHorizontalSwipe) {
-			this.touchEndX = e.changedTouches[0].screenX;
-			this.touchEndTime = Date.now();
-			this.swipeDistance = this.touchEndX - this.touchStartX;
-			const swipeDuration = Math.max(1, this.touchEndTime - this.touchStartTime); // Prevent division by zero
-			this.swipeVelocity = this.swipeDistance / swipeDuration; // pixels per millisecond
+		this.books.forEach((book, index) => {
+			if (book.style.display === 'none') return;
 
-			this.handleSwipeWithMomentum();
+			const offset = index - this.currentIndex;
+			if (Math.abs(offset) <= 2) {
+				if (index === this.currentIndex) {
+					const translateValue = direction * movePercent * 20;
+					const currentTransform = book.style.transform;
+					book.style.transform = `${currentTransform} translateX(${translateValue}px)`;
+				}
+			}
+		});
+
+		return true;
+	}
+
+	handleTouchEnd(event: TouchEvent) {
+		console.log('[Coverflow] handleTouchEnd called', {
+			isSwiping: this.isSwiping,
+			isHorizontalSwipe: this.isHorizontalSwipe
+		});
+
+		if (!this.isSwiping) {
+			return;
 		}
 		
-		// Reset flags
-		this.isHorizontalSwipe = false;
-	};
-
-	handleTouchCancel = () => {
-		if (!this.isSwiping) return;
 		this.isSwiping = false;
 
-		// Only reposition books if we were in a horizontal swipe
 		if (this.isHorizontalSwipe) {
-			// Reset any temporary transforms if they were applied
-			this.books.forEach(book => {
-				// Resetting transform might cause flicker, better to just reposition
-				// book.style.transform = ''; // Or reset to original position
+			this.touchEndX = event.changedTouches[0].clientX;
+			this.touchEndTime = Date.now();
+			const swipeDuration = Math.max(1, this.touchEndTime - this.touchStartTime);
+			this.swipeVelocity = this.swipeDistance / swipeDuration;
+
+			console.log('[Coverflow] Processing swipe', {
+				distance: this.swipeDistance,
+				duration: swipeDuration,
+				velocity: this.swipeVelocity
 			});
-			this.positionBooks(this.currentIndex); // Snap back
+
+			this.processSwipeWithMomentum();
+		} else {
+			this.positionBooks(this.currentIndex);
 		}
 
-		// Reset flags
-		this.isHorizontalSwipe = false;
+		this.resetTouchState();
+	}
+
+	handleTouchCancel(event: TouchEvent) {
+		console.log('[Coverflow] Touch cancelled');
+
+		if (this.isSwiping) {
+			this.positionBooks(this.currentIndex);
+			this.resetTouchState();
+		}
 
 		if (this.animationFrameId) {
 			cancelAnimationFrame(this.animationFrameId);
 			this.animationFrameId = null;
 		}
-	};
+	}
 
-	// --- Momentum Swipe Logic (from original) ---
-	handleSwipeWithMomentum = () => {
-		// Reset any temporary transforms from touchmove
-		// this.books.forEach(book => { book.style.transform = ''; }); // Might cause flicker
+	resetTouchState(): void {
+		this.isSwiping = false;
+		this.isHorizontalSwipe = false;
+		this.swipeDirectionLocked = false;
+	}
 
-		// Use a sensible default if not defined globally
-		const coverflowSwipeThreshold = 50; // Example threshold in pixels
-		const velocityThreshold = 0.3; // pixels per millisecond
+	processSwipeWithMomentum(): boolean {
+		const swipeThreshold = 50;
+		const velocityThreshold = 0.3;
 		const absVelocity = Math.abs(this.swipeVelocity);
 
 		let positionsToMove = 0;
 
-		if (absVelocity > velocityThreshold && Math.abs(this.swipeDistance) > coverflowSwipeThreshold) {
-			// Calculate positions based on velocity and distance (adjust multipliers as needed)
+		console.log('[Coverflow] Analyzing swipe metrics', {
+			absVelocity,
+			swipeDistance: this.swipeDistance,
+			velocityThreshold,
+			swipeThreshold
+		});
+
+		if (absVelocity > velocityThreshold && Math.abs(this.swipeDistance) > swipeThreshold) {
 			positionsToMove = Math.min(
-				Math.floor(absVelocity * 6), // Velocity factor
-				Math.floor(Math.abs(this.swipeDistance) / 60) // Distance factor
+				Math.floor(absVelocity * 6),
+				Math.floor(Math.abs(this.swipeDistance) / 60)
 			);
-			positionsToMove = Math.max(1, positionsToMove); // Move at least 1
-			positionsToMove = Math.min(positionsToMove, 3); // Cap movement
-		} else if (Math.abs(this.swipeDistance) > coverflowSwipeThreshold) {
-			positionsToMove = 1; // Regular swipe, move 1
+			positionsToMove = Math.max(1, Math.min(positionsToMove, 3));
+			console.log('[Coverflow] Fast swipe detected', { positionsToMove });
+		} else if (Math.abs(this.swipeDistance) > swipeThreshold) {
+			positionsToMove = 1;
+			console.log('[Coverflow] Standard swipe detected');
+		} else {
+			console.log('[Coverflow] Insufficient swipe, snapping back');
 		}
 
 		if (positionsToMove > 0) {
-			const direction = this.swipeDistance < 0 ? 1 : -1; // -ve distance = swipe left = move index +1
+			const direction = this.swipeDistance < 0 ? 1 : -1;
 			const targetIndex = this.currentIndex + (direction * positionsToMove);
-			this.animateBookSelection(this.currentIndex, targetIndex);
+			return this.animateBookSelection(this.currentIndex, targetIndex);
 		} else {
-			// Not enough movement, snap back
-			this.positionBooks(this.currentIndex);
+			return this.positionBooks(this.currentIndex);
 		}
-	};
-
-	animateBookSelection = (startIndex: number, targetIndex: number) => {
-		targetIndex = Math.max(0, Math.min(this.bookData.length - 1, targetIndex));
-
-		if (startIndex === targetIndex) {
-			this.positionBooks(startIndex); // Ensure final position is set
-			return;
-		}
-
-		let currentPosition = startIndex;
-		const totalSteps = Math.abs(targetIndex - startIndex);
-		let step = 0;
-		const direction = targetIndex > startIndex ? 1 : -1;
-
-		const initialDelay = 50; // Shorter delay for responsiveness
-		const subsequentDelay = 100; // Delay for subsequent steps
-
-		const animateStep = () => {
-			if (this.animationFrameId === null) return; // Stop if cancelled
-
-			currentPosition += direction;
-			this.select(currentPosition); // Call select to update state and visuals for this step
-			step++;
-
-			if (step < totalSteps) {
-				const delay = step === 1 ? initialDelay : subsequentDelay;
-				// Cast setTimeout result to number
-				this.animationFrameId = setTimeout(() => {
-					// Check if still valid before requesting next frame
-					if (this.animationFrameId !== null) {
-						this.animationFrameId = requestAnimationFrame(animateStep);
-					}
-				}, delay) as unknown as number; // Cast to number
-			} else {
-				this.animationFrameId = null; // Animation finished
-				// Ensure final position is correctly rendered
-				this.positionBooks(targetIndex);
-			}
-		};
-
-		// Cancel any existing animation frame before starting a new one
-		if (this.animationFrameId) {
-			cancelAnimationFrame(this.animationFrameId);
-		}
-		this.animationFrameId = requestAnimationFrame(animateStep);
-	};
+	}
 
 
 	/**
 	 * Set up event listeners for navigation (Matches original logic)
 	 */
 	setupEventListeners() {
-		// Keyboard navigation is handled at the component level
+		if (!this.books || this.books.length === 0) return false;
 
-		// Click/Focus navigation
 		this.books.forEach(book => {
-			// Use the combined handler
 			book.addEventListener('click', this.handleBookClickOrFocus);
 			book.addEventListener('focus', this.handleBookClickOrFocus);
 		});
 
-		// Touch swipe support
 		if (browser) {
-			// Use instance methods as handlers directly
-			this.container.addEventListener('touchstart', this.handleTouchStart, { passive: true }); // No need to prevent default on touchstart
-			this.container.addEventListener('touchmove', this.handleTouchMove, { passive: false }); // passive: false needed to conditionally preventDefault
-			this.container.addEventListener('touchend', this.handleTouchEnd, { passive: true });
-			this.container.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
+			this.setupTouchEventListeners();
 		}
+
+		return true;
 	}
+
+
+	setupTouchEventListeners() {
+		if (!browser || !this.container) return false;
+
+		console.log(`[Coverflow] Setting up touch event listeners on container:`, {
+			containerType: typeof this.container,
+			containerHTML: this.container.outerHTML.substring(0, 100) + "...",
+			containerClientRect: this.container.getBoundingClientRect(),
+			isVisible: this.isElementVisible(this.container)
+		});
+
+		this.boundTouchStart = this.handleTouchStart.bind(this);
+		this.boundTouchMove = this.handleTouchMove.bind(this);
+		this.boundTouchEnd = this.handleTouchEnd.bind(this);
+		this.boundTouchCancel = this.handleTouchCancel.bind(this);
+
+		this.container.addEventListener('touchstart', this.boundTouchStart, { passive: true });
+		this.container.addEventListener('touchmove', this.boundTouchMove, { passive: false });
+		this.container.addEventListener('touchend', this.boundTouchEnd, { passive: true });
+		this.container.addEventListener('touchcancel', this.boundTouchCancel, { passive: true });
+
+		this.addDebugClickHandler();
+
+		return true;
+	}
+
+	isElementVisible(element: HTMLElement): boolean {
+		const rect = element.getBoundingClientRect();
+		return rect.width > 0 && rect.height > 0 &&
+			getComputedStyle(element).display !== 'none' &&
+			getComputedStyle(element).visibility !== 'hidden';
+	}
+
+	addDebugClickHandler() {
+		if (!browser || !this.container) return false;
+
+		this.container.addEventListener('click', (event) => {
+			console.log('[Coverflow] Container received click event', {
+				target: event.target,
+				currentTarget: event.currentTarget,
+				clientX: event.clientX,
+				clientY: event.clientY,
+				eventPhase: event.eventPhase
+			});
+		});
+
+		return true;
+	}
+
 
 
 	/**
@@ -584,6 +623,90 @@ export class Coverflow implements CoverflowInstance {
 		});
 		this.container.dispatchEvent(event);
 	}
+
+	animateBookSelection(fromIndex: number, toIndex: number): boolean {
+		console.log(`[Coverflow] Animating book selection from ${fromIndex} to ${toIndex}`);
+
+		if (this.animationFrameId) {
+			cancelAnimationFrame(this.animationFrameId);
+			this.animationFrameId = null;
+		}
+
+		const clampedToIndex = Math.max(0, Math.min(toIndex, this.bookData.length - 1));
+		if (fromIndex === clampedToIndex) {
+			return this.positionBooks(fromIndex);
+		}
+		const animationStartTime = performance.now();
+		const animationDuration = 300;
+		const direction = fromIndex < clampedToIndex ? 1 : -1;
+		const distance = Math.abs(clampedToIndex - fromIndex);
+
+		const performAnimation = (timestamp: number): boolean => {
+			const elapsed = timestamp - animationStartTime;
+			const progress = Math.min(elapsed / animationDuration, 1);
+
+			const easedProgress = this.easeOutQuad(progress);
+			const currentPosition = fromIndex + (direction * distance * easedProgress);
+
+			this.books.forEach((book, index) => {
+				if (book.style.display === 'none') return;
+
+				const offset = index - currentPosition;
+				let xTranslate = offset * 200;
+
+				if (offset >= 1) {
+					xTranslate += 30;
+				}
+
+				const zTranslate = offset === 0 ? 100 : 0;
+				let bookRotationY = -Math.abs(offset) * 10;
+
+				if (offset === 0) {
+					bookRotationY = 0;
+				}
+
+				const relativeScale = offset === 0 ? 1.35 : 0.8;
+				const finalScale = relativeScale * this.desktopGlobalScaleFactor;
+
+				book.style.transform = `translate3d(${xTranslate}px, 0, ${zTranslate}px) rotateY(${bookRotationY}deg) scale(${finalScale})`;
+
+				book.classList.remove('active-book');
+
+				const closestIndex = Math.round(currentPosition);
+				if (index === closestIndex) {
+					book.classList.add('active-book');
+					this.setComponentZIndexes(book, { frontCover: 30, pages: 5, spine: 1, backCover: 1 });
+				} else {
+					this.setComponentZIndexes(book, { frontCover: 20, spine: 30, backCover: 10, pages: 15 });
+				}
+			});
+
+			if (progress < 1) {
+				this.animationFrameId = requestAnimationFrame(performAnimation);
+				return false;
+			}
+
+			this.currentIndex = clampedToIndex;
+			this.updateVisibleBooks();
+			this.positionBooks(this.currentIndex);
+
+			const event = new CustomEvent('coverselect', {
+				detail: { index: this.currentIndex }
+			});
+			this.container.dispatchEvent(event);
+
+			this.animationFrameId = null;
+			console.log(`[Coverflow] Animation completed: New index = ${this.currentIndex}`);
+			return true;
+		};
+
+		this.animationFrameId = requestAnimationFrame(performAnimation);
+		return true;
+	}
+
+	easeOutQuad(t: number): number {
+		return t * (2 - t);
+	}
 }
 
 
@@ -689,7 +812,7 @@ export function initEmptyCoverflow(
 		// Create coverflow instance for dummy books - Requires adapting Book type or using 'as any'
 		// The Coverflow class now expects Book[]. We need to either:
 		// 1. Make Coverflow generic: Coverflow<T>
-		// 2. Use `as any` or `as Book[]` casting (less safe)
+		// 2. Use `as any` or `as Book` casting (less safe)
 		// 3. Create a simpler display logic just for the empty state (like original JS might have intended)
 
 		// Option 3: Replicate the simple positioning from the original JS snippet directly
