@@ -1404,6 +1404,7 @@
 		font-size: 2rem;
 		/* Make it stand out with a bright color */
 		color: #ffffff;
+		z-index: 10;
 
 		/* Add a grungy "spray paint" effect via multiple text shadows */
 		text-shadow:
