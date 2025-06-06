@@ -24,23 +24,30 @@
 	let isPulling = false;
 	let swipeDirectionDetermined = false;
 	let isHorizontalSwipe = false;
+	let pullIndicatorVisible = false;
+	let pullProgress = 0;
 
 	const pullThreshold = 70;
 	const directionThreshold = 10;
+	const maxPullDistance = 150;
 
 	function handleTouchStart(event: TouchEvent): boolean {
+		if (isReaderPage) return true;
+
 		if (window.scrollY === 0 && event.touches.length === 1) {
 			touchstartY = event.touches[0].clientY;
 			touchstartX = event.touches[0].clientX;
 			isPulling = true;
 			swipeDirectionDetermined = false;
 			isHorizontalSwipe = false;
-			console.log('Pull-to-refresh: touchstart', { touchstartY });
+			console.log('[Pull-to-refresh] Touch start detected', { touchstartY });
 		}
 		return true;
 	}
 
 	function handleTouchMove(event: TouchEvent): boolean {
+		if (isReaderPage) return true;
+
 		if (!isPulling || event.touches.length !== 1) {
 			return true;
 		}
@@ -61,6 +68,7 @@
 
 			if (isHorizontalSwipe) {
 				isPulling = false;
+				hidePullIndicator();
 				return true;
 			}
 		}
@@ -71,10 +79,22 @@
 
 		if (verticalDistance <= 0) {
 			isPulling = false;
+			hidePullIndicator();
 			return true;
 		}
 
-		console.log('Pull-to-refresh: touchmove', { touchmoveY, pullDistance: verticalDistance });
+		pullProgress = Math.min(100, (verticalDistance / pullThreshold) * 100);
+
+		if (verticalDistance > 5) {
+			showPullIndicator();
+			updatePullIndicator(pullProgress);
+		}
+
+		console.log('[Pull-to-refresh] Touch move', {
+			touchmoveY,
+			pullDistance: verticalDistance,
+			pullProgress
+		});
 
 		if (verticalDistance > 0) {
 			event.preventDefault();
@@ -84,16 +104,24 @@
 	}
 
 	function handleTouchEnd(event: TouchEvent): boolean {
+		if (isReaderPage) return true;
+
 		if (!isPulling) {
+			hidePullIndicator();
 			return true;
 		}
 
 		const pullDistance = touchmoveY - touchstartY;
-		console.log('Pull-to-refresh: touchend', { pullDistance, threshold: pullThreshold });
+		console.log('[Pull-to-refresh] Touch end', { pullDistance, threshold: pullThreshold });
 
 		if (pullDistance > pullThreshold) {
-			console.log('Pull-to-refresh: Threshold met, reloading...');
-			window.location.reload();
+			console.log('[Pull-to-refresh] Threshold met, reloading...');
+			showRefreshingState();
+			setTimeout(() => {
+				window.location.reload();
+			}, 500);
+		} else {
+			hidePullIndicator();
 		}
 
 		resetTouchTracking();
@@ -108,6 +136,43 @@
 		touchstartX = 0;
 		touchmoveY = 0;
 		touchmoveX = 0;
+		return true;
+	}
+
+	function showPullIndicator(): boolean {
+		pullIndicatorVisible = true;
+		return true;
+	}
+
+	function hidePullIndicator(): boolean {
+		pullIndicatorVisible = false;
+		pullProgress = 0;
+		return true;
+	}
+
+	function updatePullIndicator(progress: number): boolean {
+		const indicator = document.getElementById('pull-indicator');
+		if (!indicator) return false;
+
+		const spinnerElement = indicator.querySelector('.pull-spinner') as HTMLElement;
+		if (!spinnerElement) return false;
+
+		spinnerElement.style.transform = `rotate(${progress * 3.6}deg)`;
+
+		if (progress >= 100) {
+			indicator.classList.add('ready');
+		} else {
+			indicator.classList.remove('ready');
+		}
+
+		return true;
+	}
+
+	function showRefreshingState(): boolean {
+		const indicator = document.getElementById('pull-indicator');
+		if (!indicator) return false;
+
+		indicator.classList.add('refreshing');
 		return true;
 	}
 
@@ -155,7 +220,22 @@
 	{/if}
 </svelte:head>
 
-<div class="app">
+<div
+	class="app"
+	on:touchstart={handleTouchStart}
+	on:touchmove={handleTouchMove}
+	on:touchend={handleTouchEnd}
+	on:touchcancel={resetTouchTracking}
+>
+	{#if pullIndicatorVisible}
+		<div id="pull-indicator" class="pull-to-refresh-indicator">
+			<div class="pull-spinner"></div>
+			<div class="pull-text">
+				{pullProgress >= 100 ? 'Release to refresh' : 'Pull down to refresh'}
+			</div>
+		</div>
+	{/if}
+
 	{#if isReaderPage}
 		<!-- Reader-specific header and layout -->
 		<ReaderHeader
@@ -193,6 +273,8 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 100dvh;
+		position: relative;
+		overflow-x: hidden;
 	}
 
 	main {
@@ -243,6 +325,53 @@
 
 	.separator {
 		color: #ccc;
+	}
+
+	.pull-to-refresh-indicator {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 12px;
+		background-color: rgba(255, 255, 255, 0.9);
+		z-index: 1000;
+		transform: translateY(0);
+		transition: transform 0.3s ease;
+	}
+
+	.pull-spinner {
+		width: 24px;
+		height: 24px;
+		border: 2px solid #3182ce;
+		border-top-color: transparent;
+		border-radius: 50%;
+		margin-bottom: 8px;
+		transition: transform 0.2s ease;
+	}
+
+	.pull-text {
+		font-size: 14px;
+		color: #333;
+	}
+
+	.pull-to-refresh-indicator.ready .pull-spinner {
+		border-top-color: #3182ce;
+	}
+
+	.pull-to-refresh-indicator.refreshing .pull-spinner {
+		animation: spinner-rotate 1s linear infinite;
+	}
+
+	@keyframes spinner-rotate {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
 	}
 
 	@media (min-width: 480px) {
